@@ -1,0 +1,34 @@
+apiVersion: symphony/v1
+kind: Service
+metadata:
+  name: "payment-api"
+  owner: "team-fintech"
+  tags:
+    - "rest-api"
+    - "paiement"
+    - "production"
+spec:
+  type: "rest-api"
+  links:
+    - title: "Grafana"
+      url: "https://grafana.company.com/d/payment-123"
+    - title: "Sentry"
+      url: "https://sentry.io/organizations/acme/projects/payment-api/"
+    - title: "Runbook"
+      url: "https://wiki.company.com/payment-api/runbook"
+
+  actions:
+    - name: "Scale replicas"
+      workflow_target: "github-actions"
+      inputs:
+        - id: "replica_count"
+          type: "integer"
+          min: 1
+          max: 20
+
+    - name: "Deploy to staging"
+      workflow_target: "github-actions"
+      inputs:
+        - id: "image_tag"
+          type: "string"
+          default: "latest"
