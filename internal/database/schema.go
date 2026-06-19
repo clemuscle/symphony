@@ -1,0 +1,54 @@
+package database
+
+func (db *DB) Migrate() error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS projects (
+		id          SERIAL PRIMARY KEY,
+		name        VARCHAR(255) NOT NULL UNIQUE,
+		description TEXT,
+		language    VARCHAR(50),
+		type        VARCHAR(50),
+		port        INT,
+		namespace   VARCHAR(255),
+		repo_url    VARCHAR(500),
+		repo_path   VARCHAR(500),
+		registry_url VARCHAR(500),
+		created_at  TIMESTAMP DEFAULT NOW(),
+		updated_at  TIMESTAMP DEFAULT NOW()
+	);
+
+	CREATE TABLE IF NOT EXISTS pipelines (
+		id           SERIAL PRIMARY KEY,
+		project_name VARCHAR(255) NOT NULL,
+		pipeline_id  VARCHAR(100),
+		type         VARCHAR(50),
+		status       VARCHAR(50) DEFAULT 'pending',
+		triggered_by VARCHAR(255) DEFAULT 'symphony',
+		created_at   TIMESTAMP DEFAULT NOW(),
+		updated_at   TIMESTAMP DEFAULT NOW()
+	);
+
+	CREATE TABLE IF NOT EXISTS deployments (
+		id            SERIAL PRIMARY KEY,
+		project_name  VARCHAR(255) NOT NULL,
+		container_id  VARCHAR(100),
+		image         VARCHAR(500),
+		port          INT,
+		status        VARCHAR(50) DEFAULT 'running',
+		url           VARCHAR(500),
+		created_at    TIMESTAMP DEFAULT NOW(),
+		updated_at    TIMESTAMP DEFAULT NOW()
+	);
+
+	CREATE TABLE IF NOT EXISTS audit_log (
+		id         SERIAL PRIMARY KEY,
+		action     VARCHAR(100) NOT NULL,
+		resource   VARCHAR(255),
+		details    TEXT,
+		user_id    VARCHAR(255) DEFAULT 'system',
+		created_at TIMESTAMP DEFAULT NOW()
+	);
+	`
+	_, err := db.Exec(schema)
+	return err
+}
