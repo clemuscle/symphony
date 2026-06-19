@@ -132,4 +132,3 @@ Pour acter le lancement de la phase de MVP, la direction technique soumet à la 
 1. **Validation de la stack technique :** Approbation du langage Go pour le backend pour assurer l'adhérence avec la culture outillage de l'équipe d'infrastructure.
 2. **Validation du périmètre des Drivers :** Accord sur la liste des outils cibles du MVP (GitLab, Harbor, Kubernetes, Jenkins, Prometheus) et gel de toute demande d'intégration d'outils hors-standard pendant la phase de MVP.
 3. **Ouverture des flux :** Autorisation d'accès de l'IDP vers les APIs des plateformes de CI/CD et registres dans l'environnement de staging pour mener les premiers tests d'intégration.
-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
