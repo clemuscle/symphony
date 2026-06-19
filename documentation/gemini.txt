@@ -1,0 +1,135 @@
+Voici le type de document formel qu'un CTO soumet à un Comité d'Architecture (souvent appelé **Architecture Review Board** ou **DAT** - Document d'Architecture Technique préliminaire).
+
+Ce document est conçu pour rassurer un architecte sur la gouvernance, la sécurité, la maintenabilité et l'adhérence aux standards de l'entreprise.
+
+---
+
+# 📘 Architecture Decision Record & Project Initiation Document (PID)
+
+**Projet :** KoreIDP (Internal Developer Platform)
+
+**Statut :** En cours de validation (Draft d'Architecture)
+
+**Auteur :** Direction Technique (CTO)
+
+**Cible :** Comité d'Architecture / Lead Architects
+
+---
+
+## 1. Executive Summary & Problématique
+
+L'augmentation du nombre d'outils (GitLab, Kubernetes, Harbor, Terraform, Prometheus) crée une charge cognitive trop élevée pour les développeurs, ralentissant le *Time-to-Market*. Les solutions de rechange du marché présentent des failles majeures pour notre contexte :
+
+* **Backstage (Spotify) :** Rejeté pour sa complexité opérationnelle excessive (coût de maintenance du framework Node/React, instabilité de l'écosystème de plugins tiers).
+* **Solutions SaaS (Cycloid, Port) :** Rejetées pour des contraintes de souveraineté des données, de coûts récurrents et de dépendance fournisseur (Lock-in).
+
+**Objectif de KoreIDP :** Fournir une plateforme unique, auto-hébergée (On-Premise/Cloud privé), hautement orientée (*opinionated*), packagée en un bloc logique, pour automatiser les *Golden Paths* sans introduire de dette de maintenance pour l'équipe DevOps.
+
+---
+
+## 2. Principes Fondateurs de l'Architecture (Architecture Principles)
+
+L'évaluation du projet par l'équipe d'architecture doit s'appuyer sur les 4 piliers suivants :
+
+* **Principe de Non-Intrusivité Opérationnelle :** L'IDP n'est pas un orchestrateur d'infrastructure direct. Il n'exécute pas de commandes `terraform apply` ou `kubectl apply`. Il délègue l'exécution aux outils de CI/CD existants de l'entreprise via une approche asynchrone guidée par les événements.
+* **Core Immuable & Drivers Abstraits :** Aucun système de plugins dynamiques. Les intégrations avec les outils du marché (GitLab, Harbor, etc.) sont modélisées par des interfaces Go strictes (*Drivers*), garantissant l'étanchéité du code source face aux montées de version des outils tiers.
+* **Architecture Single-Bloc :** Distribution sous forme d'un binaire unique en Go (incluant le frontend SPA compilé et embarqué). Empreinte mémoire minimale, dépendances externes nulles au runtime, tolérance aux pannes maximale.
+* **Configuration Declarative (Stateless) :** La configuration complète de l'IDP (clusters cibles, configurations d'outils, catalogues de templates) est portée par un fichier YAML unique, permettant un déploiement de l'IDP lui-même en mode GitOps.
+
+---
+
+## 3. Cartographie de l'Architecture Cible
+
+L'architecture logique repose sur un découpage en couches étanches pour isoler les responsabilités :
+
+```
+             ┌────────────────────────────────────────────────────────┐
+             │                  Interface Utilisateur                 │
+             │           Single Page Application (Vue / React)        │
+             └───────────────────────────┬────────────────────────────┘
+                                         │ REST API / WebSockets
+ ┌───────────────────────────────────────▼───────────────────────────────────────┐
+ │ KoreIDP Core Engine (Go Monolith)                                             │
+ │                                                                               │
+ │  ┌───────────────────────┐  ┌───────────────────────┐  ┌───────────────────┐  │
+ │  │   RBAC Engine (OIDC)  │  │   State Machine (DB)  │  │ Template Engine   │  │
+ │  └───────────────────────┘  └───────────────────────┘  └───────────────────┘  │
+ │                                                                               │
+ │  ┌─────────────────────────────────────────────────────────────────────────┐  │
+ │  │ Abstraction Layer (Internal Drivers)                                    │  │
+ │  │ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐ ┌─────────┐ │  │
+ │  │ │  Git Driver     │ │ Registry Driver │ │  CI/CD Driver   │ │K8s Drv  │ │  │
+ │  │ └─────────────────┘ └─────────────────┘ └─────────────────┘ └─────────┘ │  │
+ └──┴────────┬──────────────────────┬──────────────────┬──────────────┬──────────┴┘
+             │                      │                  │              │
+             ▼ API                  ▼ API              ▼ API          ▼ KubeAPI
+   ┌──────────────────┐    ┌─────────────────┐    ┌──────────────┐ ┌─────────────┐
+   │ GitLab / GitHub  │    │ Harbor / Nexus  │    │Jenkins/GitLab│ │ Kubernetes  │
+   └──────────────────┘    └─────────────────┘    └──────────────┘ └─────────────┘
+
+```
+
+---
+
+## 4. Focus Technique : Workflow d'Exécution & Isolation
+
+Pour rassurer l'architecture sur la stabilité du système, voici le cycle de vie d'une action "Day-2" (ex : un développeur demande l'ajout d'un composant de stockage S3 ou l'extension d'une ressource en recette).
+
+### Diagramme de Séquence : Isolation de l'état du code
+
+```
+Dev (UI)            KoreIDP Core          State DB           Git CI/CD Pipeline
+   │                      │                  │                       │
+   │ 1. Request Feature   │                  │                       │
+   ├─────────────────────►│                  │                       │
+   │                      │ 2. Create Task   │                       │
+   │                      ├─────────────────►│                       │
+   │                      │    (PENDING)     │                       │
+   │                      │                  │                       │
+   │                      │ 3. Push Infra Manifest (To Repo-Infra)   │
+   │                      ├─────────────────────────────────────────►│
+   │                      │                  │                       │ (Triggers Pipeline)
+   │                      │ 4. Update Task   │                       │ 5. Execute Async
+   │                      ├─────────────────►│                       │    Terraform/Helm
+   │                      │    (RUNNING)     │                       │ 
+   │                      │                  │                       │ 6. Webhook Status
+   │                      │◄─────────────────────────────────────────┤
+   │                      │ 7. Update Task   │                       │
+   │                      ├─────────────────►│                       │
+   │                      │   (SUCCESS)      │                       │
+   │                      │                  │                       │
+   │ 8. UI Updated        │                  │                       │
+   │◄─────────────────────┤                  │                       │
+
+```
+
+> **Note d'architecture cruciale :** Le code applicatif du développeur (Repo A) et le code d'infrastructure généré par l'IDP (Repo B) sont strictement séparés. L'IDP n'écrit jamais dans le dépôt de code source du développeur, éliminant tout risque de conflit de fusion (*merge conflict*) ou de corruption de l'application métier.
+
+---
+
+## 5. Matrice de Sécurité & Conformité (SecOps)
+
+| Composant / Risque | Stratégie d'Atténuation & Implémentation |
+| --- | --- |
+| **Authentification & RBAC** | Support natif et exclusif d'**OIDC (OpenID Connect)**. Intégration avec Keycloak, Azure AD ou Okta. Aucun stockage de mots de passe ou d'identifiants utilisateurs au sein de l'IDP. Les permissions au sein de l'UI sont calquées sur les groupes d'appartenance de l'annuaire de l'entreprise. |
+| **Gestion des Secrets** | L'IDP s'interface avec le gestionnaire de secrets de l'entreprise (**HashiCorp Vault** ou AWS Secrets Manager) via injection dynamique au runtime. Le fichier `config.yaml` de l'IDP ne contient aucune clé privée ni token d'accès "Master", uniquement des pointeurs d'URI vers le coffre-fort. |
+| **Blast Radius (Périmètre d'impact)** | Les tokens de comptes de service utilisés par les *Drivers* de l'IDP sont limités au périmètre strict des opérations requises (ex : portée restreinte à la création de repositories dans un groupe GitLab dédié, rôles RBAC Kubernetes limités par Namespace). |
+
+---
+
+## 6. Analyse d'Impact & Exploitation (Day-2 Operations)
+
+* **Haute Disponibilité (HA) :** Bien que conçu comme un monolithe, le Core Engine de l'IDP est entièrement **stateless**. Il peut être scalé horizontalement (multi-réplicas Kubernetes) derrière un Load Balancer. L'état des tâches en cours est partagé via une base de données relationnelle centralisée (PostgreSQL) configurée en mode cluster.
+* **Observabilité interne :** L'IDP expose nativement un endpoint `/metrics` au format standard OpenTelemetry / Prometheus pour suivre la performance du moteur, le taux d'erreur des APIs tierces et la latence des réponses.
+* **Sauvegarde et Restauration (DRP) :** Le plan de reprise d'activité se résume à la sauvegarde de la base de données PostgreSQL de l'IDP et à la sauvegarde du dépôt de configuration Git contenant le fichier `config.yaml`. En cas de perte totale, la reconstruction de l'instance se fait en moins de 5 minutes.
+
+---
+
+## 7. Critères de Validation demandés au Comité
+
+Pour acter le lancement de la phase de MVP, la direction technique soumet à la validation des architectes les points suivants :
+
+1. **Validation de la stack technique :** Approbation du langage Go pour le backend pour assurer l'adhérence avec la culture outillage de l'équipe d'infrastructure.
+2. **Validation du périmètre des Drivers :** Accord sur la liste des outils cibles du MVP (GitLab, Harbor, Kubernetes, Jenkins, Prometheus) et gel de toute demande d'intégration d'outils hors-standard pendant la phase de MVP.
+3. **Ouverture des flux :** Autorisation d'accès de l'IDP vers les APIs des plateformes de CI/CD et registres dans l'environnement de staging pour mener les premiers tests d'intégration.
+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
