@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,28 +90,47 @@ func (l *Loader) GetBuildTemplate(imageName string) string {
 
 func (l *Loader) listFiles(dir string) ([]string, error) {
 	encoded := url.PathEscape(l.RepoPath)
-	apiURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/tree?path=%s&per_page=50",
-		l.BaseURL, encoded, url.QueryEscape(dir))
-
-	req, _ := http.NewRequest("GET", apiURL, nil)
-	req.Header.Set("PRIVATE-TOKEN", l.Token)
-	resp, err := l.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var items []struct {
-		Name string `json:"name"`
-		Path string `json:"path"`
-		Type string `json:"type"`
-	}
-	json.NewDecoder(resp.Body).Decode(&items)
 
 	var paths []string
-	for _, item := range items {
-		if item.Type == "blob" {
-			paths = append(paths, item.Path)
+	page := 1
+	for {
+		apiURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/tree?path=%s&per_page=50&page=%d",
+			l.BaseURL, encoded, url.QueryEscape(dir), page)
+
+		req, err := http.NewRequest("GET", apiURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("templates listFiles %s: build request: %w", dir, err)
+		}
+		req.Header.Set("PRIVATE-TOKEN", l.Token)
+		resp, err := l.client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("templates listFiles %s: %w", dir, err)
+		}
+
+		var items []struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+			Type string `json:"type"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&items)
+		resp.Body.Close()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("templates listFiles %s: decode response: %w", dir, decodeErr)
+		}
+
+		for _, item := range items {
+			if item.Type == "blob" {
+				paths = append(paths, item.Path)
+			}
+		}
+
+		nextPage := resp.Header.Get("X-Next-Page")
+		if nextPage == "" {
+			break
+		}
+		page, err = strconv.Atoi(nextPage)
+		if err != nil {
+			break
 		}
 	}
 	return paths, nil

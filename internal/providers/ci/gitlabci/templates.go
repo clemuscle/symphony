@@ -19,7 +19,7 @@ var testCommands = map[string]string{
 	"java":   "mvn test",
 }
 
-func pipelineFiles(cfg providers.PipelineConfig) map[string]string {
+func pipelineFiles(cfg providers.PipelineConfig, gitURL, configRepoPath string) map[string]string {
 	image := languageImages[cfg.Language]
 	if image == "" {
 		image = "alpine:latest"
@@ -41,6 +41,8 @@ stages:
 variables:
   IMAGE_NAME: %s
   REGISTRY: $CI_REGISTRY
+  SYMPHONY_GIT_URL: "%s"
+  SYMPHONY_CONFIG_REPO: "%s"
 
 # ── TEST ──────────────────────────────────────────
 test:
@@ -93,7 +95,9 @@ register-service:
     - git config --global user.email "symphony-bot@gitlab.local"
     - git config --global user.name "Symphony Bot"
   script:
-    - git clone http://root:$SYMPHONY_TOKEN@gitlab.local:8929/root/symphony-config.git /tmp/symphony-config
+    - export SYMPHONY_GIT_HOST=$(echo $SYMPHONY_GIT_URL | sed -E 's#^[a-z]+://##')
+    - export SYMPHONY_GIT_SCHEME=$(echo $SYMPHONY_GIT_URL | sed -E 's#^([a-z]+)://.*#\1#')
+    - git clone "${SYMPHONY_GIT_SCHEME}://root:${SYMPHONY_TOKEN}@${SYMPHONY_GIT_HOST}/${SYMPHONY_CONFIG_REPO}.git" /tmp/symphony-config
     - cd /tmp/symphony-config
     - |
       cat > services/%s.yaml << YAML
@@ -121,7 +125,7 @@ YAML
   only:
     - main
   allow_failure: true
-`, image, cfg.Name, testCmd,
+`, image, cfg.Name, gitURL, configRepoPath, testCmd,
 		cfg.Name, cfg.Name, cfg.Language, cfg.Type,
 		cfg.Name, cfg.Name)
 

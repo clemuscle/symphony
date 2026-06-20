@@ -36,15 +36,27 @@ func main() {
 	if gitlabToken == "" {
 		log.Fatal("GITLAB_TOKEN manquant")
 	}
+	configRepo := getEnv("CONFIG_REPO_PATH", "root/symphony-config")
 
-	scm := gitlabscm.New(gitlabURL, gitlabToken)
-	ci := gitlabci.New(gitlabURL, gitlabToken)
-	registry := gitlabregistry.New(gitlabURL, getEnv("REGISTRY_URL", "gitlab.local:5050"), gitlabToken)
-	deploy := dockerdeploy.New(getEnv("DOCKER_SOCKET", "/var/run/docker.sock"))
+	scm, err := gitlabscm.New(gitlabURL, gitlabToken)
+	if err != nil {
+		log.Fatalf("gitlab scm: %v", err)
+	}
+	ci, err := gitlabci.New(gitlabURL, gitlabToken, configRepo)
+	if err != nil {
+		log.Fatalf("gitlab ci: %v", err)
+	}
+	registry, err := gitlabregistry.New(gitlabURL, getEnv("REGISTRY_URL", "gitlab.local:5050"), gitlabToken)
+	if err != nil {
+		log.Fatalf("gitlab registry: %v", err)
+	}
+	deploy, err := dockerdeploy.New(getEnv("DOCKER_SOCKET", "/var/run/docker.sock"))
+	if err != nil {
+		log.Fatalf("docker deploy: %v", err)
+	}
 
 	// Catalogue + GitOps sync
 	store := catalog.NewStore()
-	configRepo := getEnv("CONFIG_REPO_PATH", "root/symphony-config")
 	syncer := gitops.NewSyncer(gitlabURL, gitlabToken, configRepo, store)
 
 	// Chargement initial + sync en arrière-plan

@@ -18,7 +18,10 @@ type Provider struct {
 	client *http.Client
 }
 
-func New(socketPath string) *Provider {
+func New(socketPath string) (*Provider, error) {
+	if socketPath == "" {
+		return nil, fmt.Errorf("docker: socketPath is required")
+	}
 	return &Provider{
 		client: &http.Client{
 			Timeout: 30 * time.Second,
@@ -28,23 +31,32 @@ func New(socketPath string) *Provider {
 				},
 			},
 		},
-	}
+	}, nil
 }
 
 func (p *Provider) docker(method, path string, body any) ([]byte, int, error) {
 	var buf io.Reader
 	if body != nil {
-		b, _ := json.Marshal(body)
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, 0, fmt.Errorf("docker %s %s: marshal request: %w", method, path, err)
+		}
 		buf = bytes.NewReader(b)
 	}
-	req, _ := http.NewRequest(method, "http://localhost/v1.43"+path, buf)
+	req, err := http.NewRequest(method, "http://localhost/v1.43"+path, buf)
+	if err != nil {
+		return nil, 0, fmt.Errorf("docker %s %s: build request: %w", method, path, err)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("docker %s %s: %w", method, path, err)
 	}
 	defer resp.Body.Close()
-	data, _ := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("docker %s %s: read response: %w", method, path, err)
+	}
 	return data, resp.StatusCode, nil
 }
 
@@ -89,7 +101,9 @@ func (p *Provider) Deploy(req providers.DeployRequest) (*providers.DeployResult,
 	var result struct {
 		ID string `json:"Id"`
 	}
-	json.Unmarshal(data, &result)
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("docker deploy %s: decode create response: %w", req.ProjectName, err)
+	}
 
 	_, status, err = p.docker("POST", fmt.Sprintf("/containers/%s/start", result.ID), nil)
 	if err != nil {
@@ -119,7 +133,9 @@ func (p *Provider) Status(deploymentID string) (string, error) {
 	var result struct {
 		State struct{ Status string `json:"Status"` } `json:"State"`
 	}
-	json.Unmarshal(data, &result)
+	if err := json.Unmarshal(data, &result); err != nil {
+		return "", fmt.Errorf("docker status %s: decode response: %w", deploymentID, err)
+	}
 	return result.State.Status, nil
 }
 
@@ -137,7 +153,9 @@ func (p *Provider) List() ([]providers.Deployment, error) {
 			PublicPort int `json:"PublicPort"`
 		} `json:"Ports"`
 	}
-	json.Unmarshal(data, &containers)
+	if err := json.Unmarshal(data, &containers); err != nil {
+		return nil, fmt.Errorf("docker list: decode response: %w", err)
+	}
 
 	deployments := make([]providers.Deployment, 0, len(containers))
 	for _, c := range containers {

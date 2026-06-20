@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,30 +20,50 @@ type Provider struct {
 	client  *http.Client
 }
 
-func New(baseURL, token string) *Provider {
+func New(baseURL, token string) (*Provider, error) {
+	if baseURL == "" {
+		return nil, fmt.Errorf("gitlab: baseURL is required")
+	}
+	if token == "" {
+		return nil, fmt.Errorf("gitlab: token is required")
+	}
 	return &Provider{
 		BaseURL: strings.TrimRight(baseURL, "/"),
 		Token:   token,
 		client:  &http.Client{Timeout: 15 * time.Second},
-	}
+	}, nil
 }
 
 func (p *Provider) api(method, path string, body any) ([]byte, int, error) {
+	data, status, _, err := p.apiWithHeaders(method, path, body)
+	return data, status, err
+}
+
+func (p *Provider) apiWithHeaders(method, path string, body any) ([]byte, int, http.Header, error) {
 	var buf io.Reader
 	if body != nil {
-		b, _ := json.Marshal(body)
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, 0, nil, fmt.Errorf("gitlab %s %s: marshal request: %w", method, path, err)
+		}
 		buf = bytes.NewReader(b)
 	}
-	req, _ := http.NewRequest(method, p.BaseURL+"/api/v4"+path, buf)
+	req, err := http.NewRequest(method, p.BaseURL+"/api/v4"+path, buf)
+	if err != nil {
+		return nil, 0, nil, fmt.Errorf("gitlab %s %s: build request: %w", method, path, err)
+	}
 	req.Header.Set("PRIVATE-TOKEN", p.Token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, fmt.Errorf("gitlab %s %s: %w", method, path, err)
 	}
 	defer resp.Body.Close()
-	data, _ := io.ReadAll(resp.Body)
-	return data, resp.StatusCode, nil
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, nil, fmt.Errorf("gitlab %s %s: read response: %w", method, path, err)
+	}
+	return data, resp.StatusCode, resp.Header, nil
 }
 
 func (p *Provider) CreateRepo(req providers.RepoRequest) (*providers.RepoResult, error) {
@@ -53,9 +74,11 @@ func (p *Provider) CreateRepo(req providers.RepoRequest) (*providers.RepoResult,
 		"visibility":              "private",
 	}
 	if req.Namespace != "" {
-		if nsID, err := p.resolveNamespace(req.Namespace); err == nil {
-			payload["namespace_id"] = nsID
+		nsID, err := p.resolveNamespace(req.Namespace)
+		if err != nil {
+			return nil, fmt.Errorf("gitlab createRepo: resolve namespace %q: %w", req.Namespace, err)
 		}
+		payload["namespace_id"] = nsID
 	}
 
 	data, status, err := p.api("POST", "/projects", payload)
@@ -74,7 +97,9 @@ func (p *Provider) CreateRepo(req providers.RepoRequest) (*providers.RepoResult,
 		WebURL            string `json:"web_url"`
 		DefaultBranch     string `json:"default_branch"`
 	}
-	json.Unmarshal(data, &project)
+	if err := json.Unmarshal(data, &project); err != nil {
+		return nil, fmt.Errorf("gitlab createRepo: decode response: %w", err)
+	}
 
 	return &providers.RepoResult{
 		ID:            project.ID,
@@ -106,20 +131,38 @@ func (p *Provider) PushFile(projectPath, branch, filePath, content, commitMsg st
 }
 
 func (p *Provider) ListRepos() ([]providers.Repo, error) {
-	data, _, err := p.api("GET", "/projects?membership=true&per_page=50", nil)
-	if err != nil {
-		return nil, err
-	}
-	var projects []struct {
-		Name   string `json:"name"`
-		Path   string `json:"path_with_namespace"`
-		WebURL string `json:"web_url"`
-	}
-	json.Unmarshal(data, &projects)
+	var repos []providers.Repo
+	page := 1
+	for {
+		data, status, headers, err := p.apiWithHeaders("GET",
+			fmt.Sprintf("/projects?membership=true&per_page=50&page=%d", page), nil)
+		if err != nil {
+			return nil, err
+		}
+		if status < 200 || status >= 300 {
+			return nil, fmt.Errorf("gitlab listRepos: %d — %s", status, string(data))
+		}
 
-	repos := make([]providers.Repo, len(projects))
-	for i, p := range projects {
-		repos[i] = providers.Repo{Name: p.Name, Path: p.Path, WebURL: p.WebURL}
+		var projects []struct {
+			Name   string `json:"name"`
+			Path   string `json:"path_with_namespace"`
+			WebURL string `json:"web_url"`
+		}
+		if err := json.Unmarshal(data, &projects); err != nil {
+			return nil, fmt.Errorf("gitlab listRepos: decode response: %w", err)
+		}
+		for _, proj := range projects {
+			repos = append(repos, providers.Repo{Name: proj.Name, Path: proj.Path, WebURL: proj.WebURL})
+		}
+
+		nextPage := headers.Get("X-Next-Page")
+		if nextPage == "" {
+			break
+		}
+		page, err = strconv.Atoi(nextPage)
+		if err != nil {
+			break
+		}
 	}
 	return repos, nil
 }
@@ -133,7 +176,9 @@ func (p *Provider) resolveNamespace(name string) (int, error) {
 		ID   int    `json:"id"`
 		Path string `json:"path"`
 	}
-	json.Unmarshal(data, &ns)
+	if err := json.Unmarshal(data, &ns); err != nil {
+		return 0, fmt.Errorf("gitlab resolveNamespace: decode response: %w", err)
+	}
 	for _, n := range ns {
 		if n.Path == name {
 			return n.ID, nil
