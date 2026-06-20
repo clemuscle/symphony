@@ -49,8 +49,13 @@ avant que la base de code grossisse (voir skill
 incohérence de version (Go 1.22.5 dans l'arbre vs Go 1.25 visé par
 `go.mod`/CLAUDE.md). Aucun `.gitignore` à la racine pour les exclure ni
 empêcher leur réapparition.
-**Statut** : non résolu — à sortir du repo (et de l'historique si déjà
-commités) et à exclure via `.gitignore`.
+**Statut** : résolu (2026-06-20, commits `c8f9665`/`1b025c8`) —
+`go1.22.5.linux-amd64.tar.gz` scrubbé de tout l'historique git
+(`git filter-branch` + force-push), `script.deb.sh` retiré du repo
+(suppression simple, sans réécriture d'historique — jugé non sensible).
+Reste un point séparé non couvert ici : aucune entrée `.gitignore`
+n'empêche un nouveau gros binaire de revenir par erreur — pas de
+`*.tar.gz`/`*.deb` ajouté au `.gitignore`.
 
 ---
 
@@ -123,16 +128,17 @@ aujourd'hui, pas un incident actif. Le risque n'est pas "ces credentials
 précis sont dangereux maintenant", mais le **pattern** : sans
 `.gitignore`, le prochain token réel/production suivant le même chemin
 fuitera de la même façon, silencieusement.
-**Statut** : partiellement traité (2026-06-20) — l'utilisateur a révoqué
-et retiré `GITLAB_TOKEN`/`SYMPHONY_TOKEN` du fichier. **Reste non
-résolu** : `GITLAB_RUNNER_TOKEN` et `DB_PASSWORD=symphony123` sont
-toujours présents en clair dans `.env`, qui est toujours tracké par git
-(`git ls-files` le confirme) ; un `.gitignore` racine a été créé entre
-temps mais n'exclut que `.claude/settings.local.json`, **pas `.env`** —
-le pattern d'hygiène n'est donc pas corrigé, tout nouveau secret ajouté
-à `.env` serait re-commité. À faire : ajouter `.env` au `.gitignore`,
-`git rm --cached .env`, fournir un `.env.example` sans valeurs, révoquer
-le `GITLAB_RUNNER_TOKEN` restant.
+**Statut** : volet hygiène git résolu (2026-06-20) — `.env` ajouté au
+`.gitignore`, `git rm --cached .env` (untracké, conservé sur disque),
+et tout l'historique git scrubbé via `git filter-branch` + force-push
+(commit `7b9579c`) : `.env` n'existe plus dans aucun commit accessible,
+y compris ceux contenant l'ancien `GITLAB_TOKEN`/`SYMPHONY_TOKEN`.
+**Reste non résolu** : `GITLAB_RUNNER_TOKEN` et `DB_PASSWORD=symphony123`
+sont toujours présents en clair dans le `.env` local (non commité
+désormais, mais toujours en clair sur disque) — la rotation de ces deux
+credentials et la fourniture d'un `.env.example` sans valeurs n'ont pas
+été faites. Le fichier `.env` reste donc à traiter côté contenu, plus
+seulement côté tracking git.
 
 ### Aucune authentification — OIDC absent malgré la règle "non négociable dès le MVP"
 **Depuis** : audit architecture-guardian (2026-06-20).
