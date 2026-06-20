@@ -14,7 +14,7 @@ func (p *Provider) Scaffold(repo *providers.RepoResult, cfg providers.ScaffoldCo
 		err := p.PushFile(repo.Path, repo.DefaultBranch, path, content,
 			fmt.Sprintf("chore: scaffold %s [symphony]", path))
 		if err != nil {
-			fmt.Printf("⚠️  scaffold %s: %v\n", path, err)
+			return fmt.Errorf("gitlab scaffold %s: %w", path, err)
 		}
 	}
 	return nil
