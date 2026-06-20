@@ -42,7 +42,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		Private:     true,
 	})
 	if err != nil {
-		respond(w, http.StatusInternalServerError, map[string]string{"error": "scm: " + err.Error()})
+		respond(w, http.StatusBadGateway, map[string]string{"error": "scm: " + err.Error()})
 		return
 	}
 
@@ -109,7 +109,7 @@ func (s *Server) deployProject(w http.ResponseWriter, r *http.Request) {
 		EnvVars:     req.EnvVars,
 	})
 	if err != nil {
-		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		respond(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -123,5 +123,5 @@ func (s *Server) deployProject(w http.ResponseWriter, r *http.Request) {
 	})
 	s.db.Log("deploy", req.ProjectName, "image="+req.Image, "system")
 
-	respond(w, http.StatusOK, result)
+	respond(w, http.StatusCreated, result)
 }

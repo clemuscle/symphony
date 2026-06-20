@@ -3,14 +3,14 @@ package database
 import "time"
 
 type Pipeline struct {
-	ID          int
-	ProjectName string
-	PipelineID  string
-	Type        string
-	Status      string
-	TriggeredBy string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          int       `json:"id"`
+	ProjectName string    `json:"project_name"`
+	PipelineID  string    `json:"pipeline_id"`
+	Type        string    `json:"type"`
+	Status      string    `json:"status"`
+	TriggeredBy string    `json:"triggered_by"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func (db *DB) CreatePipeline(p *Pipeline) error {

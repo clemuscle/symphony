@@ -10,33 +10,33 @@ type SCMProvider interface {
 }
 
 type RepoRequest struct {
-	Name        string
-	Description string
-	Namespace   string
-	Private     bool
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Namespace   string `json:"namespace"`
+	Private     bool   `json:"private"`
 }
 
 type RepoResult struct {
-	ID            int
-	Path          string
-	WebURL        string
-	HTTPCloneURL  string
-	SSHCloneURL   string
-	DefaultBranch string
+	ID            int    `json:"id"`
+	Path          string `json:"path"`
+	WebURL        string `json:"web_url"`
+	HTTPCloneURL  string `json:"http_clone_url"`
+	SSHCloneURL   string `json:"ssh_clone_url"`
+	DefaultBranch string `json:"default_branch"`
 }
 
 type Repo struct {
-	Name   string
-	Path   string
-	WebURL string
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	WebURL string `json:"web_url"`
 }
 
 type ScaffoldConfig struct {
-	Name        string
-	Description string
-	Language    string
-	Type        string
-	Port        int
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Language    string `json:"language"`
+	Type        string `json:"type"`
+	Port        int    `json:"port"`
 }
 
 // ─── 2. CI AUTOMATION ─────────────────────────────────────────────────────────
@@ -49,10 +49,10 @@ type CIProvider interface {
 }
 
 type PipelineConfig struct {
-	Name     string
-	Type     string
-	Language string
-	Stages   []string
+	Name     string   `json:"name"`
+	Type     string   `json:"type"`
+	Language string   `json:"language"`
+	Stages   []string `json:"stages"`
 }
 
 // ─── 3. ARTIFACT STORAGE ──────────────────────────────────────────────────────
@@ -64,10 +64,10 @@ type RegistryProvider interface {
 }
 
 type Image struct {
-	Name      string
-	Tag       string
-	Size      int64
-	CreatedAt string
+	Name      string `json:"name"`
+	Tag       string `json:"tag"`
+	Size      int64  `json:"size"`
+	CreatedAt string `json:"created_at"`
 }
 
 // ─── 4. DEPLOYMENT ────────────────────────────────────────────────────────────
@@ -80,23 +80,23 @@ type DeployProvider interface {
 }
 
 type DeployRequest struct {
-	ProjectName string
-	Image       string
-	Port        int
-	EnvVars     map[string]string
-	HealthCheck string
+	ProjectName string            `json:"project_name"`
+	Image       string            `json:"image"`
+	Port        int               `json:"port"`
+	EnvVars     map[string]string `json:"env_vars"`
+	HealthCheck string            `json:"health_check"`
 }
 
 type DeployResult struct {
-	DeploymentID string
-	URL          string
-	Status       string
+	DeploymentID string `json:"deployment_id"`
+	URL          string `json:"url"`
+	Status       string `json:"status"`
 }
 
 type Deployment struct {
-	ID          string
-	ProjectName string
-	Image       string
-	Status      string
-	URL         string
+	ID          string `json:"id"`
+	ProjectName string `json:"project_name"`
+	Image       string `json:"image"`
+	Status      string `json:"status"`
+	URL         string `json:"url"`
 }

@@ -3,15 +3,15 @@ package database
 import "time"
 
 type Deployment struct {
-	ID          int
-	ProjectName string
-	ContainerID string
-	Image       string
-	Port        int
-	Status      string
-	URL         string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          int       `json:"id"`
+	ProjectName string    `json:"project_name"`
+	ContainerID string    `json:"container_id"`
+	Image       string    `json:"image"`
+	Port        int       `json:"port"`
+	Status      string    `json:"status"`
+	URL         string    `json:"url"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func (db *DB) CreateDeployment(d *Deployment) error {

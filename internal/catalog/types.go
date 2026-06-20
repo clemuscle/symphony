@@ -1,65 +1,65 @@
 package catalog
 
 type Service struct {
-	APIVersion string      `yaml:"apiVersion" json:"APIVersion"`
-	Kind       string      `yaml:"kind" json:"Kind"`
-	Metadata   Metadata    `yaml:"metadata" json:"Metadata"`
-	Spec       ServiceSpec `yaml:"spec" json:"Spec"`
+	APIVersion string      `yaml:"apiVersion" json:"api_version"`
+	Kind       string      `yaml:"kind" json:"kind"`
+	Metadata   Metadata    `yaml:"metadata" json:"metadata"`
+	Spec       ServiceSpec `yaml:"spec" json:"spec"`
 }
 
 type Metadata struct {
-	Name      string   `yaml:"name" json:"Name"`
-	Owner     string   `yaml:"owner" json:"Owner"`
-	Team      Team     `yaml:"team" json:"Team"`
-	Tags      []string `yaml:"tags" json:"Tags"`
-	Tier      string   `yaml:"tier" json:"Tier"`           // critical / standard / internal
-	Lifecycle string   `yaml:"lifecycle" json:"Lifecycle"` // production / staging / deprecated
+	Name      string   `yaml:"name" json:"name"`
+	Owner     string   `yaml:"owner" json:"owner"`
+	Team      Team     `yaml:"team" json:"team"`
+	Tags      []string `yaml:"tags" json:"tags"`
+	Tier      string   `yaml:"tier" json:"tier"`           // critical / standard / internal
+	Lifecycle string   `yaml:"lifecycle" json:"lifecycle"` // production / staging / deprecated
 }
 
 type Team struct {
-	Slack string `yaml:"slack" json:"Slack"`
-	Email string `yaml:"email" json:"Email"`
+	Slack string `yaml:"slack" json:"slack"`
+	Email string `yaml:"email" json:"email"`
 }
 
 type ServiceSpec struct {
-	Type         string       `yaml:"type" json:"Type"`
-	Language     string       `yaml:"language" json:"Language"`
-	Version      string       `yaml:"version" json:"Version"`
-	Repo         string       `yaml:"repo" json:"Repo"`
-	Registry     string       `yaml:"registry" json:"Registry"`
-	Docs         string       `yaml:"docs" json:"Docs"`
-	Links        []Link       `yaml:"links" json:"Links"`
-	Actions      []Action     `yaml:"actions" json:"Actions"`
-	Dependencies []Dependency `yaml:"dependencies" json:"Dependencies"`
-	SLO          SLO          `yaml:"slo" json:"SLO"`
+	Type         string       `yaml:"type" json:"type"`
+	Language     string       `yaml:"language" json:"language"`
+	Version      string       `yaml:"version" json:"version"`
+	Repo         string       `yaml:"repo" json:"repo"`
+	Registry     string       `yaml:"registry" json:"registry"`
+	Docs         string       `yaml:"docs" json:"docs"`
+	Links        []Link       `yaml:"links" json:"links"`
+	Actions      []Action     `yaml:"actions" json:"actions"`
+	Dependencies []Dependency `yaml:"dependencies" json:"dependencies"`
+	SLO          SLO          `yaml:"slo" json:"slo"`
 }
 
 type Link struct {
-	Title string `yaml:"title" json:"Title"`
-	URL   string `yaml:"url" json:"URL"`
-	Icon  string `yaml:"icon" json:"Icon"`
+	Title string `yaml:"title" json:"title"`
+	URL   string `yaml:"url" json:"url"`
+	Icon  string `yaml:"icon" json:"icon"`
 }
 
 type Action struct {
-	Name       string  `yaml:"name" json:"Name"`
-	WebhookURL string  `yaml:"webhook_url" json:"WebhookURL"`
-	Inputs     []Input `yaml:"inputs" json:"Inputs"`
+	Name       string  `yaml:"name" json:"name"`
+	WebhookURL string  `yaml:"webhook_url" json:"webhook_url"`
+	Inputs     []Input `yaml:"inputs" json:"inputs"`
 }
 
 type Input struct {
-	ID      string `yaml:"id" json:"ID"`
-	Type    string `yaml:"type" json:"Type"`
-	Min     *int   `yaml:"min,omitempty" json:"Min,omitempty"`
-	Max     *int   `yaml:"max,omitempty" json:"Max,omitempty"`
-	Default string `yaml:"default,omitempty" json:"Default,omitempty"`
+	ID      string `yaml:"id" json:"id"`
+	Type    string `yaml:"type" json:"type"`
+	Min     *int   `yaml:"min,omitempty" json:"min,omitempty"`
+	Max     *int   `yaml:"max,omitempty" json:"max,omitempty"`
+	Default string `yaml:"default,omitempty" json:"default,omitempty"`
 }
 
 type Dependency struct {
-	Service string `yaml:"service" json:"Service"`
-	Type    string `yaml:"type" json:"Type"` // database / cache / api / queue
+	Service string `yaml:"service" json:"service"`
+	Type    string `yaml:"type" json:"type"` // database / cache / api / queue
 }
 
 type SLO struct {
-	Availability string `yaml:"availability" json:"Availability"`
-	LatencyP99   string `yaml:"latency_p99" json:"LatencyP99"`
+	Availability string `yaml:"availability" json:"availability"`
+	LatencyP99   string `yaml:"latency_p99" json:"latency_p99"`
 }
