@@ -79,8 +79,10 @@
         </Transition>
 
         <!-- Résultat -->
-        <div class="result-card ok" v-if="createResult">
-          <div class="result-title">✅ Projet créé avec succès</div>
+        <div class="result-card" :class="createResult.status === 'degraded' ? 'warn' : 'ok'" v-if="createResult">
+          <div class="result-title">
+            {{ createResult.status === 'degraded' ? '⚠️ Projet créé, mais incomplet' : '✅ Projet créé avec succès' }}
+          </div>
           <div class="result-row">
             <span>Repo</span>
             <a :href="createResult.repo.web_url" target="_blank">{{ createResult.repo.web_url }} ↗</a>
@@ -91,7 +93,15 @@
           </div>
           <div class="result-row">
             <span>Registry</span>
-            <code>{{ createResult.registry_url }}</code>
+            <code v-if="createResult.project.registry_url">{{ createResult.project.registry_url }}</code>
+            <span class="step-error" v-else>Indisponible (échec du provisioning)</span>
+          </div>
+          <div class="provisioning-steps">
+            <div class="step-row" v-for="st in createResult.steps" :key="st.step">
+              <span :class="['status-badge', st.status]">{{ st.status }}</span>
+              <span class="step-name">{{ st.step }}</span>
+              <span class="step-error" v-if="st.error">{{ st.error }}</span>
+            </div>
           </div>
           <div class="result-actions">
             <button class="btn-secondary" @click="triggerPipeline(createResult.repo)">
@@ -131,6 +141,7 @@
             <span class="project-name">{{ p.name }}</span>
             <span class="lang-badge">{{ langIcon(p.language) }} {{ p.language }}</span>
           </div>
+          <span :class="['status-badge', p.status]" v-if="p.status && p.status !== 'ready'">{{ p.status }}</span>
           <div class="project-desc">{{ p.description || 'Pas de description' }}</div>
           <div class="project-meta">
             <span>📁 {{ p.repo_path }}</span>
@@ -378,19 +389,26 @@ h3 { font-size: 17px; font-weight: 700; margin-bottom: 20px; }
 .form-footer { display: flex; justify-content: flex-end; }
 .result-card { padding: 16px; border-radius: 10px; margin-top: 16px; }
 .result-card.ok { background: #f0fff4; border: 1px solid #9ae6b4; }
+.result-card.warn { background: #fffbeb; border: 1px solid #fbd38d; }
 .result-card.err { background: #fff5f5; border: 1px solid #feb2b2; color: #c53030; }
 .result-title { font-weight: 700; color: #276749; margin-bottom: 10px; }
+.result-card.warn .result-title { color: #92400e; }
 .result-row { display: flex; gap: 12px; margin-bottom: 6px; font-size: 14px; align-items: center; }
 .result-row span { color: #666; min-width: 70px; font-size: 13px; }
 .result-row a { color: #667eea; text-decoration: none; }
 .result-row code { font-size: 12px; background: #e8f5e9; padding: 2px 6px; border-radius: 4px; }
 .result-actions { margin-top: 12px; }
 .pipeline-status { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 13px; color: #666; padding: 8px 12px; background: #f8f9fb; border-radius: 8px; }
+.provisioning-steps { margin-top: 12px; padding-top: 12px; border-top: 1px solid #00000010; display: flex; flex-direction: column; gap: 6px; }
+.step-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.step-name { color: #555; min-width: 100px; }
+.step-error { color: #c53030; font-size: 12px; }
 .status-badge { padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; }
-.status-badge.success { background: #f0fff4; color: #276749; }
+.status-badge.success, .status-badge.ready { background: #f0fff4; color: #276749; }
 .status-badge.failed { background: #fff5f5; color: #c53030; }
 .status-badge.running { background: #ebf8ff; color: #2b6cb0; }
-.status-badge.pending { background: #fffbeb; color: #92400e; }
+.status-badge.pending, .status-badge.provisioning { background: #fffbeb; color: #92400e; }
+.status-badge.degraded { background: #fffaf0; color: #c05621; }
 .tabs { display: flex; align-items: center; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid #e2e2e2; padding-bottom: 0; }
 .tab { padding: 10px 16px; background: none; border: none; cursor: pointer; font-size: 14px; color: #888; border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .tab.active { color: #667eea; border-bottom-color: #667eea; font-weight: 600; }
@@ -399,6 +417,7 @@ h3 { font-size: 17px; font-weight: 700; margin-bottom: 20px; }
 .error-banner { background: #fff5f5; border: 1px solid #feb2b2; color: #c53030; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 14px; }
 .projects-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
 .project-card { background: white; border: 1px solid #e2e2e2; border-radius: 12px; padding: 18px; }
+.project-card > .status-badge { display: inline-block; margin-bottom: 8px; }
 .project-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .project-name { font-weight: 600; font-size: 15px; }
 .lang-badge { font-size: 12px; background: #f4f4f4; padding: 2px 8px; border-radius: 20px; color: #555; }
