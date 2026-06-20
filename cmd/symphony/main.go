@@ -55,6 +55,14 @@ func main() {
 		log.Fatalf("docker deploy: %v", err)
 	}
 
+	runnerName := getEnv("RUNNER_NAME", "symphony-runner")
+	runnerExecutor := getEnv("RUNNER_EXECUTOR_TYPE", "docker")
+	if err := ci.EnsureRunner(runnerName, runnerExecutor); err != nil {
+		log.Printf("⚠️  EnsureRunner: %v — les pipelines déclenchés échoueront jusqu'à résolution manuelle", err)
+	} else {
+		log.Println("✅ runner CI disponible")
+	}
+
 	// Catalogue + GitOps sync
 	store := catalog.NewStore()
 	syncer := gitops.NewSyncer(gitlabURL, gitlabToken, configRepo, store)
