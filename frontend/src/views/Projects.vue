@@ -20,15 +20,14 @@
           <div class="section-label">Choisis un Golden Path</div>
           <div v-if="loadingGP" class="state-sm">Chargement des templates...</div>
           <div class="gp-grid" v-else>
-            <div v-for="gp in goldenPaths" :key="gp.Metadata.Name"
-              class="gp-card" :class="{ selected: selectedGP?.Metadata.Name === gp.Metadata.Name }"
+            <div v-for="gp in goldenPaths" :key="gp.metadata.name"
+              class="gp-card" :class="{ selected: selectedGP?.metadata.name === gp.metadata.name }"
               @click="selectGP(gp)">
-              <div class="gp-icon">{{ langIcon(gp.Spec.Language) }}</div>
-              <div class="gp-name">{{ gp.Metadata.Name }}</div>
-              <div class="gp-desc">{{ gp.Metadata.Description }}</div>
+              <div class="gp-icon">{{ langIcon(gp.spec.language) }}</div>
+              <div class="gp-name">{{ gp.metadata.name }}</div>
               <div class="gp-tags">
-                <span class="gp-tag">{{ gp.Spec.Language }}</span>
-                <span class="gp-tag">{{ gp.Spec.Type }}</span>
+                <span class="gp-tag">{{ gp.spec.language }}</span>
+                <span class="gp-tag">{{ gp.spec.type }}</span>
               </div>
             </div>
             <div class="gp-empty" v-if="!goldenPaths.length">
@@ -66,11 +65,7 @@
               <div class="summary-title">Ce que Symphony va créer :</div>
               <div class="summary-items">
                 <div class="summary-item">✅ Repo GitLab <code>{{ form.namespace || 'root' }}/{{ form.name || '...' }}</code></div>
-                <div class="summary-item">✅ Pipeline CI <code>{{ selectedGP.Spec.CITemplate }}</code></div>
-                <div class="summary-item">✅ Pipeline Build/Deploy</div>
-                <div class="summary-item" v-for="inc in selectedGP.Spec.Includes" :key="inc">
-                  ✅ {{ inc }}
-                </div>
+                <div class="summary-item">✅ Pipeline CI/CD</div>
               </div>
             </div>
 
@@ -88,15 +83,7 @@
           <div class="result-title">✅ Projet créé avec succès</div>
           <div class="result-row">
             <span>Repo</span>
-            <a :href="createResult.repo.WebURL" target="_blank">{{ createResult.repo.WebURL }} ↗</a>
-          </div>
-          <div class="result-row">
-            <span>Pipelines</span>
-            <a :href="createResult.pipelines" target="_blank">Voir les pipelines ↗</a>
-          </div>
-          <div class="result-row">
-            <span>Registry</span>
-            <code>{{ createResult.registry_url }}</code>
+            <a :href="createResult.repo.web_url" target="_blank">{{ createResult.repo.web_url }} ↗</a>
           </div>
           <div class="result-actions">
             <button class="btn-secondary" @click="triggerPipeline(createResult.repo)">
@@ -125,28 +112,30 @@
       <button class="tab-action" @click="reloadTemplates">↻ Recharger les templates</button>
     </div>
 
+    <div v-if="error" class="error-banner">⚠️ {{ error }}</div>
+
     <!-- Projets Symphony -->
     <div v-if="activeTab === 'symphony'">
       <div v-if="loadingProjects" class="state">Chargement...</div>
       <div class="projects-grid" v-else>
-        <div class="project-card" v-for="p in symphonyProjects" :key="p.ID">
+        <div class="project-card" v-for="p in symphonyProjects" :key="p.id">
           <div class="project-header">
-            <span class="project-name">{{ p.Name }}</span>
-            <span class="lang-badge">{{ langIcon(p.Language) }} {{ p.Language }}</span>
+            <span class="project-name">{{ p.name }}</span>
+            <span class="lang-badge">{{ langIcon(p.language) }} {{ p.language }}</span>
           </div>
-          <div class="project-desc">{{ p.Description || 'Pas de description' }}</div>
+          <div class="project-desc">{{ p.description || 'Pas de description' }}</div>
           <div class="project-meta">
-            <span>📁 {{ p.RepoPath }}</span>
-            <span>🔌 :{{ p.Port }}</span>
+            <span>📁 {{ p.repo_path }}</span>
+            <span>🔌 :{{ p.port }}</span>
           </div>
           <div class="project-footer">
-            <a :href="p.RepoURL" target="_blank" class="btn-ghost">GitLab ↗</a>
-            <button class="btn-ghost" @click="triggerPipelineByPath(p.RepoPath)">▶ Pipeline</button>
+            <a :href="p.repo_url" target="_blank" class="btn-ghost">GitLab ↗</a>
+            <button class="btn-ghost" @click="triggerPipelineByPath(p.repo_path)">▶ Pipeline</button>
           </div>
-          <div class="pipeline-status" v-if="repoPipelines[p.RepoPath]">
-            <span>Pipeline #{{ repoPipelines[p.RepoPath].id }}</span>
-            <span :class="['status-badge', repoPipelines[p.RepoPath].status]">
-              {{ repoPipelines[p.RepoPath].status }}
+          <div class="pipeline-status" v-if="repoPipelines[p.repo_path]">
+            <span>Pipeline #{{ repoPipelines[p.repo_path].id }}</span>
+            <span :class="['status-badge', repoPipelines[p.repo_path].status]">
+              {{ repoPipelines[p.repo_path].status }}
             </span>
           </div>
         </div>
@@ -160,19 +149,19 @@
     <div v-if="activeTab === 'all'">
       <div v-if="loadingRepos" class="state">Chargement...</div>
       <div class="projects-grid" v-else>
-        <div class="project-card" v-for="repo in repos" :key="repo.Path">
+        <div class="project-card" v-for="repo in repos" :key="repo.path">
           <div class="project-header">
-            <span class="project-name">{{ repo.Name }}</span>
+            <span class="project-name">{{ repo.name }}</span>
           </div>
-          <div class="project-meta"><span>📁 {{ repo.Path }}</span></div>
+          <div class="project-meta"><span>📁 {{ repo.path }}</span></div>
           <div class="project-footer">
-            <a :href="repo.WebURL" target="_blank" class="btn-ghost">GitLab ↗</a>
-            <button class="btn-ghost" @click="triggerPipelineByPath(repo.Path)">▶ Pipeline</button>
+            <a :href="repo.web_url" target="_blank" class="btn-ghost">GitLab ↗</a>
+            <button class="btn-ghost" @click="triggerPipelineByPath(repo.path)">▶ Pipeline</button>
           </div>
-          <div class="pipeline-status" v-if="repoPipelines[repo.Path]">
-            <span>Pipeline #{{ repoPipelines[repo.Path].id }}</span>
-            <span :class="['status-badge', repoPipelines[repo.Path].status]">
-              {{ repoPipelines[repo.Path].status }}
+          <div class="pipeline-status" v-if="repoPipelines[repo.path]">
+            <span>Pipeline #{{ repoPipelines[repo.path].id }}</span>
+            <span :class="['status-badge', repoPipelines[repo.path].status]">
+              {{ repoPipelines[repo.path].status }}
             </span>
           </div>
         </div>
@@ -202,6 +191,7 @@ const pipelineID = ref(null)
 const pipelineStatus = ref(null)
 const repoPipelines = ref({})
 const nameError = ref('')
+const error = ref(null)
 
 const form = ref({
   name: '', description: '', namespace: '', port: 8080,
@@ -235,8 +225,11 @@ async function loadGoldenPaths() {
   try {
     const { data } = await api.getGoldenPaths()
     goldenPaths.value = data || []
-  } catch { goldenPaths.value = [] }
-  finally { loadingGP.value = false }
+    error.value = null
+  } catch (e) {
+    goldenPaths.value = []
+    error.value = e.response?.data?.error || e.message
+  } finally { loadingGP.value = false }
 }
 
 async function loadProjects() {
@@ -244,8 +237,11 @@ async function loadProjects() {
   try {
     const { data } = await api.listProjects()
     symphonyProjects.value = data || []
-  } catch { symphonyProjects.value = [] }
-  finally { loadingProjects.value = false }
+    error.value = null
+  } catch (e) {
+    symphonyProjects.value = []
+    error.value = e.response?.data?.error || e.message
+  } finally { loadingProjects.value = false }
 }
 
 async function loadRepos() {
@@ -253,8 +249,11 @@ async function loadRepos() {
   try {
     const { data } = await api.listRepos()
     repos.value = data || []
-  } catch { repos.value = [] }
-  finally { loadingRepos.value = false }
+    error.value = null
+  } catch (e) {
+    repos.value = []
+    error.value = e.response?.data?.error || e.message
+  } finally { loadingRepos.value = false }
 }
 
 async function createProject() {
@@ -264,8 +263,8 @@ async function createProject() {
   try {
     const payload = {
       ...form.value,
-      language: selectedGP.value.Spec.Language,
-      type: selectedGP.value.Spec.Type,
+      language: selectedGP.value.spec.language,
+      type: selectedGP.value.spec.type,
     }
     const { data } = await api.createProject(payload)
     createResult.value = data
@@ -278,10 +277,10 @@ async function createProject() {
 
 async function triggerPipeline(repo) {
   try {
-    const { data } = await api.triggerPipeline(repo.Path, 'main', {})
+    const { data } = await api.triggerPipeline(repo.path, 'main', {})
     pipelineID.value = data.pipeline_id
     pipelineStatus.value = 'pending'
-    pollStatus(repo.Path, data.pipeline_id)
+    pollStatus(repo.path, data.pipeline_id)
   } catch (e) {
     alert('Erreur: ' + (e.response?.data?.error || e.message))
   }
@@ -389,6 +388,7 @@ h3 { font-size: 17px; font-weight: 700; margin-bottom: 20px; }
 .tab.active { color: #667eea; border-bottom-color: #667eea; font-weight: 600; }
 .tab-action { margin-left: auto; padding: 6px 12px; background: white; border: 1px solid #e2e2e2; border-radius: 6px; cursor: pointer; font-size: 13px; color: #666; }
 .state { color: #888; padding: 40px; text-align: center; }
+.error-banner { background: #fff5f5; border: 1px solid #feb2b2; color: #c53030; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 14px; }
 .projects-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
 .project-card { background: white; border: 1px solid #e2e2e2; border-radius: 12px; padding: 18px; }
 .project-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
