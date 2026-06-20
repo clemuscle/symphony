@@ -3,18 +3,18 @@ package database
 import "time"
 
 type Project struct {
-	ID          int
-	Name        string
-	Description string
-	Language    string
-	Type        string
-	Port        int
-	Namespace   string
-	RepoURL     string
-	RepoPath    string
-	RegistryURL string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          int       `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Language    string    `json:"language"`
+	Type        string    `json:"type"`
+	Port        int       `json:"port"`
+	Namespace   string    `json:"namespace"`
+	RepoURL     string    `json:"repo_url"`
+	RepoPath    string    `json:"repo_path"`
+	RegistryURL string    `json:"registry_url"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func (db *DB) CreateProject(p *Project) error {

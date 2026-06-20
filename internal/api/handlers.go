@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -59,7 +61,33 @@ func (s *Server) triggerAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var inputs map[string]any
-	json.NewDecoder(r.Body).Decode(&inputs)
+	if err := json.NewDecoder(r.Body).Decode(&inputs); err != nil && err != io.EOF {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+
+	for _, in := range action.Inputs {
+		val, ok := inputs[in.ID]
+		if !ok {
+			continue
+		}
+		n, isNumber := toInt(val)
+		if !isNumber {
+			continue
+		}
+		if in.Min != nil && n < *in.Min {
+			respond(w, http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("%s doit être supérieur ou égal à %d (reçu: %d)", in.ID, *in.Min, n),
+			})
+			return
+		}
+		if in.Max != nil && n > *in.Max {
+			respond(w, http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("%s doit être inférieur ou égal à %d (reçu: %d)", in.ID, *in.Max, n),
+			})
+			return
+		}
+	}
 
 	payload := map[string]any{
 		"service":   svcName,
@@ -94,7 +122,7 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listRepos(w http.ResponseWriter, r *http.Request) {
 	repos, err := s.scm.ListRepos()
 	if err != nil {
-		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		respond(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
 	respond(w, http.StatusOK, repos)
@@ -115,7 +143,7 @@ func (s *Server) triggerPipelineHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	id, err := s.ci.TriggerPipeline(req.ProjectPath, req.Ref, req.Vars)
 	if err != nil {
-		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		respond(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -140,10 +168,15 @@ func (s *Server) getPipelineStatusHandler(w http.ResponseWriter, r *http.Request
 	}
 	status, err := s.ci.GetPipelineStatus(projectPath, pipelineID)
 	if err != nil {
+		respond(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	err = s.db.UpdatePipelineStatus(pipelineID, status)
+	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	s.db.UpdatePipelineStatus(pipelineID, status)
+	s.db.Log("update_pipeline_status", projectPath, "pipeline "+pipelineID+" -> "+status, "system")
 	respond(w, http.StatusOK, map[string]string{"status": status})
 }
 
@@ -201,9 +234,38 @@ func respond(w http.ResponseWriter, code int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+// toInt tente de convertir une valeur décodée depuis JSON (typiquement
+// float64 pour un nombre) en int. Retourne false si la valeur n'est pas
+// numérique.
+func toInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case float64:
+		return int(n), true
+	case int:
+		return n, true
+	case json.Number:
+		i, err := n.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return int(i), true
+	default:
+		return 0, false
+	}
+}
+
+const defaultAllowedOrigin = "http://localhost:5173"
+
+func allowedOrigin() string {
+	if origin := os.Getenv("ALLOWED_ORIGIN"); origin != "" {
+		return origin
+	}
+	return defaultAllowedOrigin
+}
+
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin())
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if r.Method == http.MethodOptions {

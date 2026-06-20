@@ -3,12 +3,12 @@ package database
 import "time"
 
 type AuditEntry struct {
-	ID        int
-	Action    string
-	Resource  string
-	Details   string
-	UserID    string
-	CreatedAt time.Time
+	ID        int       `json:"id"`
+	Action    string    `json:"action"`
+	Resource  string    `json:"resource"`
+	Details   string    `json:"details"`
+	UserID    string    `json:"user_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (db *DB) Log(action, resource, details, userID string) error {
