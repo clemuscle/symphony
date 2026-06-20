@@ -13,9 +13,23 @@ func (db *DB) Migrate() error {
 		repo_url    VARCHAR(500),
 		repo_path   VARCHAR(500),
 		registry_url VARCHAR(500),
+		status      VARCHAR(50) NOT NULL DEFAULT 'provisioning',
 		created_at  TIMESTAMP DEFAULT NOW(),
 		updated_at  TIMESTAMP DEFAULT NOW()
 	);
+	ALTER TABLE projects ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'provisioning';
+
+	CREATE TABLE IF NOT EXISTS provisioning_steps (
+		id           SERIAL PRIMARY KEY,
+		project_name VARCHAR(255) NOT NULL,
+		step         VARCHAR(50) NOT NULL,
+		status       VARCHAR(50) NOT NULL DEFAULT 'pending',
+		error_detail TEXT,
+		created_at   TIMESTAMP DEFAULT NOW(),
+		updated_at   TIMESTAMP DEFAULT NOW(),
+		UNIQUE (project_name, step)
+	);
+	CREATE INDEX IF NOT EXISTS idx_provisioning_steps_project_name ON provisioning_steps (project_name);
 
 	CREATE TABLE IF NOT EXISTS pipelines (
 		id           SERIAL PRIMARY KEY,
