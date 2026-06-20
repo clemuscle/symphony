@@ -106,20 +106,27 @@ les deux occurrences ensemble.
 
 ## Sécurité
 
-### Secrets réels commités dans `.env`, aucun `.gitignore`
-**Depuis** : audit architecture-guardian (2026-06-20).
+### Secrets commités dans `.env`, aucun `.gitignore`
+**Depuis** : audit architecture-guardian (2026-06-20). Sévérité
+revue à la baisse (2026-06-20) après clarification utilisateur.
 **Où** : `.env` à la racine du repo — **tracké par git** (confirmé via
 `git ls-files`) ; aucun `.gitignore` n'existe à la racine du projet.
-**Piège** : le fichier contient des credentials réels en clair :
+**Piège** : le fichier contient des credentials en clair :
 `GITLAB_TOKEN`, `GITLAB_RUNNER_TOKEN`, `DB_PASSWORD=symphony123`, et
 `SYMPHONY_TOKEN` qui est **identique à `GITLAB_TOKEN`** — donc aucune
-séparation de scope, un seul token tout-puissant utilisé partout. Tout
-token présent dans l'historique git doit être considéré comme
-compromis, pas seulement "à ne pas réutiliser".
-**Statut** : non résolu — à traiter en urgence : révoquer/régénérer les
-3 tokens GitLab et le mot de passe DB, purger `.env` du suivi git et de
-l'historique, ajouter un `.gitignore` racine, fournir un `.env.example`
-sans valeurs réelles.
+séparation de scope, un seul token tout-puissant utilisé partout.
+**Nuance (confirmée par l'utilisateur)** : `GITLAB_URL=
+http://gitlab.local:8929` et `DB_HOST=localhost` montrent que ce sont
+des tokens/mots de passe **temporaires sur des instances locales**, non
+joignables depuis l'extérieur — exploitabilité réelle faible
+aujourd'hui, pas un incident actif. Le risque n'est pas "ces credentials
+précis sont dangereux maintenant", mais le **pattern** : sans
+`.gitignore`, le prochain token réel/production suivant le même chemin
+fuitera de la même façon, silencieusement.
+**Statut** : non résolu — pas urgent en l'état (pas de credential
+exploitable à distance), mais à corriger avant qu'un vrai secret de
+prod transite par ce même `.env` : ajouter un `.gitignore` racine,
+sortir `.env` du suivi git, fournir un `.env.example` sans valeurs.
 
 ### Aucune authentification — OIDC absent malgré la règle "non négociable dès le MVP"
 **Depuis** : audit architecture-guardian (2026-06-20).
