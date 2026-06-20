@@ -22,11 +22,23 @@ func (db *DB) CreatePipeline(p *Pipeline) error {
 	).Scan(&p.ID, &p.CreatedAt)
 }
 
-func (db *DB) UpdatePipelineStatus(pipelineID, status string) error {
-	_, err := db.Exec(`
+// UpdatePipelineStatus tente de transitionner le pipeline vers le statut
+// donné. La mise à jour est ignorée (pas une erreur) si le pipeline est
+// déjà dans un état final (success/failed) : une notification de statut
+// tardive ou désordonnée ne doit jamais rouvrir une tâche déjà terminée.
+// applied indique si la transition a effectivement été appliquée.
+func (db *DB) UpdatePipelineStatus(pipelineID, status string) (applied bool, err error) {
+	res, err := db.Exec(`
 		UPDATE pipelines SET status=$1, updated_at=NOW()
-		WHERE pipeline_id=$2`, status, pipelineID)
-	return err
+		WHERE pipeline_id=$2 AND status NOT IN ('success', 'failed')`, status, pipelineID)
+	if err != nil {
+		return false, err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rows > 0, nil
 }
 
 func (db *DB) ListPipelines(projectName string) ([]Pipeline, error) {

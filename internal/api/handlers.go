@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -171,12 +172,16 @@ func (s *Server) getPipelineStatusHandler(w http.ResponseWriter, r *http.Request
 		respond(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	err = s.db.UpdatePipelineStatus(pipelineID, status)
+	applied, err := s.db.UpdatePipelineStatus(pipelineID, status)
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	s.db.Log("update_pipeline_status", projectPath, "pipeline "+pipelineID+" -> "+status, "system")
+	if applied {
+		s.db.Log("update_pipeline_status", projectPath, "pipeline "+pipelineID+" -> "+status, "system")
+	} else {
+		log.Printf("statut ignoré pour pipeline %s (déjà dans un état final): %s", pipelineID, status)
+	}
 	respond(w, http.StatusOK, map[string]string{"status": status})
 }
 
