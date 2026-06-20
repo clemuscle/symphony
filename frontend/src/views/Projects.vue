@@ -85,6 +85,14 @@
             <span>Repo</span>
             <a :href="createResult.repo.web_url" target="_blank">{{ createResult.repo.web_url }} ↗</a>
           </div>
+          <div class="result-row">
+            <span>Pipelines</span>
+            <a :href="createResult.pipelines" target="_blank">Voir les pipelines ↗</a>
+          </div>
+          <div class="result-row">
+            <span>Registry</span>
+            <code>{{ createResult.registry_url }}</code>
+          </div>
           <div class="result-actions">
             <button class="btn-secondary" @click="triggerPipeline(createResult.repo)">
               ▶ Déclencher le pipeline test
