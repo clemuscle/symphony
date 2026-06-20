@@ -5,21 +5,23 @@
         <h2>Déploiements</h2>
         <p class="subtitle">Containers Docker actifs sur cet environnement</p>
       </div>
-      <button class="btn-refresh" @click="load">↻ Rafraîchir</button>
+      <button class="btn-refresh" @click="load(true)">↻ Rafraîchir</button>
     </div>
+
+    <div v-if="error" class="error-banner">⚠️ {{ error }}</div>
 
     <div v-if="loading" class="state">Chargement...</div>
 
     <div class="grid" v-else>
-      <div class="deploy-card" v-for="d in deployments" :key="d.ID">
+      <div class="deploy-card" v-for="d in deployments" :key="d.id">
         <div class="deploy-header">
-          <span class="deploy-name">{{ d.ProjectName || d.ID }}</span>
-          <span :class="['status', d.Status]">{{ d.Status }}</span>
+          <span class="deploy-name">{{ d.project_name || d.id }}</span>
+          <span :class="['status', d.status]">{{ d.status }}</span>
         </div>
-        <div class="deploy-image">🐳 {{ d.Image }}</div>
-        <a v-if="d.URL" :href="d.URL" target="_blank" class="deploy-url">{{ d.URL }} ↗</a>
+        <div class="deploy-image">🐳 {{ d.image }}</div>
+        <a v-if="d.url" :href="d.url" target="_blank" class="deploy-url">{{ d.url }} ↗</a>
         <div class="deploy-footer">
-          <button class="btn-stop" @click="stop(d.ID)">⏹ Stop</button>
+          <button class="btn-stop" @click="stop(d.id)">⏹ Stop</button>
         </div>
       </div>
       <div class="empty" v-if="!deployments.length">
@@ -32,24 +34,37 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 
 const deployments = ref([])
 const loading = ref(true)
+const error = ref(null)
+let pollInterval = null
 
-onMounted(load)
+onMounted(() => {
+  load(true)
+  pollInterval = setInterval(load, 7000)
+})
 
-async function load() {
-  loading.value = true
-  try { const { data } = await api.listDeployments(); deployments.value = data || [] }
-  catch { deployments.value = [] }
-  finally { loading.value = false }
+onUnmounted(() => {
+  if (pollInterval) clearInterval(pollInterval)
+})
+
+async function load(isInitial = false) {
+  if (isInitial) loading.value = true
+  try {
+    const { data } = await api.listDeployments()
+    deployments.value = data || []
+    error.value = null
+  } catch (e) {
+    error.value = e.response?.data?.error || e.message
+  } finally { loading.value = false }
 }
 
 async function stop(id) {
   if (!confirm(`Stopper le container ${id} ?`)) return
-  try { await api.stopDeployment(id); await load() }
+  try { await api.stopDeployment(id); await load(true) }
   catch (e) { alert(e.response?.data?.error || e.message) }
 }
 </script>
@@ -60,6 +75,7 @@ h2 { font-size: 22px; font-weight: 700; }
 .subtitle { color: #888; font-size: 13px; margin-top: 4px; }
 .btn-refresh { padding: 8px 16px; background: white; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; font-size: 14px; }
 .state { color: #888; padding: 60px; text-align: center; }
+.error-banner { background: #fff5f5; border: 1px solid #feb2b2; color: #c53030; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 14px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
 .deploy-card { background: white; border: 1px solid #e2e2e2; border-radius: 12px; padding: 18px; }
 .deploy-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
