@@ -1,315 +1,421 @@
 <template>
-  <div>
-    <div class="page-header">
-      <div>
-        <h2>Catalogue de services</h2>
-        <p class="subtitle">{{ filtered.length }} service(s) — mis à jour automatiquement via GitOps</p>
+  <div class="catalogue-layout" :class="{ 'drawer-open': drawerOpen }">
+    <div class="content">
+      <div class="page-header">
+        <div>
+          <h2>Catalogue</h2>
+          <p class="subtitle">Choisis un golden path pour démarrer un nouveau projet</p>
+        </div>
       </div>
-      <div class="toolbar">
-        <input v-model="search" placeholder="🔍 Rechercher..." class="search" />
-        <select v-model="filterTier" class="filter">
-          <option value="">Tous les tiers</option>
-          <option value="critical">Critical</option>
-          <option value="standard">Standard</option>
-          <option value="internal">Internal</option>
-        </select>
-        <select v-model="filterLifecycle" class="filter">
-          <option value="">Tous les états</option>
-          <option value="production">Production</option>
-          <option value="staging">Staging</option>
-          <option value="deprecated">Deprecated</option>
-        </select>
+
+      <div v-if="error" class="error-banner">⚠️ {{ error }}</div>
+
+      <div v-if="loading" class="gp-grid">
+        <div class="gp-card skeleton" v-for="i in 4" :key="i"></div>
       </div>
-    </div>
 
-    <div v-if="error" class="error-banner">⚠️ {{ error }}</div>
+      <div v-else-if="!goldenPaths.length" class="empty">
+        <div class="empty-icon">📋</div>
+        <div class="empty-title">Aucun golden path disponible</div>
+        <div class="empty-sub">Configurez un dépôt de templates dans le wizard d'initialisation</div>
+      </div>
 
-    <div v-if="loading" class="state">Chargement...</div>
-    <div v-else-if="!services.length" class="state">
-      Aucun service dans <code>symphony-config/services/</code>
-    </div>
-
-    <div class="grid" v-else>
-      <div v-for="svc in filtered" :key="svc.metadata.name"
-        class="card" :class="{ active: selected?.metadata.name === svc.metadata.name }"
-        @click="select(svc)">
-
-        <div class="card-top">
-          <div class="card-name-row">
-            <span class="svc-name">{{ svc.metadata.name }}</span>
-            <span :class="['tier-badge', svc.metadata.tier]">
-              {{ tierIcon(svc.metadata.tier) }} {{ svc.metadata.tier || 'standard' }}
-            </span>
+      <div class="gp-grid" v-else>
+        <div
+          v-for="gp in goldenPaths"
+          :key="gp.metadata.name"
+          class="gp-card"
+          :class="{ selected: selectedGP?.metadata.name === gp.metadata.name }"
+          @click="openDrawer(gp)"
+        >
+          <div class="gp-icon">{{ langIcon(gp.spec.language) }}</div>
+          <div class="gp-info">
+            <div class="gp-name">{{ gp.metadata.name }}</div>
+            <div class="gp-desc">{{ gp.metadata.description || typeLabel(gp.spec.type) }}</div>
           </div>
-          <span :class="['lifecycle-badge', svc.metadata.lifecycle]">
-            {{ svc.metadata.lifecycle || 'production' }}
-          </span>
-        </div>
-
-        <div class="svc-meta">
-          <span>👤 {{ svc.metadata.owner }}</span>
-          <span v-if="svc.spec.language">{{ langIcon(svc.spec.language) }} {{ svc.spec.language }}</span>
-          <span v-if="svc.spec.version">v{{ svc.spec.version }}</span>
-        </div>
-
-        <div class="slo-row" v-if="svc.spec.slo?.availability">
-          <span class="slo-item">🟢 {{ svc.spec.slo.availability }}</span>
-          <span class="slo-item" v-if="svc.spec.slo.latency_p99">⚡ {{ svc.spec.slo.latency_p99 }}</span>
-        </div>
-
-        <div class="tags">
-          <span class="tag" v-for="t in svc.metadata.tags?.slice(0,3)" :key="t">{{ t }}</span>
+          <div class="gp-tags">
+            <span class="tag lang">{{ gp.spec.language }}</span>
+            <span class="tag type" v-if="gp.spec.type">{{ gp.spec.type }}</span>
+          </div>
+          <button class="btn-create" @click.stop="openDrawer(gp)">Créer un projet →</button>
         </div>
       </div>
     </div>
 
-    <!-- Panneau détail -->
-    <Transition name="slide">
-      <aside class="panel" v-if="selected">
-        <div class="panel-header">
+    <!-- Drawer de création -->
+    <Transition name="drawer">
+      <aside class="drawer" v-if="drawerOpen">
+        <div class="drawer-header">
           <div>
-            <h3>{{ selected.metadata.name }}</h3>
-            <div class="panel-badges">
-              <span :class="['tier-badge', selected.metadata.tier]">
-                {{ tierIcon(selected.metadata.tier) }} {{ selected.metadata.tier || 'standard' }}
-              </span>
-              <span :class="['lifecycle-badge', selected.metadata.lifecycle]">
-                {{ selected.metadata.lifecycle || 'production' }}
-              </span>
-            </div>
+            <div class="drawer-back" @click="closeDrawer">← Catalogue</div>
+            <h3>
+              <span class="drawer-icon">{{ langIcon(selectedGP?.spec.language) }}</span>
+              {{ selectedGP?.metadata.name }}
+            </h3>
           </div>
-          <button class="close" @click="selected = null">✕</button>
+          <button class="close-btn" @click="closeDrawer">✕</button>
         </div>
 
-        <!-- Team -->
-        <section>
-          <h4>Équipe</h4>
-          <div class="info-row">
-            <span>👤 Owner</span>
-            <strong>{{ selected.metadata.owner }}</strong>
-          </div>
-          <div class="info-row" v-if="selected.metadata.team?.slack">
-            <span>💬 Slack</span>
-            <code>{{ selected.metadata.team.slack }}</code>
-          </div>
-          <div class="info-row" v-if="selected.metadata.team?.email">
-            <span>📧 Email</span>
-            <a :href="'mailto:'+selected.metadata.team.email">{{ selected.metadata.team.email }}</a>
-          </div>
-        </section>
+        <div class="drawer-body">
+          <!-- Formulaire -->
+          <div v-if="!createResult" class="form-section">
+            <div class="section-label">Détails du projet</div>
 
-        <!-- Tech -->
-        <section v-if="selected.spec.language || selected.spec.version">
-          <h4>Stack technique</h4>
-          <div class="info-row" v-if="selected.spec.language">
-            <span>Langage</span>
-            <strong>{{ langIcon(selected.spec.language) }} {{ selected.spec.language }}</strong>
-          </div>
-          <div class="info-row" v-if="selected.spec.type">
-            <span>Type</span>
-            <strong>{{ selected.spec.type }}</strong>
-          </div>
-          <div class="info-row" v-if="selected.spec.version">
-            <span>Version</span>
-            <code>v{{ selected.spec.version }}</code>
-          </div>
-          <div class="info-row" v-if="selected.spec.registry">
-            <span>Registry</span>
-            <code>{{ selected.spec.registry }}</code>
-          </div>
-        </section>
-
-        <!-- SLO -->
-        <section v-if="selected.spec.slo?.availability">
-          <h4>SLO</h4>
-          <div class="slo-grid">
-            <div class="slo-card">
-              <div class="slo-value">{{ selected.spec.slo.availability }}</div>
-              <div class="slo-label">Disponibilité</div>
+            <div class="field">
+              <label>Nom <span class="req">*</span></label>
+              <input
+                v-model="form.name"
+                placeholder="mon-api"
+                @input="validateName"
+                :class="{ error: nameError }"
+              />
+              <span class="field-error" v-if="nameError">{{ nameError }}</span>
             </div>
-            <div class="slo-card" v-if="selected.spec.slo.latency_p99">
-              <div class="slo-value">{{ selected.spec.slo.latency_p99 }}</div>
-              <div class="slo-label">Latence p99</div>
+
+            <div class="field">
+              <label>Description</label>
+              <input v-model="form.description" placeholder="Courte description du projet" />
             </div>
-          </div>
-        </section>
 
-        <!-- Dépendances -->
-        <section v-if="selected.spec.dependencies?.length">
-          <h4>Dépendances</h4>
-          <div class="dep-item" v-for="dep in selected.spec.dependencies" :key="dep.service">
-            <span class="dep-type">{{ depIcon(dep.type) }} {{ dep.type }}</span>
-            <span class="dep-name">{{ dep.service }}</span>
-          </div>
-        </section>
-
-        <!-- Liens -->
-        <section v-if="selected.spec.links?.length">
-          <h4>Liens</h4>
-          <a v-for="l in selected.spec.links" :key="l.title"
-            :href="l.url" target="_blank" class="link-item">
-            {{ linkIcon(l.icon) }} {{ l.title }}
-            <span class="link-arrow">↗</span>
-          </a>
-        </section>
-
-        <!-- Actions -->
-        <section v-if="selected.spec.actions?.length">
-          <h4>Actions</h4>
-          <div v-for="action in selected.spec.actions" :key="action.name" class="action-block">
-            <div class="action-title">⚡ {{ action.name }}</div>
-            <div v-for="input in action.inputs" :key="input.id" class="field">
-              <label>{{ input.id }}</label>
-              <input v-if="input.type === 'integer'" type="number"
-                :min="input.min" :max="input.max"
-                v-model="vals[action.name + input.id]" />
-              <input v-else type="text"
-                v-model="vals[action.name + input.id]"
-                :placeholder="input.default || input.id" />
+            <div class="field">
+              <label>Namespace GitLab <span class="hint">(vide = racine)</span></label>
+              <input v-model="form.namespace" placeholder="mon-equipe" />
             </div>
-            <button class="btn" :disabled="busy[action.name]" @click="trigger(action)">
-              {{ busy[action.name] ? '⏳ Envoi...' : 'Déclencher' }}
+
+            <div class="field">
+              <label>Port applicatif</label>
+              <input v-model.number="form.port" type="number" placeholder="8080" />
+            </div>
+
+            <div class="summary">
+              <div class="summary-title">Symphony va créer :</div>
+              <div class="summary-item">📁 Repo <code>{{ form.namespace || 'root' }}/{{ form.name || '…' }}</code></div>
+              <div class="summary-item">⚙️ Pipeline CI/CD (test + build)</div>
+              <div class="summary-item">📦 Entrée registre</div>
+            </div>
+
+            <div v-if="createError" class="create-error">❌ {{ createError }}</div>
+
+            <button
+              class="btn-submit"
+              :disabled="creating || !form.name || !!nameError"
+              @click="createProject"
+            >
+              {{ creating ? '⏳ Création en cours…' : '🚀 Créer le projet' }}
             </button>
-            <div v-if="feedback[action.name]"
-              :class="['feedback', feedback[action.name].ok ? 'ok' : 'err']">
-              {{ feedback[action.name].msg }}
+          </div>
+
+          <!-- Résultat -->
+          <div v-else class="result-section">
+            <div :class="['result-banner', createResult.status === 'degraded' ? 'warn' : 'ok']">
+              {{ createResult.status === 'degraded' ? '⚠️ Projet créé, mais incomplet' : '✅ Projet créé avec succès' }}
+            </div>
+
+            <div class="result-links">
+              <a :href="createResult.repo?.web_url" target="_blank" class="result-link">
+                <span>📁 Dépôt GitLab</span><span class="link-arrow">↗</span>
+              </a>
+              <a :href="createResult.pipelines" target="_blank" class="result-link">
+                <span>⚙️ Pipelines</span><span class="link-arrow">↗</span>
+              </a>
+            </div>
+
+            <div class="steps-list">
+              <div class="step-item" v-for="st in createResult.steps" :key="st.step">
+                <span :class="['step-icon', st.status]">
+                  {{ st.status === 'success' ? '✅' : '❌' }}
+                </span>
+                <span class="step-name">{{ st.step }}</span>
+                <span class="step-error" v-if="st.error">{{ st.error }}</span>
+              </div>
+            </div>
+
+            <div class="result-actions">
+              <button class="btn-secondary" @click="goToProjects">Voir mes projets</button>
+              <button class="btn-text" @click="resetForm">Créer un autre projet</button>
             </div>
           </div>
-        </section>
+        </div>
       </aside>
     </Transition>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { api } from '../api'
 
-const services = ref([])
+const router = useRouter()
+const goldenPaths = ref([])
 const loading = ref(true)
 const error = ref(null)
-const search = ref('')
-const filterTier = ref('')
-const filterLifecycle = ref('')
-const selected = ref(null)
-const vals = ref({})
-const busy = ref({})
-const feedback = ref({})
 
-const filtered = computed(() =>
-  services.value.filter(s => {
-    const q = search.value.toLowerCase()
-    const matchSearch = !q || [
-      s.metadata.name,
-      s.metadata.owner,
-      s.spec.language,
-      ...(s.metadata.tags || [])
-    ].some(v => v?.toLowerCase().includes(q))
+const drawerOpen = ref(false)
+const selectedGP = ref(null)
+const creating = ref(false)
+const createResult = ref(null)
+const createError = ref(null)
+const nameError = ref('')
 
-    const matchTier = !filterTier.value || s.metadata.tier === filterTier.value
-    const matchLifecycle = !filterLifecycle.value || s.metadata.lifecycle === filterLifecycle.value
+const form = ref({ name: '', description: '', namespace: '', port: 8080 })
 
-    return matchSearch && matchTier && matchLifecycle
-  })
-)
-
-const tierIcon = (tier) => ({ critical: '🔴', standard: '🟡', internal: '⚪' })[tier] || '🟡'
 const langIcon = (lang) => ({ go: '🐹', python: '🐍', node: '💚', java: '☕' })[lang] || '📦'
-const depIcon = (type) => ({ database: '🗄️', cache: '⚡', api: '🔌', queue: '📨' })[type] || '📦'
-const linkIcon = (icon) => ({ monitoring: '📊', errors: '🐛', docs: '📖', code: '💻', ci: '⚙️', web: '🌐', docker: '🐳' })[icon] || '🔗'
-
-function select(svc) {
-  selected.value = selected.value?.metadata.name === svc.metadata.name ? null : svc
-}
+const typeLabel = (type) => ({ rest_api: 'REST API', cli: 'CLI', worker: 'Worker', webapp: 'Web App' })[type] || type || ''
 
 onMounted(async () => {
   try {
-    const { data } = await api.getServices()
-    services.value = data || []
-    error.value = null
+    const { data } = await api.getGoldenPaths()
+    goldenPaths.value = data || []
   } catch (e) {
-    services.value = []
     error.value = e.response?.data?.error || e.message
-  } finally { loading.value = false }
+  } finally {
+    loading.value = false
+  }
 })
 
-async function trigger(action) {
-  const inputs = {}
-  action.inputs?.forEach(i => { inputs[i.id] = vals.value[action.name + i.id] })
-  busy.value[action.name] = true
-  feedback.value[action.name] = null
+function openDrawer(gp) {
+  selectedGP.value = gp
+  drawerOpen.value = true
+  createResult.value = null
+  createError.value = null
+  form.value = { name: '', description: '', namespace: '', port: 8080 }
+}
+
+function closeDrawer() {
+  drawerOpen.value = false
+  selectedGP.value = null
+}
+
+function validateName() {
+  const val = form.value.name
+  if (!val) { nameError.value = ''; return }
+  nameError.value = /^[a-z0-9-]+$/.test(val) ? '' : 'Minuscules, chiffres et tirets uniquement'
+}
+
+async function createProject() {
+  creating.value = true
+  createError.value = null
   try {
-    await api.triggerAction(selected.value.metadata.name, action.name, inputs)
-    feedback.value[action.name] = { ok: true, msg: '✅ Action déclenchée' }
+    const { data } = await api.createProject({
+      ...form.value,
+      language: selectedGP.value.spec.language,
+      type: selectedGP.value.spec.type,
+    })
+    createResult.value = data
   } catch (e) {
-    feedback.value[action.name] = { ok: false, msg: '❌ ' + (e.response?.data?.error || e.message) }
-  } finally { busy.value[action.name] = false }
+    createError.value = e.response?.data?.error || e.message
+  } finally {
+    creating.value = false
+  }
+}
+
+function goToProjects() {
+  router.push('/projects')
+}
+
+function resetForm() {
+  createResult.value = null
+  form.value = { name: '', description: '', namespace: '', port: 8080 }
 }
 </script>
 
 <style scoped>
-.page-header { margin-bottom: 24px; }
-h2 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
-.subtitle { color: #888; font-size: 13px; margin-bottom: 14px; }
-.toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.search { flex: 1; min-width: 200px; padding: 9px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; background: white; }
-.filter { padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; background: white; cursor: pointer; }
-.state { text-align: center; padding: 60px; color: #888; }
-.error-banner { background: #fff5f5; border: 1px solid #feb2b2; color: #c53030; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 14px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
-.card { background: white; border: 1px solid #e2e2e2; border-radius: 12px; padding: 18px; cursor: pointer; transition: all .15s; }
-.card:hover { border-color: #667eea; transform: translateY(-1px); box-shadow: 0 4px 12px #667eea15; }
-.card.active { border-color: #667eea; box-shadow: 0 0 0 2px #667eea33; }
-.card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-.card-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.svc-name { font-weight: 700; font-size: 15px; }
-.tier-badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 500; }
-.tier-badge.critical { background: #fff5f5; color: #c53030; }
-.tier-badge.standard { background: #fffbeb; color: #92400e; }
-.tier-badge.internal { background: #f4f4f4; color: #666; }
-.lifecycle-badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; }
-.lifecycle-badge.production { background: #f0fff4; color: #276749; }
-.lifecycle-badge.staging { background: #ebf8ff; color: #2b6cb0; }
-.lifecycle-badge.deprecated { background: #f4f4f4; color: #999; text-decoration: line-through; }
-.svc-meta { display: flex; gap: 10px; font-size: 13px; color: #666; margin-bottom: 8px; flex-wrap: wrap; }
-.slo-row { display: flex; gap: 10px; margin-bottom: 8px; }
-.slo-item { font-size: 12px; color: #276749; background: #f0fff4; padding: 2px 8px; border-radius: 20px; }
-.tags { display: flex; gap: 6px; flex-wrap: wrap; }
-.tag { font-size: 11px; background: #f4f4f4; padding: 2px 8px; border-radius: 20px; color: #555; }
+.catalogue-layout { position: relative; }
+.content { transition: margin-right .3s ease; }
+.catalogue-layout.drawer-open .content { margin-right: 440px; }
 
-/* Panel */
-.panel { position: fixed; right: 0; top: 56px; width: 400px; height: calc(100vh - 56px); background: white; border-left: 1px solid #e2e2e2; padding: 24px; overflow-y: auto; box-shadow: -8px 0 24px #0001; z-index: 50; }
-.panel-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.panel-header h3 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
-.panel-badges { display: flex; gap: 6px; }
-.close { background: none; border: none; font-size: 20px; cursor: pointer; color: #aaa; }
-section { margin-bottom: 22px; padding-bottom: 22px; border-bottom: 1px solid #f0f0f0; }
-section:last-child { border-bottom: none; }
-h4 { font-size: 11px; text-transform: uppercase; color: #aaa; letter-spacing: .08em; margin-bottom: 10px; font-weight: 600; }
-.info-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 14px; }
-.info-row span { color: #888; }
-.info-row a { color: #667eea; text-decoration: none; font-size: 13px; }
-.info-row code { font-size: 12px; background: #f4f4f4; padding: 2px 6px; border-radius: 4px; }
-.slo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.slo-card { background: #f0fff4; border-radius: 10px; padding: 12px; text-align: center; }
-.slo-value { font-size: 18px; font-weight: 700; color: #276749; }
-.slo-label { font-size: 11px; color: #888; margin-top: 2px; }
-.dep-item { display: flex; justify-content: space-between; padding: 8px 12px; background: #f8f9fb; border-radius: 8px; margin-bottom: 6px; font-size: 14px; }
-.dep-type { color: #888; font-size: 13px; }
-.dep-name { font-weight: 500; }
-.link-item { display: flex; justify-content: space-between; align-items: center; color: #667eea; text-decoration: none; padding: 10px 12px; border-radius: 8px; font-size: 14px; margin-bottom: 4px; transition: background .1s; }
-.link-item:hover { background: #f0f4ff; }
+.page-header { margin-bottom: 28px; }
+h2 { font-size: 22px; font-weight: 700; }
+.subtitle { color: #888; font-size: 13px; margin-top: 4px; }
+
+.error-banner { background: #fff5f5; border: 1px solid #feb2b2; color: #c53030; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 14px; }
+
+.gp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+
+.gp-card {
+  background: white;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 22px;
+  cursor: pointer;
+  transition: all .15s;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gp-card:hover { border-color: #667eea; box-shadow: 0 4px 16px #667eea18; transform: translateY(-2px); }
+.gp-card.selected { border-color: #667eea; box-shadow: 0 0 0 3px #667eea22; }
+.gp-icon { font-size: 32px; }
+.gp-info { flex: 1; }
+.gp-name { font-weight: 700; font-size: 15px; margin-bottom: 3px; }
+.gp-desc { font-size: 13px; color: #888; line-height: 1.4; }
+.gp-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.tag { font-size: 11px; padding: 2px 9px; border-radius: 20px; font-weight: 500; }
+.tag.lang { background: #eef2ff; color: #667eea; }
+.tag.type { background: #f4f4f4; color: #666; }
+.btn-create {
+  margin-top: 4px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+  text-align: center;
+}
+.btn-create:hover { background: #5a6fd6; }
+
+/* Skeleton */
+.gp-card.skeleton {
+  min-height: 180px;
+  background: linear-gradient(90deg, #f0f2f5 25%, #e8eaf0 50%, #f0f2f5 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border: none;
+  cursor: default;
+  pointer-events: none;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* Empty state */
+.empty { text-align: center; padding: 80px 40px; color: #888; }
+.empty-icon { font-size: 48px; margin-bottom: 16px; }
+.empty-title { font-size: 16px; font-weight: 600; color: #444; margin-bottom: 6px; }
+.empty-sub { font-size: 13px; }
+
+/* Drawer */
+.drawer {
+  position: fixed;
+  right: 0;
+  top: 56px;
+  width: 420px;
+  height: calc(100vh - 56px);
+  background: white;
+  border-left: 1px solid #e5e7eb;
+  box-shadow: -8px 0 32px rgba(0,0,0,.06);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.drawer-enter-active, .drawer-leave-active { transition: transform .25s ease; }
+.drawer-enter-from, .drawer-leave-to { transform: translateX(100%); }
+
+.drawer-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+.drawer-back { font-size: 12px; color: #888; cursor: pointer; margin-bottom: 6px; }
+.drawer-back:hover { color: #667eea; }
+.drawer-header h3 { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.drawer-icon { font-size: 22px; }
+.close-btn { background: none; border: none; font-size: 18px; cursor: pointer; color: #aaa; padding: 4px; }
+.close-btn:hover { color: #333; }
+
+.drawer-body { flex: 1; overflow-y: auto; padding: 24px; }
+
+.section-label { font-size: 11px; font-weight: 700; color: #aaa; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 14px; }
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 13px; font-weight: 600; color: #444; margin-bottom: 5px; }
+.field .hint { font-weight: 400; color: #aaa; }
+.req { color: #e53e3e; }
+.field input {
+  width: 100%;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color .15s;
+}
+.field input:focus { border-color: #667eea; }
+.field input.error { border-color: #e53e3e; }
+.field-error { font-size: 12px; color: #e53e3e; margin-top: 4px; }
+
+.summary {
+  background: #f8f9fb;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin: 18px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.summary-title { font-size: 12px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+.summary-item { font-size: 13px; color: #444; }
+.summary-item code { font-size: 12px; background: #eef2ff; color: #667eea; padding: 1px 6px; border-radius: 4px; }
+
+.create-error { background: #fff5f5; border: 1px solid #fed7d7; border-radius: 8px; padding: 10px 14px; color: #c53030; font-size: 13px; margin-bottom: 14px; }
+
+.btn-submit {
+  width: 100%;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-submit:hover { background: #5a6fd6; }
+.btn-submit:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Résultat */
+.result-banner {
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: 18px;
+}
+.result-banner.ok { background: #f0fff4; color: #276749; }
+.result-banner.warn { background: #fffbeb; color: #92400e; }
+
+.result-links { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+.result-link {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #667eea;
+  text-decoration: none;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  border: 1px solid #e5e7eb;
+  transition: background .15s;
+}
+.result-link:hover { background: #f0f4ff; }
 .link-arrow { color: #aaa; }
-.action-block { background: #f8f9fb; border-radius: 10px; padding: 14px; margin-bottom: 10px; }
-.action-title { font-weight: 600; font-size: 14px; margin-bottom: 10px; }
-.field { margin-bottom: 8px; }
-.field label { display: block; font-size: 12px; color: #888; margin-bottom: 4px; font-weight: 500; }
-.field input { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
-.btn { width: 100%; padding: 9px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; margin-top: 6px; }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
-.feedback { margin-top: 8px; padding: 8px 12px; border-radius: 6px; font-size: 13px; }
-.feedback.ok { background: #f0fff4; color: #276749; }
-.feedback.err { background: #fff5f5; color: #c53030; }
-.slide-enter-active, .slide-leave-active { transition: transform .2s ease, opacity .2s; }
-.slide-enter-from, .slide-leave-to { transform: translateX(20px); opacity: 0; }
+
+.steps-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 22px; }
+.step-item { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 8px 12px; background: #f8f9fb; border-radius: 8px; }
+.step-name { flex: 1; color: #555; }
+.step-error { font-size: 12px; color: #c53030; }
+
+.result-actions { display: flex; flex-direction: column; gap: 10px; }
+.btn-secondary {
+  width: 100%;
+  background: white;
+  border: 1.5px solid #667eea;
+  color: #667eea;
+  border-radius: 10px;
+  padding: 11px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-secondary:hover { background: #f0f4ff; }
+.btn-text { background: none; border: none; color: #888; font-size: 13px; cursor: pointer; text-align: center; }
+.btn-text:hover { color: #667eea; }
 </style>
