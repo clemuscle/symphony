@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
 
 	"github.com/joho/godotenv"
 	"github.com/yourorg/symphony/internal/api"
+	"github.com/yourorg/symphony/internal/auth"
 	"github.com/yourorg/symphony/internal/catalog"
 	"github.com/yourorg/symphony/internal/database"
 	"github.com/yourorg/symphony/internal/gitops"
@@ -79,9 +81,27 @@ func main() {
 		log.Printf("✅ %d golden path(s) chargé(s)", len(tmplLoader.GetGoldenPaths()))
 	}
 
+	// Auth OIDC — optionnel en dev (OIDC_ISSUER absent = avertissement + routes non protégées)
+	var authProvider *auth.Provider
+	if issuer := os.Getenv("OIDC_ISSUER"); issuer != "" {
+		p, err := auth.New(context.Background(), auth.Config{
+			Issuer:       issuer,
+			ClientID:     os.Getenv("OIDC_CLIENT_ID"),
+			ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
+			RedirectURL:  getEnv("OIDC_REDIRECT_URL", "http://localhost:8090/auth/callback"),
+		})
+		if err != nil {
+			log.Fatalf("auth OIDC: %v", err)
+		}
+		log.Printf("✅ Auth OIDC configurée (issuer: %s)", issuer)
+		authProvider = p
+	} else {
+		log.Println("⚠️  OIDC_ISSUER absent — auth désactivée (dev uniquement)")
+	}
+
 	addr := ":" + getEnv("PORT", "8080")
 	log.Printf("🎼 Symphony démarré sur %s", addr)
-	log.Fatal(http.ListenAndServe(addr, api.NewServer(store, db, scm, ci, registry, deploy, tmplLoader)))
+	log.Fatal(http.ListenAndServe(addr, api.NewServer(store, db, scm, ci, registry, deploy, tmplLoader, authProvider)))
 }
 
 func getEnv(key, fallback string) string {

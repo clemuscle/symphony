@@ -3,6 +3,7 @@ package api
 import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/yourorg/symphony/internal/auth"
 	"github.com/yourorg/symphony/internal/catalog"
 	"github.com/yourorg/symphony/internal/database"
 	"github.com/yourorg/symphony/internal/providers"
@@ -17,6 +18,7 @@ type Server struct {
 	registry providers.RegistryProvider
 	deploy   providers.DeployProvider
 	tmpl     *templates.Loader
+	auth     *auth.Provider // nil = auth désactivé (dev sans OIDC_ISSUER)
 }
 
 func NewServer(
@@ -27,8 +29,9 @@ func NewServer(
 	registry providers.RegistryProvider,
 	deploy providers.DeployProvider,
 	tmpl *templates.Loader,
+	authProvider *auth.Provider,
 ) *chi.Mux {
-	s := &Server{store: store, db: db, scm: scm, ci: ci, registry: registry, deploy: deploy, tmpl: tmpl}
+	s := &Server{store: store, db: db, scm: scm, ci: ci, registry: registry, deploy: deploy, tmpl: tmpl, auth: authProvider}
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -36,32 +39,48 @@ func NewServer(
 
 	r.Get("/healthz", s.healthz)
 
-	// Catalogue
-	r.Get("/api/v1/services", s.listServices)
-	r.Get("/api/v1/services/{name}", s.getService)
-	r.Post("/api/v1/services/{name}/actions/{action}", s.triggerAction)
+	// Flux OIDC — uniquement si auth configurée
+	if s.auth != nil {
+		r.Get("/auth/login", s.auth.LoginHandler)
+		r.Get("/auth/callback", s.auth.CallbackHandler)
+		r.Get("/auth/logout", s.auth.LogoutHandler)
+	}
 
-	// Golden Paths
-	r.Get("/api/v1/golden-paths", s.listGoldenPaths)
-	r.Post("/api/v1/templates/reload", s.reloadTemplates)
+	// Toutes les routes API — protégées si auth configurée
+	r.Group(func(r chi.Router) {
+		if s.auth != nil {
+			r.Use(s.auth.Middleware)
+		}
 
-	// Projets
-	r.Post("/api/v1/projects", s.createProject)
-	r.Get("/api/v1/projects", s.listProjects)
-	r.Get("/api/v1/repos", s.listRepos)
+		r.Get("/api/v1/auth/me", s.me)
 
-	// Pipelines
-	r.Post("/api/v1/pipelines/trigger", s.triggerPipelineHandler)
-	r.Get("/api/v1/pipelines/status", s.getPipelineStatusHandler)
-	r.Get("/api/v1/pipelines/{project}", s.listPipelinesHandler)
+		// Catalogue
+		r.Get("/api/v1/services", s.listServices)
+		r.Get("/api/v1/services/{name}", s.getService)
+		r.Post("/api/v1/services/{name}/actions/{action}", s.triggerAction)
 
-	// Déploiements
-	r.Get("/api/v1/deployments", s.listDeployments)
-	r.Post("/api/v1/deployments", s.deployProject)
-	r.Delete("/api/v1/deployments/{id}", s.stopDeployment)
+		// Golden Paths
+		r.Get("/api/v1/golden-paths", s.listGoldenPaths)
+		r.Post("/api/v1/templates/reload", s.reloadTemplates)
 
-	// Audit
-	r.Get("/api/v1/audit", s.listAudit)
+		// Projets
+		r.Post("/api/v1/projects", s.createProject)
+		r.Get("/api/v1/projects", s.listProjects)
+		r.Get("/api/v1/repos", s.listRepos)
+
+		// Pipelines
+		r.Post("/api/v1/pipelines/trigger", s.triggerPipelineHandler)
+		r.Get("/api/v1/pipelines/status", s.getPipelineStatusHandler)
+		r.Get("/api/v1/pipelines/{project}", s.listPipelinesHandler)
+
+		// Déploiements
+		r.Get("/api/v1/deployments", s.listDeployments)
+		r.Post("/api/v1/deployments", s.deployProject)
+		r.Delete("/api/v1/deployments/{id}", s.stopDeployment)
+
+		// Audit
+		r.Get("/api/v1/audit", s.listAudit)
+	})
 
 	return r
 }
