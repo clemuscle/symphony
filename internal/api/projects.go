@@ -44,6 +44,11 @@ func (s *Server) runStep(projectName, step string, fn func() error) stepResult {
 }
 
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
+	pvds := s.getProviders()
+	if pvds == nil {
+		respond(w, http.StatusServiceUnavailable, errSetupRequired())
+		return
+	}
 	var req CreateProjectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
@@ -61,7 +66,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1. Créer le repo — seule étape qui bloque tout le reste si elle échoue.
-	repo, err := s.scm.CreateRepo(providers.RepoRequest{
+	repo, err := pvds.SCM.CreateRepo(providers.RepoRequest{
 		Name:        req.Name,
 		Description: req.Description,
 		Namespace:   req.Namespace,
@@ -95,7 +100,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	// vrai risque de race sur la même ref git), chacune best-effort.
 	steps := []stepResult{
 		s.runStep(project.Name, "scaffold", func() error {
-			return s.scm.Scaffold(repo, providers.ScaffoldConfig{
+			return pvds.SCM.Scaffold(repo, providers.ScaffoldConfig{
 				Name:        req.Name,
 				Description: req.Description,
 				Language:    req.Language,
@@ -104,21 +109,21 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 			})
 		}),
 		s.runStep(project.Name, "pipeline_test", func() error {
-			return s.ci.SetupPipeline(repo.Path, providers.PipelineConfig{
+			return pvds.CI.SetupPipeline(repo.Path, providers.PipelineConfig{
 				Name:     req.Name,
 				Type:     "test",
 				Language: req.Language,
 			})
 		}),
 		s.runStep(project.Name, "pipeline_build", func() error {
-			return s.ci.SetupPipeline(repo.Path, providers.PipelineConfig{
+			return pvds.CI.SetupPipeline(repo.Path, providers.PipelineConfig{
 				Name:     req.Name,
 				Type:     "build",
 				Language: req.Language,
 			})
 		}),
 		s.runStep(project.Name, "registry", func() error {
-			registryURL, err := s.registry.GetRegistryURL(repo.Path)
+			registryURL, err := pvds.Registry.GetRegistryURL(repo.Path)
 			if err != nil {
 				return err
 			}
@@ -151,6 +156,11 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deployProject(w http.ResponseWriter, r *http.Request) {
+	pvds := s.getProviders()
+	if pvds == nil {
+		respond(w, http.StatusServiceUnavailable, errSetupRequired())
+		return
+	}
 	var req struct {
 		ProjectName string            `json:"project_name"`
 		Image       string            `json:"image"`
@@ -162,7 +172,7 @@ func (s *Server) deployProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.deploy.Deploy(providers.DeployRequest{
+	result, err := pvds.Deploy.Deploy(providers.DeployRequest{
 		ProjectName: req.ProjectName,
 		Image:       req.Image,
 		Port:        req.Port,

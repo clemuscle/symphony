@@ -47,4 +47,10 @@ export const api = {
 
   // Auth
   getMe: () => http.get('/api/v1/auth/me'),
+
+  // Setup wizard
+  getSetupStatus: () => http.get('/api/v1/setup/status'),
+  testProvider: (type, config) => http.post('/api/v1/setup/test', { type, config }),
+  saveSetup: (data) => http.post('/api/v1/setup/save', data),
+  reloadConfig: () => http.post('/api/v1/config/reload'),
 }

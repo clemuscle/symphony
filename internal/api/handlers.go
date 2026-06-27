@@ -18,6 +18,10 @@ import (
 
 
 
+func errSetupRequired() map[string]string {
+	return map[string]string{"error": "setup_required", "message": "Configurez les providers via le wizard d'initialisation"}
+}
+
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -132,7 +136,12 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listRepos(w http.ResponseWriter, r *http.Request) {
-	repos, err := s.scm.ListRepos()
+	pvds := s.getProviders()
+	if pvds == nil {
+		respond(w, http.StatusServiceUnavailable, errSetupRequired())
+		return
+	}
+	repos, err := pvds.SCM.ListRepos()
 	if err != nil {
 		respond(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
@@ -141,6 +150,11 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) triggerPipelineHandler(w http.ResponseWriter, r *http.Request) {
+	pvds := s.getProviders()
+	if pvds == nil {
+		respond(w, http.StatusServiceUnavailable, errSetupRequired())
+		return
+	}
 	var req struct {
 		ProjectPath string            `json:"project_path"`
 		Ref         string            `json:"ref"`
@@ -153,7 +167,7 @@ func (s *Server) triggerPipelineHandler(w http.ResponseWriter, r *http.Request) 
 	if req.Ref == "" {
 		req.Ref = "main"
 	}
-	id, err := s.ci.TriggerPipeline(req.ProjectPath, req.Ref, req.Vars)
+	id, err := pvds.CI.TriggerPipeline(req.ProjectPath, req.Ref, req.Vars)
 	if err != nil {
 		respond(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
@@ -172,13 +186,18 @@ func (s *Server) triggerPipelineHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) getPipelineStatusHandler(w http.ResponseWriter, r *http.Request) {
+	pvds := s.getProviders()
+	if pvds == nil {
+		respond(w, http.StatusServiceUnavailable, errSetupRequired())
+		return
+	}
 	projectPath := r.URL.Query().Get("project")
 	pipelineID := r.URL.Query().Get("id")
 	if projectPath == "" || pipelineID == "" {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "project et id requis"})
 		return
 	}
-	status, err := s.ci.GetPipelineStatus(projectPath, pipelineID)
+	status, err := pvds.CI.GetPipelineStatus(projectPath, pipelineID)
 	if err != nil {
 		respond(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
@@ -210,7 +229,12 @@ func (s *Server) listPipelinesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) {
-	deployments, err := s.deploy.List()
+	pvds := s.getProviders()
+	if pvds == nil {
+		respond(w, http.StatusServiceUnavailable, errSetupRequired())
+		return
+	}
+	deployments, err := pvds.Deploy.List()
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -222,8 +246,13 @@ func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) stopDeployment(w http.ResponseWriter, r *http.Request) {
+	pvds := s.getProviders()
+	if pvds == nil {
+		respond(w, http.StatusServiceUnavailable, errSetupRequired())
+		return
+	}
 	id := chi.URLParam(r, "id")
-	if err := s.deploy.Stop(id); err != nil {
+	if err := pvds.Deploy.Stop(id); err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -295,6 +324,20 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 func (s *Server) listGoldenPaths(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, s.tmpl.GetGoldenPaths())
+}
+
+func (s *Server) reloadConfig(w http.ResponseWriter, r *http.Request) {
+	if s.reload == nil {
+		respond(w, http.StatusNotImplemented, map[string]string{"error": "reload non configuré"})
+		return
+	}
+	pvds, err := s.reload()
+	if err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	s.setProviders(pvds)
+	respond(w, http.StatusOK, map[string]string{"message": "providers rechargés"})
 }
 
 func (s *Server) reloadTemplates(w http.ResponseWriter, r *http.Request) {
