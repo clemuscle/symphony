@@ -1,0 +1,29 @@
+---
+Ok donc je pense que pour la première itération on va s'occuper de l'authentification et les authorisations.
+On va commencer simplement avec:
+3 users
+1 admin clement,
+1 arthur qui fait partie de l'équipe spotify
+1 quentin qui fait partie de l'équipe netflix
+
+L'admin aura une vision différente mais on verra ça plus tard
+Il pourra avoir une vision complète de tout les providers mis en place (3 scm et la liste, 2 ci et la liste, ..etc avec toute la conf)
+Il pourra agir directement sur la configuration via l'ui.
+
+arthur et quentin auront pas les mêmes vues car ils ne sont pas de la même équipe.
+Pour le moment on va pas agis sur ça mais il faut que tu retiennes qu'il y aura des modifs à faire plus tard selon les équipes, il y a des ressources qui peuvent être vu/agis et d'autres non
+
+Par exemple là quand l'application s'est lancé il y a pas eu de wizard init.
+Le wizard init est là pour les ingénieurs devops à mettre ne place les providers mandatory. (avec ton expertise en ingénieurie platform choisi les mandatory)
+Donc à voir et réflechir comment on veut faire ça (URL, HTTPS avec TSL et donc certificat, token api?)
+
+Donc dans catalogue présente les golden path.
+Donc je pense qu'on peut créer 2 minimums pour bien commencer.
+1 pour créer un projet Go et des conditions sur certains paramètres (réfléchie et tu peux choisir ce qui te semble bien)
+1 pour créer un projet Python et des conditions sur certains paramètres (réfléchie et tu peux choisir ce qui te semble bien)
+
+Et donc les golden path vont utiliser des templates pour créer un repo sur le scm qu'ils auront choisi avec des pipeline de test, build et push vers registry qu'ils auront choisi
+
+Dans projet, on peut voir les projets qui ont déjà été mis en place, où on peut avoir une vision globale
+Pour le moment c'est le features auxquelles je pense.
+---

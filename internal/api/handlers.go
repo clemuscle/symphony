@@ -22,6 +22,17 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+func (s *Server) me(w http.ResponseWriter, r *http.Request) {
+	if s.auth == nil {
+		respond(w, http.StatusOK, map[string]any{
+			"sub": "dev", "email": "dev@localhost", "name": "Dev Mode",
+			"groups": []string{"admin"}, "is_admin": true,
+		})
+		return
+	}
+	s.auth.MeHandler(w, r)
+}
+
 func (s *Server) listServices(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, s.store.All())
 }
@@ -273,6 +284,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin())
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

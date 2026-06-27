@@ -1,0 +1,111 @@
+IDP MVP
+
+L’objectif est de faire une plateforme central user friendly et admin friendly
+
+
+
+
+
+Seulement les outils mandatory
+
+
+
+Forge de code source (gitlab, github)
+
+Automatisation (gitlab Ci, github actions, Jenkins)
+
+Stockage d’artefact (gitlab artefact, github artefact, Harbor, nexus)
+
+Déploiement (docker, kubernetes, terraform pour cloud AWS, AZURE OU GCP)
+
+AD ou LDAP pour avoir les utilisateurs et les différents projets
+
+
+
+Golden path
+
+Créer un projet par exemple en go
+
+Via api ça va créer tout ce qu’il faut par exemple un projet gitlab, un projet Jenkins, un répertoire sur Harbor, créer un namespace sur Kubernetes.
+
+Dans le code il y a un Jenkinsfile avec toute la bonne configuration et les bonnes pratiques pour tester, build et pousser l’artefact en docker image et pouvoir le déployer sur Kubernetes via Terraform par exemple.
+
+L’objectif est de faire en sorte que la base soit solide, utilise les bonnes pratiques dès le départ.
+
+
+
+Lorsque le projet est créer il faut soit sélectionner un groupe ou bien en créer un (si t’as les droits) pour que les gens du groupe puisse avoir une vue sur le projet.
+
+Avec lien du repo, les derniers pipelines de test, build, et de déploiement.
+
+Sur cet page un dev peut décider de déployer dans un environnement de recette 2 instances pour tester sa feature avec l’artefact qui a été poussé dans un répertoire de recette, lui le dev il veut pas la complexité juste il veut déployer en recette pour voir si sa feature est fonctionnel.
+
+Des qu’il a fini de vérifier il peut décider de destroy ou bien laisser selon la politique de l’entreprise, si par exemple en recette il y a plusieurs app qui communiquent.
+
+
+
+Il peux aussi voir les metrics de base des instances qui sont en prod , preprod ou recette.
+
+Le chef du projet peut décider avec son équipe de quelle métriques visualiser
+
+Pour une plus grande analyse il peut cliquer sur un lien en dessous pour aller sur le prometheus qui monitor son instance
+
+
+
+Le dev peut donc aussi lancer des pipelines pour tester sa branche de feature ou bien de build.
+
+
+
+Il n’a pas à s’occuper d’aller sur Harbor, la liste des artefacts (env prod, preprod et recette) est disponible mais sinon il peut cliquer sur le lien disponible pour y accéder
+
+
+
+Pour le chef de projet ou bien un dev il peut ajouter des nouvelles fonctionnalités au projet simplement, que ce soit pour ajouter un bucket s3 et un environnement de recette pour des instances ec2
+
+
+
+
+
+L’objectif soit que le dev avec cet IDP ait toutes les infos nécessaires disponible, et s’il a besoin d’autres infos plus précises les liens sont disponibles à portée de main.
+
+
+
+Pour l’admin de l’IDP il faut que ça soit DevOps friendly.
+
+L’admin ne veut pas faire du web, déjà qu’il s’occupe des autres outils autour il veut que la configuration de l’IDP soit simple (yaml?) et qu’il s’occupe juste des templates pour les bonnes pratiques ou bien que les api fonctionnent bien entre elles.
+
+
+
+Mais ce qui est clair c’est que les réels actions se font via des pipelines d’une platforme admin, l’objectifs de ne pas être admin api et que chaque upgrade de version d’un outil a ou b fasse tout merdé.
+
+Mais il faut que tout soit automatisé, mais que l’admin configure bien tout de même les différents accès, les tokens, les pipelines, changer les templates qui conviennent au contexte de l’entreprise.
+
+
+
+Cycloid est un IDP qui est pas mal mais c’est une SaaS payante
+
+Backstage est trop complexe et pas admin friendly pour un DevOps
+
+
+
+L’objectif c’est de faire un projet open source dev et admin friendly
+
+
+
+Je veux pas que ça soit un truc trop « intégration » et que ça soit des plugin versioné et gérer (genre Jenkins qui est invivable), je veux que ça soit un seul bloc et qu’il y ait une limite des intégrations avec les outils les plus utilisés.
+
+
+
+Je pense que j’ai pas tout les concepts architecturaux mais je pense avoir donné pas mal de vision et d’exemple concret.
+
+Je veux que tu réfléchisse bien à l'architecture de base (microservice ou pas d'ailleurs) pour que je puisse bien commencer le projet
+
+J'ai donné beaucoup d'exemple mais c'est pas le plus important, le plus important c'est les concepts de base d'un IDP, pouvoir intéragire avec des outils devops de manière facile pour un admin, que la plateform soit user friendly.
+
+Ma vision n'est pas complète et ça tu peux le voir mais du coup l'objectif c'est que tu puisse avec ma vision, les besoins actuels et la réalité du terrain et la réalité technique réalise ce produit.
+
+
+L’objectif c’est que t’agisses comme un CTO qui restructure les pensées en du concret pour un réel projet à construire.
+
+Rédige le CLAUDE.md pour pouvoir bien commencer sur une bonne base le projet, même s'il faut tout refactor
+

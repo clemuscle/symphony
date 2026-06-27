@@ -1,6 +1,19 @@
 import axios from 'axios'
 
-const http = axios.create({ baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8080' })
+const http = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8080',
+  withCredentials: true,
+})
+
+http.interceptors.response.use(
+  r => r,
+  err => {
+    if (err.response?.status === 401 && !window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login'
+    }
+    return Promise.reject(err)
+  }
+)
 
 export const api = {
   // Catalogue
@@ -31,4 +44,7 @@ export const api = {
 
   // Audit
   listAudit: () => http.get('/api/v1/audit'),
+
+  // Auth
+  getMe: () => http.get('/api/v1/auth/me'),
 }

@@ -1,0 +1,43 @@
+# Dex — provider OIDC local pour le dev
+# Lancer : docker run -d --name symphony-dex -p 5556:5556 \
+#   -v $(pwd)/dex/config.yaml:/etc/dex/config.yaml \
+#   ghcr.io/dexidp/dex:v2.41.1 dex serve /etc/dex/config.yaml
+#
+# Mot de passe commun : symphony
+# Emails admin : configurer ADMIN_EMAILS=clement@example.com dans .env
+
+issuer: http://localhost:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true
+
+staticClients:
+  - id: symphony
+    redirectURIs:
+      - http://localhost:8090/auth/callback
+    name: Symphony IDP
+    secret: symphony-secret
+
+enablePasswordDB: true
+
+staticPasswords:
+  - email: clement@example.com
+    hash: "$2a$10$bGuR4zOj03b0g.1E1elPwey4CLBZqNvDfjNA3UeqfE0XUb.Pp9ZX."
+    username: clement
+    userID: "08a8684b-db88-4b73-90a9-3cd1661f5001"
+
+  - email: arthur@example.com
+    hash: "$2a$10$n9jAxGGuJk.Wu6tQRFOa2.GpcCjPfRkGLonLFKwF1vNXooDJqbRBK"
+    username: arthur
+    userID: "08a8684b-db88-4b73-90a9-3cd1661f5002"
+
+  - email: quentin@example.com
+    hash: "$2a$10$7OEG3RtZ1YL7zRxFpZiROeukhk96ORe/EHdLzc/NwDhn/9VYJw66."
+    username: quentin
+    userID: "08a8684b-db88-4b73-90a9-3cd1661f5003"
