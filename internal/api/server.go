@@ -1,6 +1,9 @@
 package api
 
 import (
+	"net/http"
+	"sync"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/yourorg/symphony/internal/auth"
@@ -11,27 +14,53 @@ import (
 )
 
 type Server struct {
-	store    *catalog.Store
-	db       *database.DB
-	scm      providers.SCMProvider
-	ci       providers.CIProvider
-	registry providers.RegistryProvider
-	deploy   providers.DeployProvider
-	tmpl     *templates.Loader
-	auth     *auth.Provider // nil = auth désactivé (dev sans OIDC_ISSUER)
+	store   *catalog.Store
+	db      *database.DB
+	auth    *auth.Provider
+	tmpl    *templates.Loader
+	cfgPath string
+	// providers protégés par mutex — nil = setup requis
+	mu     sync.RWMutex
+	pvds   *providers.ProviderSet
+	reload func() (*providers.ProviderSet, error) // callback défini dans main.go
+	// callback de test de connexion (évite d'importer les drivers ici)
+	testProvider func(providerType string, cfg map[string]string) (string, error)
 }
 
-func NewServer(
-	store *catalog.Store,
-	db *database.DB,
-	scm providers.SCMProvider,
-	ci providers.CIProvider,
-	registry providers.RegistryProvider,
-	deploy providers.DeployProvider,
-	tmpl *templates.Loader,
-	authProvider *auth.Provider,
-) *chi.Mux {
-	s := &Server{store: store, db: db, scm: scm, ci: ci, registry: registry, deploy: deploy, tmpl: tmpl, auth: authProvider}
+func (s *Server) getProviders() *providers.ProviderSet {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.pvds
+}
+
+func (s *Server) setProviders(ps *providers.ProviderSet) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pvds = ps
+}
+
+type ServerOptions struct {
+	Store        *catalog.Store
+	DB           *database.DB
+	Auth         *auth.Provider
+	Tmpl         *templates.Loader
+	Providers    *providers.ProviderSet // nil si pas encore configuré
+	Reload       func() (*providers.ProviderSet, error)
+	TestProvider func(providerType string, cfg map[string]string) (string, error)
+	CfgPath      string
+}
+
+func NewServer(opts ServerOptions) *chi.Mux {
+	s := &Server{
+		store:        opts.Store,
+		db:           opts.DB,
+		auth:         opts.Auth,
+		tmpl:         opts.Tmpl,
+		pvds:         opts.Providers,
+		reload:       opts.Reload,
+		testProvider: opts.TestProvider,
+		cfgPath:      opts.CfgPath,
+	}
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -39,20 +68,25 @@ func NewServer(
 
 	r.Get("/healthz", s.healthz)
 
-	// Flux OIDC — uniquement si auth configurée
 	if s.auth != nil {
 		r.Get("/auth/login", s.auth.LoginHandler)
 		r.Get("/auth/callback", s.auth.CallbackHandler)
 		r.Get("/auth/logout", s.auth.LogoutHandler)
 	}
 
-	// Toutes les routes API — protégées si auth configurée
 	r.Group(func(r chi.Router) {
 		if s.auth != nil {
 			r.Use(s.auth.Middleware)
 		}
 
 		r.Get("/api/v1/auth/me", s.me)
+
+		// Setup wizard — accessible à tous les utilisateurs authentifiés pour /status,
+		// admin uniquement pour /test, /save, /reload
+		r.Get("/api/v1/setup/status", s.setupStatus)
+		r.With(s.adminOnly).Post("/api/v1/setup/test", s.setupTest)
+		r.With(s.adminOnly).Post("/api/v1/setup/save", s.setupSave)
+		r.With(s.adminOnly).Post("/api/v1/config/reload", s.reloadConfig)
 
 		// Catalogue
 		r.Get("/api/v1/services", s.listServices)
@@ -83,4 +117,15 @@ func NewServer(
 	})
 
 	return r
+}
+
+func (s *Server) adminOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, ok := auth.UserFromContext(r.Context())
+		if !ok || !user.IsAdmin {
+			respond(w, http.StatusForbidden, map[string]string{"error": "admin required"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

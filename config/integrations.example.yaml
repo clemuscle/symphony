@@ -1,0 +1,25 @@
+# Exemple de configuration des providers Symphony
+# Copier ce fichier vers config/integrations.yaml et adapter les valeurs.
+# Le fichier config/integrations.yaml est gitignore — ne pas y mettre les tokens
+# en clair pour la production : utiliser des variables d'environnement à la place.
+#
+# Priorité : variables d'environnement > valeurs du YAML
+# Rechargement à chaud : POST /api/v1/config/reload (admin uniquement)
+
+scm:
+  type: gitlab
+  url: https://gitlab.example.com
+  token: ${GITLAB_TOKEN}   # ou valeur en clair pour le dev local
+
+ci:
+  type: gitlabci
+  config_repo: devops/symphony-config      # chemin du dépôt d'infrastructure
+  templates_repo: devops/symphony-templates # chemin du dépôt de golden paths
+
+registry:
+  type: gitlabregistry
+  url: registry.gitlab.example.com:5050   # vide = utilise l'URL GitLab par défaut
+
+deploy:
+  type: docker
+  socket: /var/run/docker.sock

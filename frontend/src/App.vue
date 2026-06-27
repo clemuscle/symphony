@@ -1,6 +1,6 @@
 <template>
   <div class="layout">
-    <header v-if="auth.state.user" class="header">
+    <header v-if="auth.state.user && route.path !== '/setup'" class="header">
       <div class="brand">
         <span class="logo">🎼</span>
         <span class="name">Symphony</span>
@@ -23,8 +23,10 @@
 </template>
 
 <script setup>
+import { useRoute } from 'vue-router'
 import { useAuth } from './composables/useAuth'
 const auth = useAuth()
+const route = useRoute()
 </script>
 
 <style>
