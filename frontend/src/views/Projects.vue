@@ -38,6 +38,9 @@
           <a v-if="p.repo_url" :href="p.repo_url" target="_blank" class="btn-ghost">
             Repo ↗
           </a>
+          <a v-if="p.repo_url" :href="p.repo_url + '/-/pipelines'" target="_blank" class="btn-ghost">
+            Pipelines ↗
+          </a>
           <button class="btn-ghost" @click="triggerPipeline(p)">
             {{ pipelineState[p.repo_path]?.loading ? '⏳' : '▶ Pipeline' }}
           </button>
@@ -94,7 +97,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 
 const projects = ref([])
@@ -103,19 +106,31 @@ const error = ref(null)
 const pipelineState = ref({})
 const deployState = ref({})
 const stepsState = ref({})
+let pollInterval = null
 
 const langIcon = (lang) => ({ go: '🐹', python: '🐍', node: '💚', java: '☕' })[lang] || '📦'
 const statusLabel = (s) => ({ ready: 'Prêt', provisioning: 'En cours', degraded: 'Dégradé', failed: 'Échec' })[s] || s
 
-onMounted(async () => {
+async function load(isInitial = false) {
+  if (isInitial) loading.value = true
   try {
     const { data } = await api.listProjects()
     projects.value = data || []
+    error.value = null
   } catch (e) {
     error.value = e.response?.data?.error || e.message
   } finally {
     loading.value = false
   }
+}
+
+onMounted(() => {
+  load(true)
+  pollInterval = setInterval(load, 10000)
+})
+
+onUnmounted(() => {
+  if (pollInterval) clearInterval(pollInterval)
 })
 
 async function deployProject(project) {
