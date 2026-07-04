@@ -42,19 +42,31 @@ func (db *DB) Migrate() error {
 		updated_at   TIMESTAMP DEFAULT NOW()
 	);
 
+	-- États valides : pending → running | failed | stopped
+	--   pending : pipeline CI déclenché, résultat attendu
+	--   running : pipeline success, app en cours d'exécution
+	--   failed  : pipeline échoué
+	--   stopped : destroy pipeline déclenché (destroy-deploy / destroy-recette)
 	CREATE TABLE IF NOT EXISTS deployments (
 		id            SERIAL PRIMARY KEY,
 		project_name  VARCHAR(255) NOT NULL,
-		container_id  VARCHAR(100),
+		pipeline_id   VARCHAR(100),
 		image         VARCHAR(500),
 		port          INT,
-		status        VARCHAR(50) DEFAULT 'running',
+		status        VARCHAR(50) DEFAULT 'pending',
 		url           VARCHAR(500),
 		recette_name  TEXT,
 		created_at    TIMESTAMP DEFAULT NOW(),
 		updated_at    TIMESTAMP DEFAULT NOW()
 	);
 	ALTER TABLE deployments ADD COLUMN IF NOT EXISTS recette_name TEXT;
+	DO $$
+	BEGIN
+		IF EXISTS (SELECT 1 FROM information_schema.columns
+		           WHERE table_name='deployments' AND column_name='container_id') THEN
+			ALTER TABLE deployments RENAME COLUMN container_id TO pipeline_id;
+		END IF;
+	END $$;
 
 	CREATE TABLE IF NOT EXISTS audit_log (
 		id         SERIAL PRIMARY KEY,
