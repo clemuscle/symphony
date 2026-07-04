@@ -179,7 +179,7 @@ function openDrawer(gp) {
   drawerOpen.value = true
   createResult.value = null
   createError.value = null
-  form.value = { name: '', description: '', namespace: '', port: 8080 }
+  form.value = { name: '', description: '', namespace: '', port: gp.spec?.default_port || 8080 }
 }
 
 function closeDrawer() {

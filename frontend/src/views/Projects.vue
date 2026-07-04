@@ -41,6 +41,14 @@
           <button class="btn-ghost" @click="triggerPipeline(p)">
             {{ pipelineState[p.repo_path]?.loading ? '⏳' : '▶ Pipeline' }}
           </button>
+          <button
+            class="btn-ghost"
+            :disabled="!p.registry_url || deployState[p.name]?.loading"
+            :title="!p.registry_url ? 'Image non disponible' : ''"
+            @click="deployProject(p)"
+          >
+            {{ deployState[p.name]?.loading ? '⏳' : '🚀 Déployer' }}
+          </button>
         </div>
 
         <div class="pipeline-status" v-if="pipelineState[p.repo_path]?.id">
@@ -48,6 +56,12 @@
           <span :class="['status-badge', 'sm', pipelineState[p.repo_path].status]">
             {{ pipelineState[p.repo_path].status }}
           </span>
+        </div>
+
+        <div class="deploy-status" v-if="deployState[p.name]?.status || deployState[p.name]?.error">
+          <span class="pipeline-label">Déploiement</span>
+          <span v-if="deployState[p.name]?.error" class="status-badge sm failed">{{ deployState[p.name].error }}</span>
+          <span v-else :class="['status-badge', 'sm', deployState[p.name].status]">{{ deployState[p.name].status }}</span>
         </div>
       </div>
     </div>
@@ -70,6 +84,7 @@ const projects = ref([])
 const loading = ref(true)
 const error = ref(null)
 const pipelineState = ref({})
+const deployState = ref({})
 
 const langIcon = (lang) => ({ go: '🐹', python: '🐍', node: '💚', java: '☕' })[lang] || '📦'
 const statusLabel = (s) => ({ ready: 'Prêt', provisioning: 'En cours', degraded: 'Dégradé', failed: 'Échec' })[s] || s
@@ -84,6 +99,20 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+async function deployProject(project) {
+  deployState.value[project.name] = { loading: true }
+  try {
+    const { data } = await api.deploy({
+      project_name: project.name,
+      image: project.registry_url,
+      port: project.port,
+    })
+    deployState.value[project.name] = { loading: false, status: data.status }
+  } catch (e) {
+    deployState.value[project.name] = { loading: false, error: e.response?.data?.error || e.message }
+  }
+}
 
 async function triggerPipeline(project) {
   const path = project.repo_path
@@ -180,6 +209,17 @@ h2 { font-size: 22px; font-weight: 700; }
   font-size: 12px;
 }
 .pipeline-label { color: #888; flex: 1; }
+
+.deploy-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: #f0f4ff;
+  border-radius: 8px;
+  font-size: 12px;
+}
+button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* Status badges */
 .status-badge {

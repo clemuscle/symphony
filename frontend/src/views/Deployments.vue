@@ -82,6 +82,8 @@ h2 { font-size: 22px; font-weight: 700; }
 .deploy-name { font-weight: 600; font-size: 15px; }
 .status { font-size: 12px; padding: 3px 10px; border-radius: 20px; font-weight: 500; }
 .status.running { background: #f0fff4; color: #276749; }
+.status.pending { background: #eff6ff; color: #1d4ed8; }
+.status.stopped { background: #f4f4f4; color: #888; }
 .status.exited { background: #f4f4f4; color: #888; }
 .status.paused { background: #fffbeb; color: #92400e; }
 .deploy-image { font-size: 13px; color: #666; margin-bottom: 8px; }
