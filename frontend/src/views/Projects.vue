@@ -63,6 +63,23 @@
           <span v-if="deployState[p.name]?.error" class="status-badge sm failed">{{ deployState[p.name].error }}</span>
           <span v-else :class="['status-badge', 'sm', deployState[p.name].status]">{{ deployState[p.name].status }}</span>
         </div>
+
+        <button
+          v-if="p.status === 'degraded' || p.status === 'failed'"
+          class="btn-ghost btn-steps"
+          @click="toggleSteps(p)"
+        >
+          {{ stepsState[p.name]?.open ? '▲ Masquer' : '▼ Détails provisioning' }}
+        </button>
+
+        <div class="steps-list" v-if="stepsState[p.name]?.open">
+          <div v-if="stepsState[p.name]?.loading" class="step-row">Chargement…</div>
+          <div v-for="s in stepsState[p.name]?.steps" :key="s.step" class="step-row">
+            <span class="step-name">{{ s.step }}</span>
+            <span :class="['step-status', s.status]">{{ s.status }}</span>
+            <span v-if="s.error_detail" class="step-error">{{ s.error_detail }}</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -85,6 +102,7 @@ const loading = ref(true)
 const error = ref(null)
 const pipelineState = ref({})
 const deployState = ref({})
+const stepsState = ref({})
 
 const langIcon = (lang) => ({ go: '🐹', python: '🐍', node: '💚', java: '☕' })[lang] || '📦'
 const statusLabel = (s) => ({ ready: 'Prêt', provisioning: 'En cours', degraded: 'Dégradé', failed: 'Échec' })[s] || s
@@ -111,6 +129,21 @@ async function deployProject(project) {
     deployState.value[project.name] = { loading: false, status: data.status }
   } catch (e) {
     deployState.value[project.name] = { loading: false, error: e.response?.data?.error || e.message }
+  }
+}
+
+async function toggleSteps(project) {
+  const name = project.name
+  if (stepsState.value[name]?.open) {
+    stepsState.value[name] = { ...stepsState.value[name], open: false }
+    return
+  }
+  stepsState.value[name] = { loading: true, open: true }
+  try {
+    const { data } = await api.listProjectSteps(name)
+    stepsState.value[name] = { loading: false, open: true, steps: data }
+  } catch (e) {
+    stepsState.value[name] = { loading: false, open: true, steps: [] }
   }
 }
 
@@ -266,4 +299,13 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   transition: background .15s;
 }
 .btn-cta:hover { background: #5a6fd6; }
+
+.btn-steps { font-size: 12px; padding: 4px 10px; color: #c05621; border-color: #fed7aa; }
+.steps-list { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; font-size: 12px; }
+.step-row { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; }
+.step-name { font-weight: 600; color: #555; min-width: 80px; }
+.step-status { padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.step-status.success { background: #f0fff4; color: #276749; }
+.step-status.failed { background: #fff5f5; color: #c53030; }
+.step-error { color: #c53030; font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

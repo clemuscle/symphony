@@ -28,6 +28,7 @@ export const api = {
   // Projets
   createProject: (data) => http.post('/api/v1/projects', data),
   listProjects: () => http.get('/api/v1/projects'),
+  listProjectSteps: (name) => http.get(`/api/v1/projects/${encodeURIComponent(name)}/steps`),
   listRepos: () => http.get('/api/v1/repos'),
 
   // Pipelines
