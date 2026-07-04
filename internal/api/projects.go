@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/yourorg/symphony/internal/database"
 	"github.com/yourorg/symphony/internal/providers"
 	"github.com/yourorg/symphony/internal/templates"
@@ -209,4 +210,17 @@ func (s *Server) deployProject(w http.ResponseWriter, r *http.Request) {
 	s.db.Log("deploy", req.ProjectName, "pipeline="+pipelineID, "system")
 
 	respond(w, http.StatusAccepted, d)
+}
+
+func (s *Server) listProjectSteps(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	steps, err := s.db.ListProvisioningSteps(name)
+	if err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if steps == nil {
+		steps = []database.ProvisioningStep{}
+	}
+	respond(w, http.StatusOK, steps)
 }

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/yourorg/symphony/internal/api"
@@ -137,6 +138,8 @@ func main() {
 		}
 	}
 
+	go reconcileDeployments(db, &pvds)
+
 	addr := ":" + getEnv("PORT", "8080")
 	log.Printf("🎼 Symphony démarré sur %s", addr)
 	log.Fatal(http.ListenAndServe(addr, api.NewServer(api.ServerOptions{
@@ -184,6 +187,44 @@ func buildProviderSet(cfg *providers.IntegrationConfig) (*providers.ProviderSet,
 		SCMBaseURL:   cfg.SCM.URL,
 		CIConfigRepo: cfg.CI.ConfigRepo,
 	}, nil
+}
+
+func reconcileDeployments(db *database.DB, pvdsp **providers.ProviderSet) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		pvds := *pvdsp
+		if pvds == nil {
+			continue
+		}
+		pending, err := db.ListPendingDeployments()
+		if err != nil || len(pending) == 0 {
+			continue
+		}
+		for _, d := range pending {
+			project, err := db.GetProject(d.ProjectName)
+			if err != nil {
+				continue
+			}
+			status, err := pvds.CI.GetPipelineStatus(project.RepoPath, d.ContainerID)
+			if err != nil {
+				continue
+			}
+			var newStatus string
+			switch status {
+			case "success":
+				newStatus = "running"
+			case "failed":
+				newStatus = "failed"
+			case "canceled":
+				newStatus = "stopped"
+			}
+			if newStatus != "" {
+				db.UpdateDeploymentStatus(d.ContainerID, newStatus)
+				log.Printf("deployment %s → %s (pipeline %s)", d.ProjectName, newStatus, d.ContainerID)
+			}
+		}
+	}
 }
 
 func getEnv(key, fallback string) string {

@@ -43,6 +43,24 @@ func (db *DB) UpdateDeploymentStatus(containerID, status string) error {
 	return err
 }
 
+func (db *DB) ListPendingDeployments() ([]Deployment, error) {
+	rows, err := db.Query(`
+		SELECT id, project_name, container_id, image, port, status, url, created_at
+		FROM deployments WHERE status='pending' ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var deployments []Deployment
+	for rows.Next() {
+		var d Deployment
+		rows.Scan(&d.ID, &d.ProjectName, &d.ContainerID, &d.Image,
+			&d.Port, &d.Status, &d.URL, &d.CreatedAt)
+		deployments = append(deployments, d)
+	}
+	return deployments, nil
+}
+
 func (db *DB) ListDeployments() ([]Deployment, error) {
 	rows, err := db.Query(`
 		SELECT id, project_name, container_id, image, port, status, url, created_at

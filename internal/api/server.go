@@ -100,6 +100,7 @@ func NewServer(opts ServerOptions) *chi.Mux {
 		// Projets
 		r.With(s.deployerOnly).Post("/api/v1/projects", s.createProject)
 		r.Get("/api/v1/projects", s.listProjects)
+		r.Get("/api/v1/projects/{name}/steps", s.listProjectSteps)
 		r.Get("/api/v1/repos", s.listRepos)
 
 		// Pipelines
