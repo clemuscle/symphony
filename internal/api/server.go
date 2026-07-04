@@ -98,19 +98,19 @@ func NewServer(opts ServerOptions) *chi.Mux {
 		r.Post("/api/v1/templates/reload", s.reloadTemplates)
 
 		// Projets
-		r.Post("/api/v1/projects", s.createProject)
+		r.With(s.deployerOnly).Post("/api/v1/projects", s.createProject)
 		r.Get("/api/v1/projects", s.listProjects)
 		r.Get("/api/v1/repos", s.listRepos)
 
 		// Pipelines
-		r.Post("/api/v1/pipelines/trigger", s.triggerPipelineHandler)
+		r.With(s.deployerOnly).Post("/api/v1/pipelines/trigger", s.triggerPipelineHandler)
 		r.Get("/api/v1/pipelines/status", s.getPipelineStatusHandler)
 		r.Get("/api/v1/pipelines/{project}", s.listPipelinesHandler)
 
 		// Déploiements
 		r.Get("/api/v1/deployments", s.listDeployments)
-		r.Post("/api/v1/deployments", s.deployProject)
-		r.Delete("/api/v1/deployments/{id}", s.stopDeployment)
+		r.With(s.deployerOnly).Post("/api/v1/deployments", s.deployProject)
+		r.With(s.deployerOnly).Delete("/api/v1/deployments/{id}", s.stopDeployment)
 
 		// Audit
 		r.Get("/api/v1/audit", s.listAudit)
@@ -124,6 +124,21 @@ func (s *Server) adminOnly(next http.Handler) http.Handler {
 		user, ok := auth.UserFromContext(r.Context())
 		if !ok || !user.IsAdmin {
 			respond(w, http.StatusForbidden, map[string]string{"error": "admin required"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) deployerOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.auth == nil {
+			next.ServeHTTP(w, r) // dev mode: no OIDC configured
+			return
+		}
+		user, ok := auth.UserFromContext(r.Context())
+		if !ok || !s.auth.CanDeploy(user) {
+			respond(w, http.StatusForbidden, map[string]string{"error": "droits insuffisants"})
 			return
 		}
 		next.ServeHTTP(w, r)
