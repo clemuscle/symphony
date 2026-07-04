@@ -50,9 +50,11 @@ func (db *DB) Migrate() error {
 		port          INT,
 		status        VARCHAR(50) DEFAULT 'running',
 		url           VARCHAR(500),
+		recette_name  TEXT,
 		created_at    TIMESTAMP DEFAULT NOW(),
 		updated_at    TIMESTAMP DEFAULT NOW()
 	);
+	ALTER TABLE deployments ADD COLUMN IF NOT EXISTS recette_name TEXT;
 
 	CREATE TABLE IF NOT EXISTS audit_log (
 		id         SERIAL PRIMARY KEY,

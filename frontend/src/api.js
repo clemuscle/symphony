@@ -43,6 +43,12 @@ export const api = {
   deploy: (data) => http.post('/api/v1/deployments', data),
   stopDeployment: (id) => http.delete(`/api/v1/deployments/${id}`),
 
+  // Recettes
+  listRecettes: (projectName) => http.get(`/api/v1/projects/${encodeURIComponent(projectName)}/recettes`),
+  createRecette: (projectName, data) => http.post(`/api/v1/projects/${encodeURIComponent(projectName)}/recettes`, data),
+  destroyRecette: (projectName, recetteName) =>
+    http.delete(`/api/v1/projects/${encodeURIComponent(projectName)}/recettes/${encodeURIComponent(recetteName)}`),
+
   // Audit
   listAudit: () => http.get('/api/v1/audit'),
 

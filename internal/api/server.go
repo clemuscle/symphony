@@ -103,6 +103,11 @@ func NewServer(opts ServerOptions) *chi.Mux {
 		r.Get("/api/v1/projects/{name}/steps", s.listProjectSteps)
 		r.Get("/api/v1/repos", s.listRepos)
 
+		// Recettes
+		r.Get("/api/v1/projects/{name}/recettes", s.listRecettes)
+		r.With(s.deployerOnly).Post("/api/v1/projects/{name}/recettes", s.createRecette)
+		r.With(s.deployerOnly).Delete("/api/v1/projects/{name}/recettes/{recette}", s.destroyRecette)
+
 		// Pipelines
 		r.With(s.deployerOnly).Post("/api/v1/pipelines/trigger", s.triggerPipelineHandler)
 		r.Get("/api/v1/pipelines/status", s.getPipelineStatusHandler)
