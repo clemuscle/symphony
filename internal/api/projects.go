@@ -224,3 +224,91 @@ func (s *Server) listProjectSteps(w http.ResponseWriter, r *http.Request) {
 	}
 	respond(w, http.StatusOK, steps)
 }
+
+func (s *Server) createRecette(w http.ResponseWriter, r *http.Request) {
+	pvds := s.getProviders()
+	if pvds == nil {
+		respond(w, http.StatusServiceUnavailable, errSetupRequired())
+		return
+	}
+	projectName := chi.URLParam(r, "name")
+	var req struct {
+		RecetteName string `json:"recette_name"`
+		Port        int    `json:"port"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if req.RecetteName == "" || req.Port == 0 {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "recette_name et port requis"})
+		return
+	}
+
+	project, err := s.db.GetProject(projectName)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+		return
+	}
+
+	pipelineID, err := pvds.CI.TriggerPipeline(project.RepoPath, "main", map[string]string{
+		"RECETTE_NAME": req.RecetteName,
+		"RECETTE_PORT": fmt.Sprintf("%d", req.Port),
+	})
+	if err != nil {
+		respond(w, http.StatusBadGateway, map[string]string{"error": "ci: " + err.Error()})
+		return
+	}
+
+	d := &database.Deployment{
+		ProjectName: projectName,
+		ContainerID: pipelineID,
+		Image:       project.RegistryURL,
+		Port:        req.Port,
+		Status:      "pending",
+		RecetteName: req.RecetteName,
+		URL:         fmt.Sprintf("http://localhost:%d", req.Port),
+	}
+	if err := s.db.CreateDeployment(d); err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": "db: " + err.Error()})
+		return
+	}
+	s.db.Log("create_recette", projectName, "recette="+req.RecetteName+" port="+fmt.Sprintf("%d", req.Port), "system")
+
+	respond(w, http.StatusCreated, d)
+}
+
+func (s *Server) listRecettes(w http.ResponseWriter, r *http.Request) {
+	projectName := chi.URLParam(r, "name")
+	recettes, err := s.db.ListRecettes(projectName)
+	if err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if recettes == nil {
+		recettes = []database.Deployment{}
+	}
+	respond(w, http.StatusOK, recettes)
+}
+
+func (s *Server) destroyRecette(w http.ResponseWriter, r *http.Request) {
+	pvds := s.getProviders()
+	if pvds == nil {
+		respond(w, http.StatusServiceUnavailable, errSetupRequired())
+		return
+	}
+	projectName := chi.URLParam(r, "name")
+	recetteName := chi.URLParam(r, "recette")
+
+	recette, err := s.db.GetRecette(projectName, recetteName)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "recette introuvable"})
+		return
+	}
+
+	// best-effort — le container Docker est nommé d'après la recette
+	pvds.Deploy.Stop(recetteName)
+	s.db.UpdateDeploymentStatus(recette.ContainerID, "stopped")
+	s.db.Log("destroy_recette", projectName, "recette="+recetteName, "system")
+	respond(w, http.StatusOK, map[string]string{"status": "stopped"})
+}

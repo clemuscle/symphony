@@ -53,6 +53,27 @@ deploy:
     - docker
   only:
     - main
+  except:
+    variables:
+      - $RECETTE_NAME
+
+# ── DEPLOY-RECETTE ────────────────────────────────
+deploy-recette:
+  stage: deploy
+  image: docker:24
+  script:
+    - docker stop $RECETTE_NAME || true
+    - docker rm $RECETTE_NAME || true
+    - docker run -d
+        --name $RECETTE_NAME
+        -p $RECETTE_PORT:{{.Port}}
+        --restart unless-stopped
+        $REGISTRY/$IMAGE_NAME:latest
+  tags:
+    - docker
+  only:
+    variables:
+      - $RECETTE_NAME
 
 # ── REGISTER — Feedback GitOps vers Symphony ──────
 register-service:

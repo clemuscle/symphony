@@ -83,6 +83,62 @@
             <span v-if="s.error_detail" class="step-error">{{ s.error_detail }}</span>
           </div>
         </div>
+
+        <!-- Recettes -->
+        <div class="recette-section">
+          <div class="recette-header" @click="toggleRecettes(p)">
+            <span class="recette-title">🧪 Recettes</span>
+            <span class="recette-count" v-if="recetteState[p.name]?.list?.length">
+              {{ recetteState[p.name].list.length }}
+            </span>
+            <span class="recette-toggle">{{ recetteState[p.name]?.open ? '▲' : '▼' }}</span>
+          </div>
+
+          <div v-if="recetteState[p.name]?.open" class="recette-body">
+            <div class="recette-list" v-if="recetteState[p.name]?.list?.length">
+              <div v-for="rec in recetteState[p.name].list" :key="rec.recette_name" class="recette-row">
+                <span class="recette-name">{{ rec.recette_name }}</span>
+                <span class="recette-port">:{{ rec.port }}</span>
+                <span :class="['status-badge', 'sm', rec.status]">{{ rec.status }}</span>
+                <a v-if="rec.url" :href="rec.url" target="_blank" class="btn-ghost btn-xs">↗</a>
+                <button
+                  class="btn-ghost btn-xs btn-danger"
+                  :disabled="recetteState[p.name]?.destroying === rec.recette_name"
+                  @click="destroyRecette(p, rec.recette_name)"
+                >
+                  {{ recetteState[p.name]?.destroying === rec.recette_name ? '⏳' : '✕' }}
+                </button>
+              </div>
+            </div>
+            <div v-else-if="!recetteState[p.name]?.loading" class="recette-empty">
+              Aucune recette active
+            </div>
+
+            <div class="recette-form" v-if="!recetteState[p.name]?.creating">
+              <button class="btn-ghost btn-sm" @click="startCreateRecette(p)">+ Nouvelle recette</button>
+            </div>
+            <div class="recette-create" v-else>
+              <input
+                v-model="recetteState[p.name].newName"
+                placeholder="nom-recette"
+                class="input-sm"
+                @keyup.enter="submitRecette(p)"
+              />
+              <input
+                v-model.number="recetteState[p.name].newPort"
+                type="number"
+                placeholder="port"
+                class="input-sm input-port"
+                @keyup.enter="submitRecette(p)"
+              />
+              <button class="btn-ghost btn-sm" @click="submitRecette(p)" :disabled="recetteState[p.name]?.submitting">
+                {{ recetteState[p.name]?.submitting ? '⏳' : 'Déployer' }}
+              </button>
+              <button class="btn-ghost btn-sm" @click="cancelCreateRecette(p)">Annuler</button>
+              <span v-if="recetteState[p.name]?.error" class="recette-error">{{ recetteState[p.name].error }}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -106,6 +162,7 @@ const error = ref(null)
 const pipelineState = ref({})
 const deployState = ref({})
 const stepsState = ref({})
+const recetteState = ref({})
 let pollInterval = null
 
 const langIcon = (lang) => ({ go: '🐹', python: '🐍', node: '💚', java: '☕' })[lang] || '📦'
@@ -172,6 +229,76 @@ async function triggerPipeline(project) {
     pollStatus(path, data.pipeline_id)
   } catch (e) {
     pipelineState.value[path] = { error: e.response?.data?.error || e.message, loading: false }
+  }
+}
+
+async function toggleRecettes(project) {
+  const name = project.name
+  const cur = recetteState.value[name] || {}
+  if (cur.open) {
+    recetteState.value[name] = { ...cur, open: false }
+    return
+  }
+  recetteState.value[name] = { ...cur, open: true, loading: true }
+  try {
+    const { data } = await api.listRecettes(name)
+    recetteState.value[name] = { ...recetteState.value[name], loading: false, list: data || [] }
+  } catch {
+    recetteState.value[name] = { ...recetteState.value[name], loading: false, list: [] }
+  }
+}
+
+function startCreateRecette(project) {
+  const name = project.name
+  recetteState.value[name] = {
+    ...recetteState.value[name],
+    creating: true,
+    newName: '',
+    newPort: null,
+    error: null,
+  }
+}
+
+function cancelCreateRecette(project) {
+  const name = project.name
+  recetteState.value[name] = { ...recetteState.value[name], creating: false, error: null }
+}
+
+async function submitRecette(project) {
+  const name = project.name
+  const state = recetteState.value[name] || {}
+  if (!state.newName || !state.newPort) {
+    recetteState.value[name] = { ...state, error: 'Nom et port requis' }
+    return
+  }
+  recetteState.value[name] = { ...state, submitting: true, error: null }
+  try {
+    await api.createRecette(name, { recette_name: state.newName, port: state.newPort })
+    const { data } = await api.listRecettes(name)
+    recetteState.value[name] = {
+      ...recetteState.value[name],
+      submitting: false,
+      creating: false,
+      list: data || [],
+    }
+  } catch (e) {
+    recetteState.value[name] = {
+      ...recetteState.value[name],
+      submitting: false,
+      error: e.response?.data?.error || e.message,
+    }
+  }
+}
+
+async function destroyRecette(project, recetteName) {
+  const name = project.name
+  recetteState.value[name] = { ...recetteState.value[name], destroying: recetteName }
+  try {
+    await api.destroyRecette(name, recetteName)
+    const { data } = await api.listRecettes(name)
+    recetteState.value[name] = { ...recetteState.value[name], destroying: null, list: data || [] }
+  } catch (e) {
+    recetteState.value[name] = { ...recetteState.value[name], destroying: null }
   }
 }
 
@@ -323,4 +450,37 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .step-status.success { background: #f0fff4; color: #276749; }
 .step-status.failed { background: #fff5f5; color: #c53030; }
 .step-error { color: #c53030; font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Recettes */
+.recette-section { border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; font-size: 13px; }
+.recette-header { display: flex; align-items: center; gap: 6px; padding: 7px 10px; background: #f8f9fb; cursor: pointer; user-select: none; }
+.recette-header:hover { background: #f0f2f7; }
+.recette-title { font-weight: 600; color: #555; flex: 1; }
+.recette-count { background: #e0e7ff; color: #4338ca; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 10px; }
+.recette-toggle { color: #aaa; font-size: 10px; }
+.recette-body { padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+.recette-list { display: flex; flex-direction: column; gap: 4px; }
+.recette-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-bottom: 1px solid #f0f0f0; }
+.recette-row:last-child { border-bottom: none; }
+.recette-name { font-weight: 600; color: #444; flex: 1; font-size: 12px; }
+.recette-port { color: #888; font-size: 11px; font-family: monospace; }
+.recette-empty { color: #aaa; font-size: 12px; padding: 4px 0; }
+.recette-error { color: #c53030; font-size: 11px; }
+.recette-form { display: flex; gap: 6px; }
+.recette-create { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.input-sm {
+  padding: 4px 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 12px;
+  outline: none;
+  flex: 1;
+  min-width: 80px;
+}
+.input-sm:focus { border-color: #667eea; }
+.input-port { max-width: 80px; flex: none; }
+.btn-sm { font-size: 12px; padding: 4px 10px; }
+.btn-xs { font-size: 11px; padding: 2px 7px; }
+.btn-danger { color: #c53030; border-color: #feb2b2; }
+.btn-danger:hover { background: #fff5f5; }
 </style>
