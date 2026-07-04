@@ -36,9 +36,10 @@ func UserFromContext(ctx context.Context) (*User, bool) {
 }
 
 type Provider struct {
-	verifier    *oidc.IDTokenVerifier
-	oauth2      oauth2.Config
-	adminEmails map[string]bool
+	verifier       *oidc.IDTokenVerifier
+	oauth2         oauth2.Config
+	adminEmails    map[string]bool
+	deployerGroups map[string]bool // empty = all authenticated users
 }
 
 func New(ctx context.Context, cfg Config) (*Provider, error) {
@@ -52,6 +53,12 @@ func New(ctx context.Context, cfg Config) (*Provider, error) {
 			adminEmails[e] = true
 		}
 	}
+	deployerGroups := map[string]bool{}
+	for _, g := range strings.Split(os.Getenv("DEPLOYER_GROUPS"), ",") {
+		if g := strings.TrimSpace(g); g != "" {
+			deployerGroups[g] = true
+		}
+	}
 	return &Provider{
 		verifier: p.Verifier(&oidc.Config{ClientID: cfg.ClientID}),
 		oauth2: oauth2.Config{
@@ -61,7 +68,8 @@ func New(ctx context.Context, cfg Config) (*Provider, error) {
 			Endpoint:     p.Endpoint(),
 			Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
 		},
-		adminEmails: adminEmails,
+		adminEmails:    adminEmails,
+		deployerGroups: deployerGroups,
 	}, nil
 }
 
@@ -160,6 +168,24 @@ func (p *Provider) MeHandler(w http.ResponseWriter, r *http.Request) {
 	user, _ := UserFromContext(r.Context())
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(user)
+}
+
+// CanDeploy returns true if the user is allowed to create projects, trigger
+// pipelines and deployments. Admins always pass. If DEPLOYER_GROUPS is empty
+// every authenticated user passes (permissive default for small teams).
+func (p *Provider) CanDeploy(user *User) bool {
+	if user.IsAdmin {
+		return true
+	}
+	if len(p.deployerGroups) == 0 {
+		return true
+	}
+	for _, g := range user.Groups {
+		if p.deployerGroups[g] {
+			return true
+		}
+	}
+	return false
 }
 
 func randomState() string {
