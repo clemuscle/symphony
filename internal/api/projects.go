@@ -8,6 +8,7 @@ import (
 
 	"github.com/yourorg/symphony/internal/database"
 	"github.com/yourorg/symphony/internal/providers"
+	"github.com/yourorg/symphony/internal/templates"
 )
 
 type CreateProjectRequest struct {
@@ -95,32 +96,39 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Étapes restantes, séquentielles (scaffold et setup pipeline écrivent
-	// tous les deux dans le même repo/branche — les paralléliser créerait un
-	// vrai risque de race sur la même ref git), chacune best-effort.
+	// 3. Étapes restantes, séquentielles (scaffold et pipeline écrivent dans le
+	// même repo/branche — les paralléliser créerait un risque de race sur la
+	// même ref git), chacune best-effort.
+	scaffoldVars := templates.ScaffoldVars{
+		ServiceName:        req.Name,
+		ServiceDescription: req.Description,
+		Port:               req.Port,
+		Language:           req.Language,
+		Type:               req.Type,
+		GitServerURL:       pvds.SCMBaseURL,
+		ConfigRepoPath:     pvds.CIConfigRepo,
+	}
 	steps := []stepResult{
 		s.runStep(project.Name, "scaffold", func() error {
-			return pvds.SCM.Scaffold(repo, providers.ScaffoldConfig{
-				Name:        req.Name,
-				Description: req.Description,
-				Language:    req.Language,
-				Type:        req.Type,
-				Port:        req.Port,
-			})
+			files, err := s.tmpl.RenderFiles(req.Language, scaffoldVars)
+			if err != nil {
+				return err
+			}
+			for path, content := range files {
+				if err := pvds.SCM.PushFile(repo.Path, repo.DefaultBranch, path, content,
+					fmt.Sprintf("chore: scaffold %s [symphony]", path)); err != nil {
+					return err
+				}
+			}
+			return nil
 		}),
-		s.runStep(project.Name, "pipeline_test", func() error {
-			return pvds.CI.SetupPipeline(repo.Path, providers.PipelineConfig{
-				Name:     req.Name,
-				Type:     "test",
-				Language: req.Language,
-			})
-		}),
-		s.runStep(project.Name, "pipeline_build", func() error {
-			return pvds.CI.SetupPipeline(repo.Path, providers.PipelineConfig{
-				Name:     req.Name,
-				Type:     "build",
-				Language: req.Language,
-			})
+		s.runStep(project.Name, "pipeline", func() error {
+			content, err := s.tmpl.RenderCI(req.Language, scaffoldVars)
+			if err != nil || content == "" {
+				return err
+			}
+			return pvds.SCM.PushFile(repo.Path, repo.DefaultBranch, ".gitlab-ci.yml", content,
+				"ci: add pipeline [symphony]")
 		}),
 		s.runStep(project.Name, "registry", func() error {
 			registryURL, err := pvds.Registry.GetRegistryURL(repo.Path)
@@ -162,36 +170,43 @@ func (s *Server) deployProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ProjectName string            `json:"project_name"`
-		Image       string            `json:"image"`
-		Port        int               `json:"port"`
-		EnvVars     map[string]string `json:"env_vars"`
+		ProjectName string `json:"project_name"`
+		Image       string `json:"image"`
+		Port        int    `json:"port"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
-
-	result, err := pvds.Deploy.Deploy(providers.DeployRequest{
-		ProjectName: req.ProjectName,
-		Image:       req.Image,
-		Port:        req.Port,
-		EnvVars:     req.EnvVars,
-	})
-	if err != nil {
-		respond(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+	if req.ProjectName == "" {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "project_name requis"})
 		return
 	}
 
-	s.db.CreateDeployment(&database.Deployment{
+	project, err := s.db.GetProject(req.ProjectName)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+		return
+	}
+
+	pipelineID, err := pvds.CI.TriggerPipeline(project.RepoPath, "main", nil)
+	if err != nil {
+		respond(w, http.StatusBadGateway, map[string]string{"error": "ci: " + err.Error()})
+		return
+	}
+
+	d := &database.Deployment{
 		ProjectName: req.ProjectName,
-		ContainerID: result.DeploymentID,
+		ContainerID: pipelineID,
 		Image:       req.Image,
 		Port:        req.Port,
-		Status:      "running",
-		URL:         result.URL,
-	})
-	s.db.Log("deploy", req.ProjectName, "image="+req.Image, "system")
+		Status:      "pending",
+	}
+	if err := s.db.CreateDeployment(d); err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": "db: " + err.Error()})
+		return
+	}
+	s.db.Log("deploy", req.ProjectName, "pipeline="+pipelineID, "system")
 
-	respond(w, http.StatusCreated, result)
+	respond(w, http.StatusAccepted, d)
 }

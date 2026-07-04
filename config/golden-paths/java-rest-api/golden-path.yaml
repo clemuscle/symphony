@@ -1,0 +1,10 @@
+apiVersion: symphony/v1
+kind: GoldenPath
+metadata:
+  name: java-rest-api
+  description: "REST API en Java avec Maven, healthcheck et métriques"
+  icon: java
+spec:
+  language: java
+  type: rest-api
+  default_port: 8080

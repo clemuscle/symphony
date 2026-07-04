@@ -63,25 +63,26 @@ func (p *Provider) api(method, path string, body any) ([]byte, int, error) {
 }
 
 func (p *Provider) SetupPipeline(projectPath string, cfg providers.PipelineConfig) error {
+	if cfg.Content == "" {
+		return nil
+	}
 	encoded := url.PathEscape(projectPath)
-	files := pipelineFiles(cfg, p.BaseURL, p.ConfigRepoPath)
-	for filename, content := range files {
-		payload := map[string]any{
-			"branch":         "main",
-			"content":        content,
-			"commit_message": fmt.Sprintf("ci: add %s pipeline [symphony]", cfg.Type),
-		}
-		_, status, err := p.api("POST",
+	filename := ".gitlab-ci.yml"
+	payload := map[string]any{
+		"branch":         "main",
+		"content":        cfg.Content,
+		"commit_message": "ci: add pipeline [symphony]",
+	}
+	_, status, err := p.api("POST",
+		fmt.Sprintf("/projects/%s/repository/files/%s", encoded, url.PathEscape(filename)),
+		payload)
+	if err != nil {
+		return err
+	}
+	if status == 400 {
+		p.api("PUT",
 			fmt.Sprintf("/projects/%s/repository/files/%s", encoded, url.PathEscape(filename)),
 			payload)
-		if err != nil {
-			return err
-		}
-		if status == 400 {
-			p.api("PUT",
-				fmt.Sprintf("/projects/%s/repository/files/%s", encoded, url.PathEscape(filename)),
-				payload)
-		}
 	}
 	return nil
 }

@@ -95,8 +95,10 @@ func SaveConfig(path string, cfg *IntegrationConfig) error {
 
 // ProviderSet regroupe les providers actifs, initialisés depuis IntegrationConfig.
 type ProviderSet struct {
-	SCM      SCMProvider
-	CI       CIProvider
-	Registry RegistryProvider
-	Deploy   DeployProvider
+	SCM          SCMProvider
+	CI           CIProvider
+	Registry     RegistryProvider
+	Deploy       DeployProvider
+	SCMBaseURL   string
+	CIConfigRepo string
 }

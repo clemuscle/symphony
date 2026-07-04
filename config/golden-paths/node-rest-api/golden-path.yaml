@@ -1,0 +1,10 @@
+apiVersion: symphony/v1
+kind: GoldenPath
+metadata:
+  name: node-rest-api
+  description: "REST API en Node.js avec Express, healthcheck et métriques"
+  icon: node
+spec:
+  language: node
+  type: rest-api
+  default_port: 8080

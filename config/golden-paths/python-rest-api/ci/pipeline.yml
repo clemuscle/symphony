@@ -1,0 +1,95 @@
+image: python:3.12-slim
+
+stages:
+  - test
+  - build
+  - deploy
+  - register
+
+variables:
+  IMAGE_NAME: {{.ServiceName}}
+  REGISTRY: $CI_REGISTRY
+  SYMPHONY_GIT_URL: "{{.GitServerURL}}"
+  SYMPHONY_CONFIG_REPO: "{{.ConfigRepoPath}}"
+
+# ── TEST ──────────────────────────────────────────
+test:
+  stage: test
+  script:
+    - pip install -r requirements.txt && pytest
+  only:
+    - merge_requests
+    - main
+
+# ── BUILD ─────────────────────────────────────────
+build:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -t $REGISTRY/$IMAGE_NAME:$CI_COMMIT_SHORT_SHA .
+    - docker push $REGISTRY/$IMAGE_NAME:$CI_COMMIT_SHORT_SHA
+    - docker tag $REGISTRY/$IMAGE_NAME:$CI_COMMIT_SHORT_SHA $REGISTRY/$IMAGE_NAME:latest
+    - docker push $REGISTRY/$IMAGE_NAME:latest
+  tags:
+    - docker
+  only:
+    - main
+
+# ── DEPLOY ────────────────────────────────────────
+deploy:
+  stage: deploy
+  image: docker:24
+  script:
+    - docker stop $IMAGE_NAME || true
+    - docker rm $IMAGE_NAME || true
+    - docker run -d
+        --name $IMAGE_NAME
+        --restart unless-stopped
+        $REGISTRY/$IMAGE_NAME:latest
+  tags:
+    - docker
+  only:
+    - main
+
+# ── REGISTER — Feedback GitOps vers Symphony ──────
+register-service:
+  stage: register
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache curl git
+    - git config --global user.email "symphony-bot@gitlab.local"
+    - git config --global user.name "Symphony Bot"
+  script:
+    - export SYMPHONY_GIT_HOST=$(echo $SYMPHONY_GIT_URL | sed -E 's#^[a-z]+://##')
+    - export SYMPHONY_GIT_SCHEME=$(echo $SYMPHONY_GIT_URL | sed -E 's#^([a-z]+)://.*#\1#')
+    - git clone "${SYMPHONY_GIT_SCHEME}://root:${SYMPHONY_TOKEN}@${SYMPHONY_GIT_HOST}/${SYMPHONY_CONFIG_REPO}.git" /tmp/symphony-config
+    - cd /tmp/symphony-config
+    - |
+      cat > services/{{.ServiceName}}.yaml << YAML
+      apiVersion: symphony/v1
+      kind: Service
+      metadata:
+        name: "{{.ServiceName}}"
+        owner: "${GITLAB_USER_LOGIN:-symphony-bot}"
+        tags:
+          - "{{.Language}}"
+          - "auto-registered"
+      spec:
+        type: "{{.Type}}"
+        links:
+          - title: "Repository"
+            url: "$CI_PROJECT_URL"
+          - title: "Registry"
+            url: "$CI_REGISTRY_IMAGE"
+          - title: "Pipelines"
+            url: "$CI_PROJECT_URL/-/pipelines"
+      YAML
+    - git add services/{{.ServiceName}}.yaml
+    - git diff --staged --quiet && echo "Pas de changement" || git commit -m "feat: register {{.ServiceName}} [symphony-bot]"
+    - git push
+  only:
+    - main
+  allow_failure: true

@@ -6,7 +6,6 @@ type SCMProvider interface {
 	CreateRepo(req RepoRequest) (*RepoResult, error)
 	PushFile(projectPath, branch, filePath, content, commitMsg string) error
 	ListRepos() ([]Repo, error)
-	Scaffold(repo *RepoResult, cfg ScaffoldConfig) error
 }
 
 type RepoRequest struct {
@@ -31,21 +30,12 @@ type Repo struct {
 	WebURL string `json:"web_url"`
 }
 
-type ScaffoldConfig struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Language    string `json:"language"`
-	Type        string `json:"type"`
-	Port        int    `json:"port"`
-}
-
 // ─── 2. CI AUTOMATION ─────────────────────────────────────────────────────────
 
 type CIProvider interface {
 	SetupPipeline(projectPath string, pipeline PipelineConfig) error
 	TriggerPipeline(projectPath, ref string, vars map[string]string) (string, error)
 	GetPipelineStatus(projectPath, pipelineID string) (string, error)
-	EnsureRunner(name, executorType string) error
 }
 
 type PipelineConfig struct {
@@ -53,6 +43,7 @@ type PipelineConfig struct {
 	Type     string   `json:"type"`
 	Language string   `json:"language"`
 	Stages   []string `json:"stages"`
+	Content  string   `json:"content"`
 }
 
 // ─── 3. ARTIFACT STORAGE ──────────────────────────────────────────────────────
@@ -73,24 +64,9 @@ type Image struct {
 // ─── 4. DEPLOYMENT ────────────────────────────────────────────────────────────
 
 type DeployProvider interface {
-	Deploy(req DeployRequest) (*DeployResult, error)
 	Stop(deploymentID string) error
 	Status(deploymentID string) (string, error)
 	List() ([]Deployment, error)
-}
-
-type DeployRequest struct {
-	ProjectName string            `json:"project_name"`
-	Image       string            `json:"image"`
-	Port        int               `json:"port"`
-	EnvVars     map[string]string `json:"env_vars"`
-	HealthCheck string            `json:"health_check"`
-}
-
-type DeployResult struct {
-	DeploymentID string `json:"deployment_id"`
-	URL          string `json:"url"`
-	Status       string `json:"status"`
 }
 
 type Deployment struct {

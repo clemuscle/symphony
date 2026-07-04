@@ -1,0 +1,10 @@
+apiVersion: symphony/v1
+kind: GoldenPath
+metadata:
+  name: go-rest-api
+  description: "REST API en Go avec healthcheck et métriques Prometheus"
+  icon: go
+spec:
+  language: go
+  type: rest-api
+  default_port: 8080

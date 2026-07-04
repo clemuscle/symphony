@@ -1,36 +1,4 @@
-package gitlabci
-
-import (
-	"fmt"
-	"github.com/yourorg/symphony/internal/providers"
-)
-
-var languageImages = map[string]string{
-	"go":     "golang:1.22-alpine",
-	"node":   "node:20-alpine",
-	"python": "python:3.12-slim",
-	"java":   "maven:3.9-eclipse-temurin-21",
-}
-
-var testCommands = map[string]string{
-	"go":     "go test ./...",
-	"node":   "npm ci && npm test",
-	"python": "pip install -r requirements.txt && pytest",
-	"java":   "mvn test",
-}
-
-func pipelineFiles(cfg providers.PipelineConfig, gitURL, configRepoPath string) map[string]string {
-	image := languageImages[cfg.Language]
-	if image == "" {
-		image = "alpine:latest"
-	}
-	testCmd := testCommands[cfg.Language]
-	if testCmd == "" {
-		testCmd = "echo 'no tests configured'"
-	}
-
-	// Un seul .gitlab-ci.yml avec tous les stages
-	pipeline := fmt.Sprintf(`image: %s
+image: maven:3.9-eclipse-temurin-21
 
 stages:
   - test
@@ -39,16 +7,16 @@ stages:
   - register
 
 variables:
-  IMAGE_NAME: %s
+  IMAGE_NAME: {{.ServiceName}}
   REGISTRY: $CI_REGISTRY
-  SYMPHONY_GIT_URL: "%s"
-  SYMPHONY_CONFIG_REPO: "%s"
+  SYMPHONY_GIT_URL: "{{.GitServerURL}}"
+  SYMPHONY_CONFIG_REPO: "{{.ConfigRepoPath}}"
 
 # ── TEST ──────────────────────────────────────────
 test:
   stage: test
   script:
-    - %s
+    - mvn test
   only:
     - merge_requests
     - main
@@ -100,36 +68,28 @@ register-service:
     - git clone "${SYMPHONY_GIT_SCHEME}://root:${SYMPHONY_TOKEN}@${SYMPHONY_GIT_HOST}/${SYMPHONY_CONFIG_REPO}.git" /tmp/symphony-config
     - cd /tmp/symphony-config
     - |
-      cat > services/%s.yaml << YAML
-apiVersion: symphony/v1
-kind: Service
-metadata:
-  name: "%s"
-  owner: "${GITLAB_USER_LOGIN:-symphony-bot}"
-  tags:
-    - "%s"
-    - "auto-registered"
-spec:
-  type: "%s"
-  links:
-    - title: "Repository"
-      url: "$CI_PROJECT_URL"
-    - title: "Registry"
-      url: "$CI_REGISTRY_IMAGE"
-    - title: "Pipelines"
-      url: "$CI_PROJECT_URL/-/pipelines"
-YAML
-    - git add services/%s.yaml
-    - git diff --staged --quiet && echo "Pas de changement" || git commit -m "feat: register %s [symphony-bot]"
+      cat > services/{{.ServiceName}}.yaml << YAML
+      apiVersion: symphony/v1
+      kind: Service
+      metadata:
+        name: "{{.ServiceName}}"
+        owner: "${GITLAB_USER_LOGIN:-symphony-bot}"
+        tags:
+          - "{{.Language}}"
+          - "auto-registered"
+      spec:
+        type: "{{.Type}}"
+        links:
+          - title: "Repository"
+            url: "$CI_PROJECT_URL"
+          - title: "Registry"
+            url: "$CI_REGISTRY_IMAGE"
+          - title: "Pipelines"
+            url: "$CI_PROJECT_URL/-/pipelines"
+      YAML
+    - git add services/{{.ServiceName}}.yaml
+    - git diff --staged --quiet && echo "Pas de changement" || git commit -m "feat: register {{.ServiceName}} [symphony-bot]"
     - git push
   only:
     - main
   allow_failure: true
-`, image, cfg.Name, gitURL, configRepoPath, testCmd,
-		cfg.Name, cfg.Name, cfg.Language, cfg.Type,
-		cfg.Name, cfg.Name)
-
-	return map[string]string{
-		".gitlab-ci.yml": pipeline,
-	}
-}

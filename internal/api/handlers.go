@@ -13,7 +13,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/yourorg/symphony/internal/catalog"
 	"github.com/yourorg/symphony/internal/database"
-	"github.com/yourorg/symphony/internal/providers"
 )
 
 
@@ -229,18 +228,13 @@ func (s *Server) listPipelinesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) {
-	pvds := s.getProviders()
-	if pvds == nil {
-		respond(w, http.StatusServiceUnavailable, errSetupRequired())
-		return
-	}
-	deployments, err := pvds.Deploy.List()
+	deployments, err := s.db.ListDeployments()
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	if deployments == nil {
-		deployments = []providers.Deployment{}
+		deployments = []database.Deployment{}
 	}
 	respond(w, http.StatusOK, deployments)
 }
