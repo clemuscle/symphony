@@ -305,9 +305,16 @@ func (s *Server) destroyRecette(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusNotFound, map[string]string{"error": "recette introuvable"})
 		return
 	}
+	project, err := s.db.GetProject(projectName)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+		return
+	}
 
-	// best-effort — le container Docker est nommé d'après la recette
-	pvds.Deploy.Stop(recetteName)
+	// Principe #3 : destruction déléguée au pipeline CI (job destroy-recette)
+	pvds.CI.TriggerPipeline(project.RepoPath, "main", map[string]string{
+		"DESTROY_RECETTE": recetteName,
+	})
 	s.db.UpdateDeploymentStatus(recette.ContainerID, "stopped")
 	s.db.Log("destroy_recette", projectName, "recette="+recetteName, "system")
 	respond(w, http.StatusOK, map[string]string{"status": "stopped"})

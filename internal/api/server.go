@@ -19,12 +19,23 @@ type Server struct {
 	auth    *auth.Provider
 	tmpl    *templates.Loader
 	cfgPath string
+	router  *chi.Mux
 	// providers protégés par mutex — nil = setup requis
 	mu     sync.RWMutex
 	pvds   *providers.ProviderSet
 	reload func() (*providers.ProviderSet, error) // callback défini dans main.go
 	// callback de test de connexion (évite d'importer les drivers ici)
 	testProvider func(providerType string, cfg map[string]string) (string, error)
+}
+
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.router.ServeHTTP(w, r)
+}
+
+// GetProviders est thread-safe et reflète toujours le ProviderSet courant,
+// y compris après reconfiguration via le wizard ou /config/reload.
+func (s *Server) GetProviders() *providers.ProviderSet {
+	return s.getProviders()
 }
 
 func (s *Server) getProviders() *providers.ProviderSet {
@@ -50,7 +61,7 @@ type ServerOptions struct {
 	CfgPath      string
 }
 
-func NewServer(opts ServerOptions) *chi.Mux {
+func NewServer(opts ServerOptions) *Server {
 	s := &Server{
 		store:        opts.Store,
 		db:           opts.DB,
@@ -62,6 +73,7 @@ func NewServer(opts ServerOptions) *chi.Mux {
 		cfgPath:      opts.CfgPath,
 	}
 	r := chi.NewRouter()
+	s.router = r
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(corsMiddleware)
@@ -122,7 +134,7 @@ func NewServer(opts ServerOptions) *chi.Mux {
 		r.Get("/api/v1/audit", s.listAudit)
 	})
 
-	return r
+	return s
 }
 
 func (s *Server) adminOnly(next http.Handler) http.Handler {
