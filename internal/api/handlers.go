@@ -261,7 +261,7 @@ func (s *Server) stopDeployment(w http.ResponseWriter, r *http.Request) {
 	pvds.CI.TriggerPipeline(project.RepoPath, "main", map[string]string{
 		"DESTROY_DEPLOY": "1",
 	})
-	s.db.UpdateDeploymentStatus(d.ContainerID, "stopped")
+	s.db.UpdateDeploymentStatus(d.PipelineID, "stopped")
 	s.db.Log("stop_deployment", d.ProjectName, "pipeline triggered for destroy", "system")
 	respond(w, http.StatusOK, map[string]string{"status": "stopped"})
 }

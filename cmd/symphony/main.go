@@ -206,7 +206,7 @@ func reconcileDeployments(db *database.DB, getProviders func() *providers.Provid
 			if err != nil {
 				continue
 			}
-			status, err := pvds.CI.GetPipelineStatus(project.RepoPath, d.ContainerID)
+			status, err := pvds.CI.GetPipelineStatus(project.RepoPath, d.PipelineID)
 			if err != nil {
 				continue
 			}
@@ -220,8 +220,10 @@ func reconcileDeployments(db *database.DB, getProviders func() *providers.Provid
 				newStatus = "stopped"
 			}
 			if newStatus != "" {
-				db.UpdateDeploymentStatus(d.ContainerID, newStatus)
-				log.Printf("deployment %s → %s (pipeline %s)", d.ProjectName, newStatus, d.ContainerID)
+				applied, err := db.UpdateDeploymentStatus(d.PipelineID, newStatus)
+				if err == nil && applied {
+					log.Printf("deployment %s → %s (pipeline %s)", d.ProjectName, newStatus, d.PipelineID)
+				}
 			}
 		}
 	}

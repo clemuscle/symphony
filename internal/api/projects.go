@@ -198,7 +198,7 @@ func (s *Server) deployProject(w http.ResponseWriter, r *http.Request) {
 
 	d := &database.Deployment{
 		ProjectName: req.ProjectName,
-		ContainerID: pipelineID,
+		PipelineID:  pipelineID,
 		Image:       req.Image,
 		Port:        req.Port,
 		Status:      "pending",
@@ -262,7 +262,7 @@ func (s *Server) createRecette(w http.ResponseWriter, r *http.Request) {
 
 	d := &database.Deployment{
 		ProjectName: projectName,
-		ContainerID: pipelineID,
+		PipelineID:  pipelineID,
 		Image:       project.RegistryURL,
 		Port:        req.Port,
 		Status:      "pending",
@@ -315,7 +315,7 @@ func (s *Server) destroyRecette(w http.ResponseWriter, r *http.Request) {
 	pvds.CI.TriggerPipeline(project.RepoPath, "main", map[string]string{
 		"DESTROY_RECETTE": recetteName,
 	})
-	s.db.UpdateDeploymentStatus(recette.ContainerID, "stopped")
+	s.db.UpdateDeploymentStatus(recette.PipelineID, "stopped")
 	s.db.Log("destroy_recette", projectName, "recette="+recetteName, "system")
 	respond(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
