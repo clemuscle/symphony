@@ -1,204 +1,182 @@
 package templates
 
 import (
-	"encoding/json"
+	"bytes"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
+	"io/fs"
 	"os"
-	"strconv"
-	"strings"
-	"time"
+	"path/filepath"
+	"text/template"
 
 	"gopkg.in/yaml.v3"
 )
 
+// GoldenPath descriptor — what the API exposes (no file content).
 type GoldenPath struct {
-	APIVersion string   `yaml:"apiVersion"`
-	Kind       string   `yaml:"kind"`
-	Metadata   GPMeta   `yaml:"metadata"`
-	Spec       GPSpec   `yaml:"spec"`
+	APIVersion string `yaml:"apiVersion" json:"api_version"`
+	Kind       string `yaml:"kind"       json:"kind"`
+	Metadata   GPMeta `yaml:"metadata"   json:"metadata"`
+	Spec       GPSpec `yaml:"spec"       json:"spec"`
 }
 
 type GPMeta struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
-	Icon        string `yaml:"icon"`
+	Name        string `yaml:"name"        json:"name"`
+	Description string `yaml:"description" json:"description"`
+	Icon        string `yaml:"icon"        json:"icon"`
 }
 
 type GPSpec struct {
-	Language      string   `yaml:"language"`
-	Type          string   `yaml:"type"`
-	CITemplate    string   `yaml:"ci_template"`
-	BuildTemplate string   `yaml:"build_template"`
-	Includes      []string `yaml:"includes"`
+	Language    string `yaml:"language"     json:"language"`
+	Type        string `yaml:"type"         json:"type"`
+	DefaultPort int    `yaml:"default_port" json:"default_port"`
 }
 
+// ScaffoldVars are the variables available in golden path template files.
+type ScaffoldVars struct {
+	ServiceName        string
+	ServiceDescription string
+	Port               int
+	Language           string
+	Type               string
+	GitServerURL       string
+	ConfigRepoPath     string
+}
+
+// loadedPath holds a descriptor plus its raw file templates.
+type loadedPath struct {
+	GoldenPath
+	files      map[string]string
+	ciPipeline string
+}
+
+// Loader loads golden paths from the local filesystem.
 type Loader struct {
-	BaseURL    string
-	Token      string
-	RepoPath   string
-	client     *http.Client
-	goldenPaths []GoldenPath
-	ciTemplates map[string]string
+	baseDir string
+	paths   []loadedPath
 }
 
-func NewLoader(baseURL, token, repoPath string) *Loader {
-	return &Loader{
-		BaseURL:     strings.TrimRight(baseURL, "/"),
-		Token:       token,
-		RepoPath:    repoPath,
-		client:      &http.Client{Timeout: 15 * time.Second},
-		ciTemplates: make(map[string]string),
-	}
+func NewLoader(baseDir string) *Loader {
+	return &Loader{baseDir: baseDir}
 }
 
 func (l *Loader) Load() error {
-	if err := l.loadGoldenPaths(); err != nil {
-		return fmt.Errorf("golden paths: %w", err)
+	entries, err := os.ReadDir(l.baseDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("loader: read dir %s: %w", l.baseDir, err)
 	}
-	if err := l.loadCITemplates(); err != nil {
-		return fmt.Errorf("ci templates: %w", err)
+
+	var loaded []loadedPath
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		lp, err := l.loadOne(filepath.Join(l.baseDir, e.Name()))
+		if err != nil {
+			return fmt.Errorf("loader: %s: %w", e.Name(), err)
+		}
+		loaded = append(loaded, lp)
 	}
+	l.paths = loaded
 	return nil
 }
 
+func (l *Loader) loadOne(dir string) (loadedPath, error) {
+	var lp loadedPath
+
+	data, err := os.ReadFile(filepath.Join(dir, "golden-path.yaml"))
+	if err != nil {
+		return lp, fmt.Errorf("golden-path.yaml: %w", err)
+	}
+	if err := yaml.Unmarshal(data, &lp.GoldenPath); err != nil {
+		return lp, fmt.Errorf("golden-path.yaml: parse: %w", err)
+	}
+
+	filesDir := filepath.Join(dir, "files")
+	lp.files = make(map[string]string)
+	err = filepath.WalkDir(filesDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, _ := filepath.Rel(filesDir, path)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		lp.files[rel] = string(content)
+		return nil
+	})
+	if err != nil && !os.IsNotExist(err) {
+		return lp, fmt.Errorf("files/: %w", err)
+	}
+
+	ciData, err := os.ReadFile(filepath.Join(dir, "ci", "pipeline.yml"))
+	if err == nil {
+		lp.ciPipeline = string(ciData)
+	}
+
+	return lp, nil
+}
+
+func (l *Loader) Reload() error { return l.Load() }
+
+// GetGoldenPaths returns descriptors only (no file content) — for API listing.
 func (l *Loader) GetGoldenPaths() []GoldenPath {
-	return l.goldenPaths
-}
-
-func (l *Loader) GetCITemplate(path string) (string, bool) {
-	content, ok := l.ciTemplates[path]
-	return content, ok
-}
-
-func (l *Loader) GetCITemplateForLanguage(language string) string {
-	key := fmt.Sprintf("ci/%s.gitlab-ci.yml", language)
-	if content, ok := l.ciTemplates[key]; ok {
-		return content
+	out := make([]GoldenPath, len(l.paths))
+	for i, p := range l.paths {
+		out[i] = p.GoldenPath
 	}
-	return fmt.Sprintf("image: alpine:latest\nstages: [test]\ntest:\n  stage: test\n  script: [echo 'no template for %s']\n", language)
+	return out
 }
 
-func (l *Loader) GetBuildTemplate(imageName string) string {
-	if content, ok := l.ciTemplates["ci/build.gitlab-ci.yml"]; ok {
-		return strings.ReplaceAll(content, "$IMAGE_NAME", imageName)
+// RenderFiles renders all golden path template files for the given language.
+func (l *Loader) RenderFiles(language string, vars ScaffoldVars) (map[string]string, error) {
+	lp, ok := l.getByLanguage(language)
+	if !ok {
+		return nil, fmt.Errorf("no golden path for language %q", language)
 	}
-	return ""
+	result := make(map[string]string, len(lp.files))
+	for path, raw := range lp.files {
+		rendered, err := render(raw, vars)
+		if err != nil {
+			return nil, fmt.Errorf("render %s: %w", path, err)
+		}
+		result[path] = rendered
+	}
+	return result, nil
 }
 
-func (l *Loader) listFiles(dir string) ([]string, error) {
-	encoded := url.PathEscape(l.RepoPath)
+// RenderCI renders the CI pipeline template for the given language.
+func (l *Loader) RenderCI(language string, vars ScaffoldVars) (string, error) {
+	lp, ok := l.getByLanguage(language)
+	if !ok {
+		return "", fmt.Errorf("no golden path for language %q", language)
+	}
+	if lp.ciPipeline == "" {
+		return "", nil
+	}
+	return render(lp.ciPipeline, vars)
+}
 
-	var paths []string
-	page := 1
-	for {
-		apiURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/tree?path=%s&per_page=50&page=%d",
-			l.BaseURL, encoded, url.QueryEscape(dir), page)
-
-		req, err := http.NewRequest("GET", apiURL, nil)
-		if err != nil {
-			return nil, fmt.Errorf("templates listFiles %s: build request: %w", dir, err)
-		}
-		req.Header.Set("PRIVATE-TOKEN", l.Token)
-		resp, err := l.client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("templates listFiles %s: %w", dir, err)
-		}
-
-		var items []struct {
-			Name string `json:"name"`
-			Path string `json:"path"`
-			Type string `json:"type"`
-		}
-		decodeErr := json.NewDecoder(resp.Body).Decode(&items)
-		resp.Body.Close()
-		if decodeErr != nil {
-			return nil, fmt.Errorf("templates listFiles %s: decode response: %w", dir, decodeErr)
-		}
-
-		for _, item := range items {
-			if item.Type == "blob" {
-				paths = append(paths, item.Path)
-			}
-		}
-
-		nextPage := resp.Header.Get("X-Next-Page")
-		if nextPage == "" {
-			break
-		}
-		page, err = strconv.Atoi(nextPage)
-		if err != nil {
-			break
+func (l *Loader) getByLanguage(language string) (loadedPath, bool) {
+	for _, p := range l.paths {
+		if p.Spec.Language == language {
+			return p, true
 		}
 	}
-	return paths, nil
+	return loadedPath{}, false
 }
 
-func (l *Loader) getFile(filePath string) (string, error) {
-	encoded := url.PathEscape(l.RepoPath)
-	fileEncoded := url.PathEscape(filePath)
-	apiURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/files/%s/raw?ref=main",
-		l.BaseURL, encoded, fileEncoded)
-
-	req, _ := http.NewRequest("GET", apiURL, nil)
-	req.Header.Set("PRIVATE-TOKEN", l.Token)
-	resp, err := l.client.Do(req)
+func render(raw string, vars ScaffoldVars) (string, error) {
+	tmpl, err := template.New("").Parse(raw)
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	return string(data), err
-}
-
-func (l *Loader) loadGoldenPaths() error {
-	files, err := l.listFiles("golden-paths")
-	if err != nil {
-		return err
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, vars); err != nil {
+		return "", err
 	}
-
-	l.goldenPaths = nil
-	for _, f := range files {
-		if !strings.HasSuffix(f, ".yaml") {
-			continue
-		}
-		content, err := l.getFile(f)
-		if err != nil {
-			continue
-		}
-		var gp GoldenPath
-		if err := yaml.Unmarshal([]byte(content), &gp); err != nil {
-			continue
-		}
-		if gp.Kind == "GoldenPath" {
-			l.goldenPaths = append(l.goldenPaths, gp)
-		}
-	}
-	return nil
+	return buf.String(), nil
 }
-
-func (l *Loader) loadCITemplates() error {
-	files, err := l.listFiles("ci")
-	if err != nil {
-		return err
-	}
-
-	for _, f := range files {
-		content, err := l.getFile(f)
-		if err != nil {
-			continue
-		}
-		l.ciTemplates[f] = content
-	}
-	return nil
-}
-
-// Reload permet de rafraîchir les templates sans redémarrer Symphony
-func (l *Loader) Reload() error {
-	return l.Load()
-}
-
-var _ = os.Getenv // garde l'import

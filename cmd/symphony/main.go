@@ -67,14 +67,6 @@ func main() {
 			pvds = nil
 		} else {
 			log.Println("✅ Providers initialisés")
-			// Runner CI — best-effort
-			runnerName := getEnv("RUNNER_NAME", "symphony-runner")
-			runnerExecutor := getEnv("RUNNER_EXECUTOR_TYPE", "docker")
-			if err := pvds.CI.EnsureRunner(runnerName, runnerExecutor); err != nil {
-				log.Printf("⚠️  EnsureRunner: %v — les pipelines déclenchés échoueront jusqu'à résolution manuelle", err)
-			} else {
-				log.Println("✅ runner CI disponible")
-			}
 		}
 	} else {
 		log.Println("⚠️  Providers non configurés — démarrez le wizard d'initialisation")
@@ -88,16 +80,12 @@ func main() {
 	}
 
 	// Template loader
-	var tmplLoader *templates.Loader
-	if cfg.IsConfigured() {
-		tmplLoader = templates.NewLoader(cfg.SCM.URL, cfg.SCM.Token, cfg.CI.TemplatesRepo)
-		if err := tmplLoader.Load(); err != nil {
-			log.Printf("⚠️  templates: %v", err)
-		} else {
-			log.Printf("✅ %d golden path(s) chargé(s)", len(tmplLoader.GetGoldenPaths()))
-		}
+	goldenPathsDir := getEnv("GOLDEN_PATHS_DIR", "config/golden-paths")
+	tmplLoader := templates.NewLoader(goldenPathsDir)
+	if err := tmplLoader.Load(); err != nil {
+		log.Printf("⚠️  templates: %v", err)
 	} else {
-		tmplLoader = templates.NewLoader("", "", "")
+		log.Printf("✅ %d golden path(s) chargé(s)", len(tmplLoader.GetGoldenPaths()))
 	}
 
 	// Auth OIDC
@@ -188,7 +176,14 @@ func buildProviderSet(cfg *providers.IntegrationConfig) (*providers.ProviderSet,
 	if err != nil {
 		return nil, fmt.Errorf("deploy: %w", err)
 	}
-	return &providers.ProviderSet{SCM: scm, CI: ci, Registry: registry, Deploy: deploy}, nil
+	return &providers.ProviderSet{
+		SCM:          scm,
+		CI:           ci,
+		Registry:     registry,
+		Deploy:       deploy,
+		SCMBaseURL:   cfg.SCM.URL,
+		CIConfigRepo: cfg.CI.ConfigRepo,
+	}, nil
 }
 
 func getEnv(key, fallback string) string {

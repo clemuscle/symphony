@@ -1,0 +1,10 @@
+apiVersion: symphony/v1
+kind: GoldenPath
+metadata:
+  name: python-rest-api
+  description: "REST API en Python avec FastAPI, healthcheck et métriques"
+  icon: python
+spec:
+  language: python
+  type: rest-api
+  default_port: 8080

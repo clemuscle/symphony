@@ -60,66 +60,6 @@ func (p *Provider) docker(method, path string, body any) ([]byte, int, error) {
 	return data, resp.StatusCode, nil
 }
 
-func (p *Provider) Deploy(req providers.DeployRequest) (*providers.DeployResult, error) {
-	p.docker("POST", fmt.Sprintf("/containers/%s/stop", req.ProjectName), nil)
-	p.docker("DELETE", fmt.Sprintf("/containers/%s?force=true", req.ProjectName), nil)
-
-	port := req.Port
-	if port == 0 {
-		port = 8080
-	}
-	portKey := fmt.Sprintf("%d/tcp", port)
-
-	env := []string{}
-	for k, v := range req.EnvVars {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-
-	payload := map[string]any{
-		"Image": req.Image,
-		"Env":   env,
-		"ExposedPorts": map[string]any{
-			portKey: map[string]any{},
-		},
-		"HostConfig": map[string]any{
-			"PortBindings": map[string]any{
-				portKey: []map[string]string{{"HostPort": fmt.Sprintf("%d", port)}},
-			},
-			"RestartPolicy": map[string]string{"Name": "unless-stopped"},
-		},
-	}
-
-	data, status, err := p.docker("POST",
-		fmt.Sprintf("/containers/create?name=%s", req.ProjectName), payload)
-	if err != nil {
-		return nil, err
-	}
-	if status != 201 {
-		return nil, fmt.Errorf("docker create: %d — %s", status, string(data))
-	}
-
-	var result struct {
-		ID string `json:"Id"`
-	}
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, fmt.Errorf("docker deploy %s: decode create response: %w", req.ProjectName, err)
-	}
-
-	_, status, err = p.docker("POST", fmt.Sprintf("/containers/%s/start", result.ID), nil)
-	if err != nil {
-		return nil, err
-	}
-	if status != 204 {
-		return nil, fmt.Errorf("docker start: %d", status)
-	}
-
-	return &providers.DeployResult{
-		DeploymentID: result.ID,
-		URL:          fmt.Sprintf("http://localhost:%d", port),
-		Status:       "running",
-	}, nil
-}
-
 func (p *Provider) Stop(deploymentID string) error {
 	_, _, err := p.docker("POST", fmt.Sprintf("/containers/%s/stop", deploymentID), nil)
 	return err

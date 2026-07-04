@@ -1,0 +1,13 @@
+{
+  "name": "{{.ServiceName}}",
+  "version": "1.0.0",
+  "description": "{{.ServiceDescription}}",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "jest",
+    "test:ci": "jest --ci --forceExit"
+  },
+  "dependencies": { "express": "^4.19.0" },
+  "devDependencies": { "jest": "^29.7.0", "supertest": "^7.0.0" }
+}
