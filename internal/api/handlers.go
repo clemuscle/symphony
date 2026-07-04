@@ -246,12 +246,15 @@ func (s *Server) stopDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
-	if err := pvds.Deploy.Stop(id); err != nil {
-		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	d, err := s.db.GetDeploymentByID(id)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "déploiement introuvable"})
 		return
 	}
-	s.db.UpdateDeploymentStatus(id, "stopped")
-	s.db.Log("stop_deployment", id, "", "system")
+	// best-effort — peut échouer si le déploiement s'est fait via pipeline CI
+	pvds.Deploy.Stop(d.ContainerID)
+	s.db.UpdateDeploymentStatus(d.ContainerID, "stopped")
+	s.db.Log("stop_deployment", d.ProjectName, "container="+d.ContainerID, "system")
 	respond(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 

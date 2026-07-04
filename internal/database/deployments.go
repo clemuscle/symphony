@@ -23,6 +23,19 @@ func (db *DB) CreateDeployment(d *Deployment) error {
 	).Scan(&d.ID, &d.CreatedAt)
 }
 
+func (db *DB) GetDeploymentByID(id string) (*Deployment, error) {
+	var d Deployment
+	err := db.QueryRow(`
+		SELECT id, project_name, container_id, image, port, status, url, created_at
+		FROM deployments WHERE id=$1`, id).
+		Scan(&d.ID, &d.ProjectName, &d.ContainerID, &d.Image,
+			&d.Port, &d.Status, &d.URL, &d.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
 func (db *DB) UpdateDeploymentStatus(containerID, status string) error {
 	_, err := db.Exec(`
 		UPDATE deployments SET status=$1, updated_at=NOW()
