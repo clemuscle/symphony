@@ -138,11 +138,8 @@ func main() {
 		}
 	}
 
-	go reconcileDeployments(db, &pvds)
-
 	addr := ":" + getEnv("PORT", "8080")
-	log.Printf("🎼 Symphony démarré sur %s", addr)
-	log.Fatal(http.ListenAndServe(addr, api.NewServer(api.ServerOptions{
+	srv := api.NewServer(api.ServerOptions{
 		Store:        store,
 		DB:           db,
 		Auth:         authProvider,
@@ -151,7 +148,10 @@ func main() {
 		Reload:       initProviders,
 		TestProvider: testProvider,
 		CfgPath:      cfgPath,
-	})))
+	})
+	go reconcileDeployments(db, srv.GetProviders)
+	log.Printf("🎼 Symphony démarré sur %s", addr)
+	log.Fatal(http.ListenAndServe(addr, srv))
 }
 
 func buildProviderSet(cfg *providers.IntegrationConfig) (*providers.ProviderSet, error) {
@@ -189,11 +189,11 @@ func buildProviderSet(cfg *providers.IntegrationConfig) (*providers.ProviderSet,
 	}, nil
 }
 
-func reconcileDeployments(db *database.DB, pvdsp **providers.ProviderSet) {
+func reconcileDeployments(db *database.DB, getProviders func() *providers.ProviderSet) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for range ticker.C {
-		pvds := *pvdsp
+		pvds := getProviders()
 		if pvds == nil {
 			continue
 		}

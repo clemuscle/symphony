@@ -251,10 +251,18 @@ func (s *Server) stopDeployment(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusNotFound, map[string]string{"error": "déploiement introuvable"})
 		return
 	}
-	// best-effort — peut échouer si le déploiement s'est fait via pipeline CI
-	pvds.Deploy.Stop(d.ContainerID)
+	project, err := s.db.GetProject(d.ProjectName)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+		return
+	}
+
+	// Principe #3 : destruction déléguée au pipeline CI (job destroy-deploy)
+	pvds.CI.TriggerPipeline(project.RepoPath, "main", map[string]string{
+		"DESTROY_DEPLOY": "1",
+	})
 	s.db.UpdateDeploymentStatus(d.ContainerID, "stopped")
-	s.db.Log("stop_deployment", d.ProjectName, "container="+d.ContainerID, "system")
+	s.db.Log("stop_deployment", d.ProjectName, "pipeline triggered for destroy", "system")
 	respond(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 

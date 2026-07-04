@@ -56,6 +56,34 @@ deploy:
   except:
     variables:
       - $RECETTE_NAME
+      - $DESTROY_RECETTE
+      - $DESTROY_DEPLOY
+
+# ── DESTROY-RECETTE ───────────────────────────────
+destroy-recette:
+  stage: deploy
+  image: docker:24
+  script:
+    - docker stop $DESTROY_RECETTE || true
+    - docker rm $DESTROY_RECETTE || true
+  tags:
+    - docker
+  only:
+    variables:
+      - $DESTROY_RECETTE
+
+# ── DESTROY-DEPLOY ────────────────────────────────
+destroy-deploy:
+  stage: deploy
+  image: docker:24
+  script:
+    - docker stop $IMAGE_NAME || true
+    - docker rm $IMAGE_NAME || true
+  tags:
+    - docker
+  only:
+    variables:
+      - $DESTROY_DEPLOY
 
 # ── DEPLOY-RECETTE ────────────────────────────────
 deploy-recette:
