@@ -84,7 +84,7 @@ func (s *Syncer) sync() error {
 
 func (s *Syncer) getLastCommit() (string, error) {
 	encoded := url.PathEscape(s.RepoPath)
-	data, err := s.api(fmt.Sprintf("/projects/%s/repository/commits?per_page=1", encoded))
+	data, _, err := s.api(fmt.Sprintf("/projects/%s/repository/commits?per_page=1", encoded))
 	if err != nil {
 		return "", err
 	}
@@ -102,9 +102,13 @@ func (s *Syncer) loadServices() ([]catalog.Service, error) {
 	encoded := url.PathEscape(s.RepoPath)
 
 	// Lister les fichiers dans services/
-	data, err := s.api(fmt.Sprintf("/projects/%s/repository/tree?path=services&per_page=100", encoded))
+	data, status, err := s.api(fmt.Sprintf("/projects/%s/repository/tree?path=services&per_page=100", encoded))
 	if err != nil {
 		return nil, err
+	}
+	// 404 = dossier services/ absent — pas une erreur, catalogue vide
+	if status == 404 {
+		return []catalog.Service{}, nil
 	}
 
 	var files []struct {
@@ -146,20 +150,21 @@ func (s *Syncer) loadServices() ([]catalog.Service, error) {
 func (s *Syncer) getFile(filePath string) (string, error) {
 	encoded := url.PathEscape(s.RepoPath)
 	fileEncoded := url.PathEscape(filePath)
-	data, err := s.api(fmt.Sprintf("/projects/%s/repository/files/%s/raw?ref=main", encoded, fileEncoded))
+	data, _, err := s.api(fmt.Sprintf("/projects/%s/repository/files/%s/raw?ref=main", encoded, fileEncoded))
 	if err != nil {
 		return "", err
 	}
 	return string(data), nil
 }
 
-func (s *Syncer) api(path string) ([]byte, error) {
+func (s *Syncer) api(path string) ([]byte, int, error) {
 	req, _ := http.NewRequest("GET", s.BaseURL+"/api/v4"+path, nil)
 	req.Header.Set("PRIVATE-TOKEN", s.Token)
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
+	return data, resp.StatusCode, err
 }

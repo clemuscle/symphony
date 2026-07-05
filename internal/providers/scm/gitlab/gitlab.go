@@ -34,6 +34,21 @@ func New(baseURL, token string) (*Provider, error) {
 	}, nil
 }
 
+// Ping vérifie la connectivité et la validité du token via GET /api/v4/user.
+func (p *Provider) Ping() error {
+	_, status, err := p.api("GET", "/user", nil)
+	if err != nil {
+		return fmt.Errorf("gitlab ping: %w", err)
+	}
+	if status == 401 {
+		return fmt.Errorf("gitlab ping: token invalide ou expiré (401)")
+	}
+	if status != 200 {
+		return fmt.Errorf("gitlab ping: status inattendu %d", status)
+	}
+	return nil
+}
+
 func (p *Provider) api(method, path string, body any) ([]byte, int, error) {
 	data, status, _, err := p.apiWithHeaders(method, path, body)
 	return data, status, err
