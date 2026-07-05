@@ -172,8 +172,6 @@ func (s *Server) deployProject(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		ProjectName string `json:"project_name"`
-		Image       string `json:"image"`
-		Port        int    `json:"port"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
@@ -199,8 +197,8 @@ func (s *Server) deployProject(w http.ResponseWriter, r *http.Request) {
 	d := &database.Deployment{
 		ProjectName: req.ProjectName,
 		PipelineID:  pipelineID,
-		Image:       req.Image,
-		Port:        req.Port,
+		Image:       project.RegistryURL,
+		Port:        project.Port,
 		Status:      "pending",
 	}
 	if err := s.db.CreateDeployment(d); err != nil {

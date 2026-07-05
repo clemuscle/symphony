@@ -127,14 +127,20 @@ le skill `state-machine-conventions`.
 C'est l'engagement le plus structurant pour la promesse "admin
 friendly" : un admin ajoute ou modifie un golden path en éditant des
 fichiers (templates + config), pas en écrivant du Go. Une route de
-rechargement à chaud doit exister (cohérent avec l'intuition déjà
-présente dans le code : `POST /api/v1/templates/reload`).
+rechargement à chaud doit exister.
 
-**Ce point n'est pas encore implémenté dans le code actuel** — c'est
-actuellement la plus grosse zone d'incertitude du projet (voir skill
-`golden-path-templating`). Toute contribution dans cette zone doit
-d'abord clarifier le design avec l'agent `symphony-architect` avant
-d'écrire du code, pas supposer une implémentation.
+**Ce point est implémenté** : `internal/templates/loader.go` charge les
+golden paths depuis `config/golden-paths/` via `text/template`, expose
+`RenderFiles()` / `RenderCI()`, et `POST /api/v1/templates/reload`
+recharge à chaud sans redémarrage. Les 4 golden paths (go / python /
+node / java rest-api) sont déclaratifs dans `config/golden-paths/`. Un
+admin ajoute un nouveau golden path en créant un dossier + `golden-path.yaml`
++ fichiers templates — sans toucher au Go.
+
+La question ouverte #3 ci-dessous est donc résolue pour le design de
+base. Ce qui reste à clarifier : la gestion des erreurs de template
+(fichier manquant, variable inconnue), et la validation du schéma
+`golden-path.yaml` à l'entrée du loader.
 
 ## Périmètre du MVP (resserré volontairement)
 
@@ -250,6 +256,8 @@ Prometheus pour l'observabilité de Symphony lui-même.
    métriques). À clarifier avant de concevoir le RBAC — sera porté par
    les groupes/claims OIDC (voir section Sécurité), mais le mapping
    exact groupe → permission reste à définir.
-3. **Design concret du templating de golden path** (voir décision #5 et
-   skill `golden-path-templating`) — c'est la zone la plus risquée du
-   projet si elle est improvisée.
+3. ~~**Design concret du templating de golden path**~~ — **Résolu** :
+   `internal/templates/loader.go` + `config/golden-paths/` + rechargement
+   à chaud `POST /api/v1/templates/reload`. Ce qui reste à préciser :
+   validation du schéma `golden-path.yaml` à l'entrée du loader, et
+   comportement en cas de template invalide (rejet ou log + skip).
