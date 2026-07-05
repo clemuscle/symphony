@@ -3,6 +3,7 @@ package providers
 // ─── 1. SOURCE CODE ───────────────────────────────────────────────────────────
 
 type SCMProvider interface {
+	Ping() error
 	CreateRepo(req RepoRequest) (*RepoResult, error)
 	PushFile(projectPath, branch, filePath, content, commitMsg string) error
 	ListRepos() ([]Repo, error)

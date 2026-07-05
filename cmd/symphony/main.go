@@ -166,6 +166,9 @@ func buildProviderSet(cfg *providers.IntegrationConfig) (*providers.ProviderSet,
 	if err != nil {
 		return nil, fmt.Errorf("scm: %w", err)
 	}
+	if err := scm.Ping(); err != nil {
+		return nil, fmt.Errorf("scm: %w", err)
+	}
 	ci, err := gitlabci.New(cfg.SCM.URL, cfg.SCM.Token, cfg.CI.ConfigRepo)
 	if err != nil {
 		return nil, fmt.Errorf("ci: %w", err)
