@@ -26,10 +26,10 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
-	if s.auth == nil {
+	if s.devMode {
 		respond(w, http.StatusOK, map[string]any{
 			"sub": "dev", "email": "dev@localhost", "name": "Dev Mode",
-			"groups": []string{"admin"}, "is_admin": true,
+			"groups": []string{"admin"}, "is_admin": true, "dev_mode": true,
 		})
 		return
 	}
@@ -258,11 +258,14 @@ func (s *Server) stopDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Principe #3 : destruction déléguée au pipeline CI (job destroy-deploy)
-	pvds.CI.TriggerPipeline(project.RepoPath, "main", map[string]string{
+	if _, err := pvds.CI.TriggerPipeline(project.RepoPath, "main", map[string]string{
 		"DESTROY_DEPLOY": "1",
-	})
+	}); err != nil {
+		respond(w, http.StatusBadGateway, map[string]string{"error": "ci: " + err.Error()})
+		return
+	}
 	s.db.UpdateDeploymentStatus(d.PipelineID, "stopped")
-	s.db.Log("stop_deployment", d.ProjectName, "pipeline triggered for destroy", "system")
+	s.db.Log("stop_deployment", d.ProjectName, "destroy pipeline triggered", "system")
 	respond(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 

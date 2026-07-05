@@ -17,6 +17,7 @@ type Server struct {
 	store   *catalog.Store
 	db      *database.DB
 	auth    *auth.Provider
+	devMode bool // true = SYMPHONY_DEV_MODE=1, jamais en production
 	tmpl    *templates.Loader
 	cfgPath string
 	router  *chi.Mux
@@ -54,6 +55,7 @@ type ServerOptions struct {
 	Store        *catalog.Store
 	DB           *database.DB
 	Auth         *auth.Provider
+	DevMode      bool // SYMPHONY_DEV_MODE=1 — désactive l'auth pour le dev local
 	Tmpl         *templates.Loader
 	Providers    *providers.ProviderSet // nil si pas encore configuré
 	Reload       func() (*providers.ProviderSet, error)
@@ -66,6 +68,7 @@ func NewServer(opts ServerOptions) *Server {
 		store:        opts.Store,
 		db:           opts.DB,
 		auth:         opts.Auth,
+		devMode:      opts.DevMode,
 		tmpl:         opts.Tmpl,
 		pvds:         opts.Providers,
 		reload:       opts.Reload,
@@ -139,6 +142,10 @@ func NewServer(opts ServerOptions) *Server {
 
 func (s *Server) adminOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.devMode {
+			next.ServeHTTP(w, r)
+			return
+		}
 		user, ok := auth.UserFromContext(r.Context())
 		if !ok || !user.IsAdmin {
 			respond(w, http.StatusForbidden, map[string]string{"error": "admin required"})
@@ -150,8 +157,8 @@ func (s *Server) adminOnly(next http.Handler) http.Handler {
 
 func (s *Server) deployerOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.auth == nil {
-			next.ServeHTTP(w, r) // dev mode: no OIDC configured
+		if s.devMode {
+			next.ServeHTTP(w, r)
 			return
 		}
 		user, ok := auth.UserFromContext(r.Context())
