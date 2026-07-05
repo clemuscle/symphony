@@ -193,11 +193,7 @@ onUnmounted(() => {
 async function deployProject(project) {
   deployState.value[project.name] = { loading: true }
   try {
-    const { data } = await api.deploy({
-      project_name: project.name,
-      image: project.registry_url,
-      port: project.port,
-    })
+    const { data } = await api.deploy({ project_name: project.name })
     deployState.value[project.name] = { loading: false, status: data.status }
   } catch (e) {
     deployState.value[project.name] = { loading: false, error: e.response?.data?.error || e.message }

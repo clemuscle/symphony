@@ -69,6 +69,13 @@ func (s *Syncer) sync() error {
 		return fmt.Errorf("loadServices: %w", err)
 	}
 
+	// Ne pas écraser un catalogue existant avec une liste vide inattendue —
+	// un dossier services/ non trouvé ou vide sur une erreur transitoire
+	// ne doit pas vider le cache. Seule une liste non-nil (même vide) issue
+	// d'un dossier réellement inexistant est acceptée.
+	if services == nil {
+		services = []catalog.Service{}
+	}
 	s.Store.Replace(services)
 	s.lastCommit = commit
 	log.Printf("✅ Catalogue mis à jour — %d service(s)", len(services))
@@ -105,7 +112,9 @@ func (s *Syncer) loadServices() ([]catalog.Service, error) {
 		Path string `json:"path"`
 		Type string `json:"type"`
 	}
-	json.Unmarshal(data, &files)
+	if err := json.Unmarshal(data, &files); err != nil {
+		return nil, fmt.Errorf("parse tree response: %w", err)
+	}
 
 	var services []catalog.Service
 	for _, f := range files {

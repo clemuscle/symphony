@@ -41,6 +41,24 @@ func (db *DB) UpdatePipelineStatus(pipelineID, status string) (applied bool, err
 	return rows > 0, nil
 }
 
+func (db *DB) ListPendingPipelines() ([]Pipeline, error) {
+	rows, err := db.Query(`
+		SELECT id, project_name, pipeline_id, type, status, triggered_by, created_at
+		FROM pipelines WHERE status='pending' ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var pipelines []Pipeline
+	for rows.Next() {
+		var p Pipeline
+		rows.Scan(&p.ID, &p.ProjectName, &p.PipelineID, &p.Type,
+			&p.Status, &p.TriggeredBy, &p.CreatedAt)
+		pipelines = append(pipelines, p)
+	}
+	return pipelines, nil
+}
+
 func (db *DB) ListPipelines(projectName string) ([]Pipeline, error) {
 	rows, err := db.Query(`
 		SELECT id, project_name, pipeline_id, type, status, triggered_by, created_at

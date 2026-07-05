@@ -156,6 +156,7 @@ func main() {
 		CfgPath:      cfgPath,
 	})
 	go reconcileDeployments(db, srv.GetProviders)
+	go reconcilePipelines(db, srv.GetProviders)
 	log.Printf("🎼 Symphony démarré sur %s", addr)
 	log.Fatal(http.ListenAndServe(addr, srv))
 }
@@ -193,6 +194,31 @@ func buildProviderSet(cfg *providers.IntegrationConfig) (*providers.ProviderSet,
 		SCMBaseURL:   cfg.SCM.URL,
 		CIConfigRepo: cfg.CI.ConfigRepo,
 	}, nil
+}
+
+func reconcilePipelines(db *database.DB, getProviders func() *providers.ProviderSet) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		pvds := getProviders()
+		if pvds == nil {
+			continue
+		}
+		pending, err := db.ListPendingPipelines()
+		if err != nil || len(pending) == 0 {
+			continue
+		}
+		for _, p := range pending {
+			status, err := pvds.CI.GetPipelineStatus(p.ProjectName, p.PipelineID)
+			if err != nil {
+				continue
+			}
+			applied, err := db.UpdatePipelineStatus(p.PipelineID, status)
+			if err == nil && applied {
+				log.Printf("pipeline %s → %s (project %s)", p.PipelineID, status, p.ProjectName)
+			}
+		}
+	}
 }
 
 func reconcileDeployments(db *database.DB, getProviders func() *providers.ProviderSet) {
