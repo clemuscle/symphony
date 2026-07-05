@@ -312,9 +312,12 @@ func (s *Server) destroyRecette(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Principe #3 : destruction déléguée au pipeline CI (job destroy-recette)
-	pvds.CI.TriggerPipeline(project.RepoPath, "main", map[string]string{
+	if _, err := pvds.CI.TriggerPipeline(project.RepoPath, "main", map[string]string{
 		"DESTROY_RECETTE": recetteName,
-	})
+	}); err != nil {
+		respond(w, http.StatusBadGateway, map[string]string{"error": "ci: " + err.Error()})
+		return
+	}
 	s.db.UpdateDeploymentStatus(recette.PipelineID, "stopped")
 	s.db.Log("destroy_recette", projectName, "recette="+recetteName, "system")
 	respond(w, http.StatusOK, map[string]string{"status": "stopped"})

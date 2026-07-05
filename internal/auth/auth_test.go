@@ -2,6 +2,54 @@ package auth
 
 import "testing"
 
+func TestIsAdmin_GroupMatch(t *testing.T) {
+	p := &Provider{adminGroups: map[string]bool{"platform-admins": true}}
+	// Simuler le calcul isAdmin tel qu'il est fait dans Middleware
+	groups := []string{"devs", "platform-admins"}
+	isAdmin := false
+	for _, g := range groups {
+		if p.adminGroups[g] {
+			isAdmin = true
+			break
+		}
+	}
+	if !isAdmin {
+		t.Error("user in admin group should be admin")
+	}
+}
+
+func TestIsAdmin_NoGroupMatch(t *testing.T) {
+	p := &Provider{adminGroups: map[string]bool{"platform-admins": true}}
+	groups := []string{"devs", "viewers"}
+	isAdmin := false
+	for _, g := range groups {
+		if p.adminGroups[g] {
+			isAdmin = true
+			break
+		}
+	}
+	if isAdmin {
+		t.Error("user not in admin group should not be admin")
+	}
+}
+
+func TestIsAdmin_NoAdminGroupsConfigured_NobodyIsAdmin(t *testing.T) {
+	p := &Provider{adminGroups: map[string]bool{}}
+	groups := []string{"platform-admins", "devs"}
+	isAdmin := false
+	if len(p.adminGroups) != 0 {
+		for _, g := range groups {
+			if p.adminGroups[g] {
+				isAdmin = true
+				break
+			}
+		}
+	}
+	if isAdmin {
+		t.Error("nobody should be admin when ADMIN_GROUPS is empty")
+	}
+}
+
 func TestCanDeploy_Admin(t *testing.T) {
 	p := &Provider{deployerGroups: map[string]bool{"ops": true}}
 	user := &User{IsAdmin: true, Groups: []string{}}

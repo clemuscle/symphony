@@ -89,7 +89,10 @@ func main() {
 		log.Printf("✅ %d golden path(s) chargé(s)", len(tmplLoader.GetGoldenPaths()))
 	}
 
-	// Auth OIDC
+	// Auth OIDC — fail-closed par défaut.
+	// Sans OIDC_ISSUER, Symphony refuse de démarrer sauf si SYMPHONY_DEV_MODE=1
+	// est positionné explicitement (dev local uniquement, jamais en production).
+	devMode := os.Getenv("SYMPHONY_DEV_MODE") == "1"
 	var authProvider *auth.Provider
 	if issuer := os.Getenv("OIDC_ISSUER"); issuer != "" {
 		p, err := auth.New(context.Background(), auth.Config{
@@ -103,8 +106,10 @@ func main() {
 		}
 		log.Printf("✅ Auth OIDC configurée (issuer: %s)", issuer)
 		authProvider = p
+	} else if devMode {
+		log.Println("⚠️  SYMPHONY_DEV_MODE=1 — auth désactivée (dev local uniquement, jamais en production)")
 	} else {
-		log.Println("⚠️  OIDC_ISSUER absent — auth désactivée (dev uniquement)")
+		log.Fatalf("OIDC_ISSUER non configuré. Définir OIDC_ISSUER ou SYMPHONY_DEV_MODE=1 pour le dev local.")
 	}
 
 	// Test de connexion provider (utilisé par le wizard — connaît tous les drivers)
@@ -143,6 +148,7 @@ func main() {
 		Store:        store,
 		DB:           db,
 		Auth:         authProvider,
+		DevMode:      devMode,
 		Tmpl:         tmplLoader,
 		Providers:    pvds,
 		Reload:       initProviders,

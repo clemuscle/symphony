@@ -38,8 +38,8 @@ func UserFromContext(ctx context.Context) (*User, bool) {
 type Provider struct {
 	verifier       *oidc.IDTokenVerifier
 	oauth2         oauth2.Config
-	adminEmails    map[string]bool
-	deployerGroups map[string]bool // empty = all authenticated users
+	adminGroups    map[string]bool // groupes OIDC → is_admin (ADMIN_GROUPS)
+	deployerGroups map[string]bool // groupes OIDC → can_deploy (DEPLOYER_GROUPS, vide = tous)
 }
 
 func New(ctx context.Context, cfg Config) (*Provider, error) {
@@ -47,10 +47,10 @@ func New(ctx context.Context, cfg Config) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	adminEmails := map[string]bool{}
-	for _, e := range strings.Split(os.Getenv("ADMIN_EMAILS"), ",") {
-		if e := strings.TrimSpace(e); e != "" {
-			adminEmails[e] = true
+	adminGroups := map[string]bool{}
+	for _, g := range strings.Split(os.Getenv("ADMIN_GROUPS"), ",") {
+		if g := strings.TrimSpace(g); g != "" {
+			adminGroups[g] = true
 		}
 	}
 	deployerGroups := map[string]bool{}
@@ -68,7 +68,7 @@ func New(ctx context.Context, cfg Config) (*Provider, error) {
 			Endpoint:     p.Endpoint(),
 			Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
 		},
-		adminEmails:    adminEmails,
+		adminGroups:    adminGroups,
 		deployerGroups: deployerGroups,
 	}, nil
 }
@@ -152,12 +152,25 @@ func (p *Provider) Middleware(next http.Handler) http.Handler {
 		if name == "" {
 			name = claims.Email
 		}
+		isAdmin := false
+		if len(p.adminGroups) == 0 {
+			// Aucun groupe admin configuré — personne n'est admin par défaut.
+			// Configurer ADMIN_GROUPS pour activer les droits admin.
+			isAdmin = false
+		} else {
+			for _, g := range claims.Groups {
+				if p.adminGroups[g] {
+					isAdmin = true
+					break
+				}
+			}
+		}
 		user := &User{
 			Sub:     claims.Sub,
 			Email:   claims.Email,
 			Name:    name,
 			Groups:  claims.Groups,
-			IsAdmin: p.adminEmails[claims.Email],
+			IsAdmin: isAdmin,
 		}
 		ctx := context.WithValue(r.Context(), ctxKey{}, user)
 		next.ServeHTTP(w, r.WithContext(ctx))

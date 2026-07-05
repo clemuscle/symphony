@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -77,6 +78,11 @@ func LoadConfig(path string) (*IntegrationConfig, error) {
 	var cfg IntegrationConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
+	}
+	// Détecte un YAML non vide qui produit une config vide — signe de schéma
+	// incorrect (ex: clés inconnues silencieusement ignorées par le parser).
+	if len(data) > 0 && cfg.SCM.URL == "" && cfg.CI.ConfigRepo == "" {
+		return nil, fmt.Errorf("config: %s parsé mais aucun champ reconnu — vérifier le schéma (voir integrations.example.yaml)", path)
 	}
 	cfg.ApplyEnvOverrides()
 	return &cfg, nil
