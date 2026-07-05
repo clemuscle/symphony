@@ -129,7 +129,7 @@ func main() {
 			if err != nil {
 				return "", err
 			}
-			if _, err := deploy.List(); err != nil {
+			if err := deploy.Ping(); err != nil {
 				return "", fmt.Errorf("Docker daemon inaccessible: %w", err)
 			}
 			return "Docker daemon accessible", nil
