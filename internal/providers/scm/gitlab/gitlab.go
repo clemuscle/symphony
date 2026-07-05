@@ -128,18 +128,24 @@ func (p *Provider) CreateRepo(req providers.RepoRequest) (*providers.RepoResult,
 
 func (p *Provider) PushFile(projectPath, branch, filePath, content, commitMsg string) error {
 	encoded := url.PathEscape(projectPath)
+	apiPath := fmt.Sprintf("/projects/%s/repository/files/%s", encoded, url.PathEscape(filePath))
 	payload := map[string]any{
 		"branch":         branch,
 		"content":        content,
 		"commit_message": commitMsg,
 	}
-	_, status, err := p.api("POST",
-		fmt.Sprintf("/projects/%s/repository/files/%s", encoded, url.PathEscape(filePath)),
-		payload)
+	_, status, err := p.api("POST", apiPath, payload)
 	if err != nil {
 		return err
 	}
-	if status != 201 {
+	if status == 400 {
+		// Fichier déjà existant (repo initialisé avec README) — on met à jour
+		_, status, err = p.api("PUT", apiPath, payload)
+		if err != nil {
+			return err
+		}
+	}
+	if status != 200 && status != 201 {
 		return fmt.Errorf("pushFile %s: status %d", filePath, status)
 	}
 	return nil
@@ -180,6 +186,30 @@ func (p *Provider) ListRepos() ([]providers.Repo, error) {
 		}
 	}
 	return repos, nil
+}
+
+func (p *Provider) ListNamespaces() ([]providers.Namespace, error) {
+	data, status, err := p.api("GET", "/namespaces?per_page=100", nil)
+	if err != nil {
+		return nil, err
+	}
+	if status != 200 {
+		return nil, fmt.Errorf("gitlab listNamespaces: status %d", status)
+	}
+	var raw []struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+		Path string `json:"path"`
+		Kind string `json:"kind"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("gitlab listNamespaces: decode: %w", err)
+	}
+	ns := make([]providers.Namespace, len(raw))
+	for i, r := range raw {
+		ns[i] = providers.Namespace{ID: r.ID, Name: r.Name, Path: r.Path, Kind: r.Kind}
+	}
+	return ns, nil
 }
 
 func (p *Provider) resolveNamespace(name string) (int, error) {

@@ -7,6 +7,14 @@ type SCMProvider interface {
 	CreateRepo(req RepoRequest) (*RepoResult, error)
 	PushFile(projectPath, branch, filePath, content, commitMsg string) error
 	ListRepos() ([]Repo, error)
+	ListNamespaces() ([]Namespace, error)
+}
+
+type Namespace struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	Path string `json:"path"`
+	Kind string `json:"kind"` // "user" ou "group"
 }
 
 type RepoRequest struct {

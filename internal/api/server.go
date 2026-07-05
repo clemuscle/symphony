@@ -117,6 +117,7 @@ func NewServer(opts ServerOptions) *Server {
 		r.Get("/api/v1/projects", s.listProjects)
 		r.Get("/api/v1/projects/{name}/steps", s.listProjectSteps)
 		r.Get("/api/v1/repos", s.listRepos)
+		r.Get("/api/v1/namespaces", s.listNamespaces)
 
 		// Recettes
 		r.Get("/api/v1/projects/{name}/recettes", s.listRecettes)
