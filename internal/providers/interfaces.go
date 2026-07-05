@@ -62,17 +62,12 @@ type Image struct {
 }
 
 // ─── 4. DEPLOYMENT ────────────────────────────────────────────────────────────
-
+//
+// Pour le MVP Docker, le déploiement et la destruction sont entièrement
+// délégués au pipeline CI (jobs deploy / deploy-recette / destroy-recette /
+// destroy-deploy). DeployProvider ne sert qu'à vérifier la connectivité du
+// daemon cible. Les futures implémentations (Kubernetes…) étendront ce contrat
+// selon les besoins réels, sans toucher au core.
 type DeployProvider interface {
-	Stop(deploymentID string) error
-	Status(deploymentID string) (string, error)
-	List() ([]Deployment, error)
-}
-
-type Deployment struct {
-	ID          string `json:"id"`
-	ProjectName string `json:"project_name"`
-	Image       string `json:"image"`
-	Status      string `json:"status"`
-	URL         string `json:"url"`
+	Ping() error
 }
