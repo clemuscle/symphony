@@ -29,8 +29,14 @@
             <input v-model="form.gitlabUrl" type="url" placeholder="https://gitlab.example.com" />
           </div>
           <div class="field">
-            <label>Token API <span class="hint">(scope : api)</span></label>
+            <label>Token API</label>
             <input v-model="form.gitlabToken" type="password" placeholder="glpat-xxxxxxxxxxxx" />
+            <p class="field-note">
+              Utilisez un <strong>Group Access Token</strong> ou <strong>Project Access Token</strong>
+              scopé au groupe qui contiendra les projets et la config repo —
+              <em>pas</em> un token personnel root.
+              Scopes requis : <code>api</code> (création de repos) + <code>write_repository</code> (push).
+            </p>
           </div>
           <div class="field">
             <label>URL du registre <span class="hint">(optionnel, déduit de l'URL GitLab)</span></label>
@@ -221,6 +227,8 @@ async function save() {
 .field { margin-bottom: 16px; }
 .field label { display: block; font-size: 13px; font-weight: 600; color: #444; margin-bottom: 6px; }
 .field .hint { font-weight: 400; color: #aaa; }
+.field-note { font-size: 12px; color: #888; margin-top: 6px; line-height: 1.5; }
+.field-note code { background: #f0f2f5; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
 .field input {
   width: 100%;
   border: 1px solid #ddd;

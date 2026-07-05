@@ -114,7 +114,7 @@ register-service:
   script:
     - export SYMPHONY_GIT_HOST=$(echo $SYMPHONY_GIT_URL | sed -E 's#^[a-z]+://##')
     - export SYMPHONY_GIT_SCHEME=$(echo $SYMPHONY_GIT_URL | sed -E 's#^([a-z]+)://.*#\1#')
-    - git clone "${SYMPHONY_GIT_SCHEME}://root:${SYMPHONY_TOKEN}@${SYMPHONY_GIT_HOST}/${SYMPHONY_CONFIG_REPO}.git" /tmp/symphony-config
+    - git clone "${SYMPHONY_GIT_SCHEME}://oauth2:${SYMPHONY_TOKEN}@${SYMPHONY_GIT_HOST}/${SYMPHONY_CONFIG_REPO}.git" /tmp/symphony-config
     - cd /tmp/symphony-config
     - |
       cat > services/{{.ServiceName}}.yaml << YAML
