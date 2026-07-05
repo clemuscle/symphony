@@ -1,0 +1,27 @@
+# Configuration Symphony pour tester avec GitLab.com
+# Copier en config/integrations.gitlab-com.yaml (gitignore) et adapter.
+# Le token est chargé depuis GITLAB_TOKEN (ne jamais mettre en clair ici).
+#
+# Pour switcher vers ce mode :
+#   set -a && source .env && source .env.gitlab-com && set +a
+#   make run   (ou go run ./cmd/symphony)
+
+scm:
+  type: gitlab
+  url: https://gitlab.com
+  token: ${GITLAB_TOKEN}
+
+ci:
+  type: gitlabci
+  # Chemin du repo infra dans ton groupe GitLab.com (ex: mon-groupe/infra)
+  # Ce repo doit exister avec au moins un commit et les shared runners activés.
+  config_repo: symphony-test/infra
+
+registry:
+  type: gitlabregistry
+  # Laisser vide : Symphony déduit registry.gitlab.com depuis l'URL GitLab
+  url: ""
+
+deploy:
+  type: docker
+  socket: /var/run/docker.sock
