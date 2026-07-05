@@ -148,6 +148,20 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, repos)
 }
 
+func (s *Server) listNamespaces(w http.ResponseWriter, r *http.Request) {
+	pvds := s.getProviders()
+	if pvds == nil {
+		respond(w, http.StatusServiceUnavailable, errSetupRequired())
+		return
+	}
+	ns, err := pvds.SCM.ListNamespaces()
+	if err != nil {
+		respond(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, http.StatusOK, ns)
+}
+
 func (s *Server) triggerPipelineHandler(w http.ResponseWriter, r *http.Request) {
 	pvds := s.getProviders()
 	if pvds == nil {

@@ -78,8 +78,13 @@
             </div>
 
             <div class="field">
-              <label>Namespace GitLab <span class="hint">(vide = racine)</span></label>
-              <input v-model="form.namespace" placeholder="mon-equipe" />
+              <label>Namespace GitLab <span class="req">*</span></label>
+              <select v-model="form.namespace" :disabled="loadingNS" class="ns-select">
+                <option value="" disabled>{{ loadingNS ? 'Chargement…' : 'Choisir un namespace' }}</option>
+                <option v-for="ns in namespaces" :key="ns.path" :value="ns.path">
+                  {{ ns.kind === 'group' ? '👥' : '👤' }} {{ ns.path }}
+                </option>
+              </select>
             </div>
 
             <div class="field">
@@ -98,7 +103,7 @@
 
             <button
               class="btn-submit"
-              :disabled="creating || !form.name || !!nameError"
+              :disabled="creating || !form.name || !!nameError || !form.namespace"
               @click="createProject"
             >
               {{ creating ? '⏳ Création en cours…' : '🚀 Créer le projet' }}
@@ -157,6 +162,8 @@ const creating = ref(false)
 const createResult = ref(null)
 const createError = ref(null)
 const nameError = ref('')
+const namespaces = ref([])
+const loadingNS = ref(false)
 
 const form = ref({ name: '', description: '', namespace: '', port: 8080 })
 
@@ -174,12 +181,20 @@ onMounted(async () => {
   }
 })
 
-function openDrawer(gp) {
+async function openDrawer(gp) {
   selectedGP.value = gp
   drawerOpen.value = true
   createResult.value = null
   createError.value = null
   form.value = { name: '', description: '', namespace: '', port: gp.spec?.default_port || 8080 }
+  loadingNS.value = true
+  try {
+    const { data } = await api.listNamespaces()
+    namespaces.value = data || []
+    if (namespaces.value.length === 1) form.value.namespace = namespaces.value[0].path
+  } catch { /* non bloquant */ } finally {
+    loadingNS.value = false
+  }
 }
 
 function closeDrawer() {
@@ -339,6 +354,19 @@ h2 { font-size: 22px; font-weight: 700; }
 .field input:focus { border-color: #667eea; }
 .field input.error { border-color: #e53e3e; }
 .field-error { font-size: 12px; color: #e53e3e; margin-top: 4px; }
+.ns-select {
+  width: 100%;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 14px;
+  outline: none;
+  background: white;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.ns-select:focus { border-color: #667eea; }
+.ns-select:disabled { background: #f8f9fb; cursor: not-allowed; }
 
 .summary {
   background: #f8f9fb;

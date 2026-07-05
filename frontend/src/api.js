@@ -30,6 +30,7 @@ export const api = {
   listProjects: () => http.get('/api/v1/projects'),
   listProjectSteps: (name) => http.get(`/api/v1/projects/${encodeURIComponent(name)}/steps`),
   listRepos: () => http.get('/api/v1/repos'),
+  listNamespaces: () => http.get('/api/v1/namespaces'),
 
   // Pipelines
   triggerPipeline: (projectPath, ref, vars) =>
