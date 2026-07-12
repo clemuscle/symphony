@@ -12,6 +12,7 @@
         <RouterLink to="/deployments" class="nav-link">🚀 Déploiements</RouterLink>
         <RouterLink to="/inventory" class="nav-link">📋 Inventaire</RouterLink>
         <RouterLink to="/costs" class="nav-link">💶 Coûts</RouterLink>
+        <RouterLink to="/audit" class="nav-link">🔍 Audit</RouterLink>
       </nav>
       <div class="user-widget">
         <span class="user-name">{{ auth.state.user.name }}</span>

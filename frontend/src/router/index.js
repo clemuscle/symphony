@@ -4,6 +4,7 @@ import Projects from '../views/Projects.vue'
 import Deployments from '../views/Deployments.vue'
 import Inventory from '../views/Inventory.vue'
 import Costs from '../views/Costs.vue'
+import Audit from '../views/Audit.vue'
 import Login from '../views/Login.vue'
 import Setup from '../views/Setup.vue'
 import { useAuth } from '../composables/useAuth'
@@ -19,6 +20,7 @@ const router = createRouter({
     { path: '/deployments', component: Deployments },
     { path: '/inventory', component: Inventory },
     { path: '/costs', component: Costs },
+    { path: '/audit', component: Audit },
   ]
 })
 
