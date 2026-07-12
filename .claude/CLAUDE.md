@@ -8,6 +8,46 @@ binaire Go unique : elle donne à un développeur un golden path complet
 un admin DevOps une plateforme qu'il configure en YAML sans jamais
 toucher au code Go ni faire de web.
 
+## Référence produit : Symphony est un Cycloid open source, auto-hébergé
+
+**Cycloid** est la référence produit la plus proche de Symphony : c'est
+une IDP SaaS qui combine un Service Catalog (stacks = golden paths),
+une gestion d'environnements (recette / préprod / prod), une vue pipeline,
+du RBAC multi-tenant, du GitOps, un inventaire des ressources, et de la
+gestion de coûts. C'est le produit dont Symphony veut être l'équivalent
+open source, auto-hébergé, admin-friendly dès le départ.
+
+### État du MVP de Symphony vs fonctionnalités Cycloid
+
+Cette table sert de roadmap de comparaison. Les agents d'architecture et
+d'implémentation doivent s'y référer avant de proposer des features.
+
+| Fonctionnalité Cycloid | Symphony MVP | Statut |
+|---|---|---|
+| Service Catalog / golden paths | `config/golden-paths/` + `internal/templates/` | ✅ Implémenté |
+| Stack templates déclaratifs (YAML) | `golden-path.yaml` + rechargement à chaud | ✅ Implémenté |
+| Création self-service d'un projet | `POST /api/v1/projects` → repo + CI + registre + namespace | ✅ Implémenté |
+| Vue pipeline par projet | `GET /api/v1/projects/:name/pipelines` + réconciliation 30s | ✅ Implémenté |
+| Déploiement d'environnements (recette) | Docker via golden path CI | ✅ Implémenté (Docker) |
+| GitOps — sync config infra dans repo | `internal/gitops/sync.go` | ✅ Implémenté |
+| Auth fédérée (OIDC) | `internal/auth/` + Dex/Keycloak/Azure AD | ✅ Implémenté |
+| Audit trail (qui fait quoi) | `db.Log()` — user hardcodé "system" pour l'instant | ⚠️ Partiel |
+| Vue état déploiements par env | `GET /api/v1/projects/:name/deployments` | ⚠️ Partiel |
+| RBAC (rôles par groupe/projet) | Non implémenté — groupes OIDC présents, mapping à faire | ❌ Non implémenté |
+| Inventaire des ressources actives | Non implémenté | ❌ Non implémenté |
+| Multi-cloud / Kubernetes | Docker seulement en MVP, interface prête pour K8s | ❌ Post-MVP |
+| Gestion des coûts par env/équipe | Non implémenté | ❌ Post-MVP |
+| Quotas et politiques de ressources | Non implémenté | ❌ Post-MVP |
+| Gestion multi-organisation / tenants | Non implémenté — Symphony est single-tenant pour le MVP | ❌ Post-MVP |
+| Wizard d'initialisation admin | `internal/api/setup.go` + `Setup.vue` | ✅ Implémenté |
+| Lien externe vers monitoring (Prometheus) | `monitoring_url` dans `golden-path.yaml`, lien dans UI | ✅ Implémenté |
+
+**Principe de priorisation** : avant d'implémenter une feature non cochée,
+vérifier qu'elle sert directement l'un des deux personae (dev / admin DevOps
+solo) dans le contexte d'une entreprise de taille moyenne (10–200 devs),
+pas une fonctionnalité enterprise de Cycloid pensée pour 1000+ devs avec
+une plateforme team dédiée.
+
 ## Le problème que Symphony résout (et celui qu'il évite de recréer)
 
 Les devs jonglent avec trop d'outils (forge Git, CI, registre,

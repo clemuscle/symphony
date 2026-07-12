@@ -87,6 +87,28 @@ func (p *Provider) SetupPipeline(projectPath string, cfg providers.PipelineConfi
 	return nil
 }
 
+func (p *Provider) SetProjectVariable(projectPath, key, value string) error {
+	encoded := url.PathEscape(projectPath)
+	payload := map[string]any{"key": key, "value": value, "masked": true, "protected": false}
+	_, status, err := p.api("POST",
+		fmt.Sprintf("/projects/%s/variables", encoded), payload)
+	if err != nil {
+		return err
+	}
+	if status == 400 {
+		// Variable déjà existante — mise à jour
+		_, status, err = p.api("PUT",
+			fmt.Sprintf("/projects/%s/variables/%s", encoded, url.PathEscape(key)), payload)
+		if err != nil {
+			return err
+		}
+	}
+	if status != 200 && status != 201 {
+		return fmt.Errorf("setProjectVariable %s: status %d", key, status)
+	}
+	return nil
+}
+
 func (p *Provider) TriggerPipeline(projectPath, ref string, vars map[string]string) (string, error) {
 	encoded := url.PathEscape(projectPath)
 	variables := []map[string]string{}

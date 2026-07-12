@@ -1,7 +1,9 @@
 package api
 
 import (
+	"io/fs"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/go-chi/chi/v5"
@@ -11,6 +13,7 @@ import (
 	"github.com/yourorg/symphony/internal/database"
 	"github.com/yourorg/symphony/internal/providers"
 	"github.com/yourorg/symphony/internal/templates"
+	"github.com/yourorg/symphony/internal/web"
 )
 
 type Server struct {
@@ -82,6 +85,29 @@ func NewServer(opts ServerOptions) *Server {
 	r.Use(corsMiddleware)
 
 	r.Get("/healthz", s.healthz)
+
+	// Frontend embarqué — SPA fallback : toute route non-API sert index.html
+	staticFS, _ := fs.Sub(web.Static, "static")
+	fileServer := http.FileServer(http.FS(staticFS))
+	r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/auth/") {
+			http.NotFound(w, r)
+			return
+		}
+		// Tester si le fichier existe dans le FS embarqué
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if path == "" {
+			path = "index.html"
+		}
+		f, err := staticFS.Open(path)
+		if err != nil {
+			// Fichier absent → SPA fallback sur index.html
+			r.URL.Path = "/"
+		} else {
+			f.Close()
+		}
+		fileServer.ServeHTTP(w, r)
+	})
 
 	if s.auth != nil {
 		r.Get("/auth/login", s.auth.LoginHandler)
