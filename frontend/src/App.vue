@@ -10,6 +10,7 @@
         <RouterLink to="/" class="nav-link">📦 Catalogue</RouterLink>
         <RouterLink to="/projects" class="nav-link">🗂 Projets</RouterLink>
         <RouterLink to="/deployments" class="nav-link">🚀 Déploiements</RouterLink>
+        <RouterLink to="/inventory" class="nav-link">📋 Inventaire</RouterLink>
       </nav>
       <div class="user-widget">
         <span class="user-name">{{ auth.state.user.name }}</span>

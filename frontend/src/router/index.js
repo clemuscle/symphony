@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Catalogue from '../views/Catalogue.vue'
 import Projects from '../views/Projects.vue'
 import Deployments from '../views/Deployments.vue'
+import Inventory from '../views/Inventory.vue'
 import Login from '../views/Login.vue'
 import Setup from '../views/Setup.vue'
 import { useAuth } from '../composables/useAuth'
@@ -15,6 +16,7 @@ const router = createRouter({
     { path: '/', component: Catalogue },
     { path: '/projects', component: Projects },
     { path: '/deployments', component: Deployments },
+    { path: '/inventory', component: Inventory },
   ]
 })
 

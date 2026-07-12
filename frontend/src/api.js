@@ -50,6 +50,9 @@ export const api = {
   destroyRecette: (projectName, recetteName) =>
     http.delete(`/api/v1/projects/${encodeURIComponent(projectName)}/recettes/${encodeURIComponent(recetteName)}`),
 
+  // Inventaire
+  getInventory: () => http.get('/api/v1/inventory'),
+
   // Audit
   listAudit: () => http.get('/api/v1/audit'),
 
