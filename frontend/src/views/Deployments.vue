@@ -20,7 +20,7 @@
         </div>
         <div class="deploy-image">🐳 {{ d.image }}</div>
         <a v-if="d.url" :href="d.url" target="_blank" class="deploy-url">{{ d.url }} ↗</a>
-        <div class="deploy-footer">
+        <div class="deploy-footer" v-if="canDevelop">
           <button class="btn-stop" @click="stop(d.id)">⏹ Stop</button>
         </div>
       </div>
@@ -36,6 +36,9 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
+import { useAuth } from '../composables/useAuth'
+
+const { canDevelop } = useAuth()
 
 const deployments = ref([])
 const loading = ref(true)
