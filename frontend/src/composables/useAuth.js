@@ -1,7 +1,17 @@
-import { reactive } from 'vue'
+import { reactive, computed } from 'vue'
 import { api } from '../api'
 
 const state = reactive({ user: null, loading: true })
+
+// true if the user can create projects, trigger pipelines, deploy
+const canDevelop = computed(() =>
+  state.user?.dev_mode || ['admin', 'developer'].includes(state.user?.role)
+)
+
+// true if the user can access admin-only actions (setup, config reload)
+const isAdmin = computed(() =>
+  state.user?.dev_mode || state.user?.role === 'admin'
+)
 
 async function init() {
   try {
@@ -25,5 +35,5 @@ function logout() {
 }
 
 export function useAuth() {
-  return { state, init, login, logout }
+  return { state, canDevelop, isAdmin, init, login, logout }
 }

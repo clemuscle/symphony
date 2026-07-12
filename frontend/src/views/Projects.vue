@@ -5,7 +5,7 @@
         <h2>Projets</h2>
         <p class="subtitle">{{ projects.length }} projet(s) créé(s) via Symphony</p>
       </div>
-      <RouterLink to="/" class="btn-new">+ Nouveau projet</RouterLink>
+      <RouterLink v-if="canDevelop" to="/" class="btn-new">+ Nouveau projet</RouterLink>
     </div>
 
     <div v-if="error" class="error-banner">⚠️ {{ error }}</div>
@@ -44,17 +44,19 @@
           <a v-if="monitoringURLs[p.language]" :href="monitoringURLs[p.language]" target="_blank" class="btn-ghost btn-metrics">
             📊 Métriques ↗
           </a>
-          <button class="btn-ghost" @click="triggerPipeline(p)">
-            {{ pipelineState[p.repo_path]?.loading ? '⏳' : '▶ Pipeline' }}
-          </button>
-          <button
-            class="btn-ghost"
-            :disabled="!p.registry_url || deployState[p.name]?.loading"
-            :title="!p.registry_url ? 'Image non disponible' : ''"
-            @click="deployProject(p)"
-          >
-            {{ deployState[p.name]?.loading ? '⏳' : '🚀 Déployer' }}
-          </button>
+          <template v-if="canDevelop">
+            <button class="btn-ghost" @click="triggerPipeline(p)">
+              {{ pipelineState[p.repo_path]?.loading ? '⏳' : '▶ Pipeline' }}
+            </button>
+            <button
+              class="btn-ghost"
+              :disabled="!p.registry_url || deployState[p.name]?.loading"
+              :title="!p.registry_url ? 'Image non disponible' : ''"
+              @click="deployProject(p)"
+            >
+              {{ deployState[p.name]?.loading ? '⏳' : '🚀 Déployer' }}
+            </button>
+          </template>
         </div>
 
         <div class="pipeline-status" v-if="pipelineState[p.repo_path]?.id">
@@ -105,6 +107,7 @@
                 <span :class="['status-badge', 'sm', rec.status]">{{ rec.status }}</span>
                 <a v-if="rec.url" :href="rec.url" target="_blank" class="btn-ghost btn-xs">↗</a>
                 <button
+                  v-if="canDevelop"
                   class="btn-ghost btn-xs btn-danger"
                   :disabled="recetteState[p.name]?.destroying === rec.recette_name"
                   @click="destroyRecette(p, rec.recette_name)"
@@ -117,7 +120,7 @@
               Aucune recette active
             </div>
 
-            <div class="recette-form" v-if="!recetteState[p.name]?.creating">
+            <div class="recette-form" v-if="canDevelop && !recetteState[p.name]?.creating">
               <button class="btn-ghost btn-sm" @click="startCreateRecette(p)">+ Nouvelle recette</button>
             </div>
             <div class="recette-create" v-else>
@@ -158,6 +161,9 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
+import { useAuth } from '../composables/useAuth'
+
+const { canDevelop } = useAuth()
 
 const projects = ref([])
 const loading = ref(true)

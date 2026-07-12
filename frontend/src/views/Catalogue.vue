@@ -25,8 +25,8 @@
           v-for="gp in goldenPaths"
           :key="gp.metadata.name"
           class="gp-card"
-          :class="{ selected: selectedGP?.metadata.name === gp.metadata.name }"
-          @click="openDrawer(gp)"
+          :class="{ selected: selectedGP?.metadata.name === gp.metadata.name, 'read-only': !canDevelop }"
+          @click="canDevelop && openDrawer(gp)"
         >
           <div class="gp-icon">{{ langIcon(gp.spec.language) }}</div>
           <div class="gp-info">
@@ -37,7 +37,8 @@
             <span class="tag lang">{{ gp.spec.language }}</span>
             <span class="tag type" v-if="gp.spec.type">{{ gp.spec.type }}</span>
           </div>
-          <button class="btn-create" @click.stop="openDrawer(gp)">Créer un projet →</button>
+          <button v-if="canDevelop" class="btn-create" @click.stop="openDrawer(gp)">Créer un projet →</button>
+          <span v-else class="viewer-hint">Lecture seule</span>
         </div>
       </div>
     </div>
@@ -150,8 +151,10 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
+import { useAuth } from '../composables/useAuth'
 
 const router = useRouter()
+const { canDevelop } = useAuth()
 const goldenPaths = ref([])
 const loading = ref(true)
 const error = ref(null)
@@ -269,6 +272,10 @@ h2 { font-size: 22px; font-weight: 700; }
 .tag { font-size: 11px; padding: 2px 9px; border-radius: 20px; font-weight: 500; }
 .tag.lang { background: #eef2ff; color: #667eea; }
 .tag.type { background: #f4f4f4; color: #666; }
+.gp-card.read-only { cursor: default; opacity: .75; }
+.gp-card.read-only:hover { transform: none; box-shadow: none; border-color: #e5e7eb; }
+.viewer-hint { font-size: 12px; color: #aaa; margin-top: 4px; text-align: center; }
+
 .btn-create {
   margin-top: 4px;
   background: #667eea;
