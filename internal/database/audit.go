@@ -1,6 +1,9 @@
 package database
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type AuditEntry struct {
 	ID        int       `json:"id"`
@@ -19,13 +22,27 @@ func (db *DB) Log(action, resource, details, userID string) error {
 	return err
 }
 
-func (db *DB) ListAudit(limit int) ([]AuditEntry, error) {
+func (db *DB) ListAudit(limit int, project, actor string) ([]AuditEntry, error) {
 	if limit == 0 {
-		limit = 50
+		limit = 100
 	}
-	rows, err := db.Query(`
-		SELECT id, action, resource, details, user_id, created_at
-		FROM audit_log ORDER BY created_at DESC LIMIT $1`, limit)
+	q := `SELECT id, action, resource, details, user_id, created_at FROM audit_log WHERE 1=1`
+	args := []any{}
+	idx := 1
+	if project != "" {
+		q += fmt.Sprintf(` AND resource ILIKE $%d`, idx)
+		args = append(args, "%"+project+"%")
+		idx++
+	}
+	if actor != "" {
+		q += fmt.Sprintf(` AND user_id = $%d`, idx)
+		args = append(args, actor)
+		idx++
+	}
+	q += fmt.Sprintf(` ORDER BY created_at DESC LIMIT $%d`, idx)
+	args = append(args, limit)
+
+	rows, err := db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}

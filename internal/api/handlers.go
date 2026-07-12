@@ -294,7 +294,9 @@ func (s *Server) stopDeployment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
-	entries, err := s.db.ListAudit(50)
+	project := r.URL.Query().Get("project")
+	actor := r.URL.Query().Get("actor")
+	entries, err := s.db.ListAudit(200, project, actor)
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

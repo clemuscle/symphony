@@ -57,7 +57,7 @@ export const api = {
   getCosts: (month) => http.get('/api/v1/costs' + (month ? `?month=${month}` : '')),
 
   // Audit
-  listAudit: () => http.get('/api/v1/audit'),
+  listAudit: (params = {}) => http.get('/api/v1/audit', { params }),
 
   // Auth
   getMe: () => http.get('/api/v1/auth/me'),
