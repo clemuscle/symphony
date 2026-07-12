@@ -147,6 +147,53 @@ func (db *DB) ListRecettes(projectName string) ([]Deployment, error) {
 	return recettes, nil
 }
 
+// ListAllActiveDeployments retourne les déploiements prod en cours (pas stopped/failed).
+func (db *DB) ListAllActiveDeployments() ([]Deployment, error) {
+	rows, err := db.Query(`
+		SELECT id, project_name, pipeline_id, image, port, status, url, recette_name, created_at
+		FROM deployments
+		WHERE recette_name IS NULL AND status NOT IN ('stopped', 'failed')
+		ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Deployment
+	for rows.Next() {
+		var d Deployment
+		var rn *string
+		rows.Scan(&d.ID, &d.ProjectName, &d.PipelineID, &d.Image,
+			&d.Port, &d.Status, &d.URL, &rn, &d.CreatedAt)
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+// ListAllActiveRecettes retourne toutes les recettes en cours (pas stopped/failed) tous projets.
+func (db *DB) ListAllActiveRecettes() ([]Deployment, error) {
+	rows, err := db.Query(`
+		SELECT id, project_name, pipeline_id, image, port, status, url, recette_name, created_at
+		FROM deployments
+		WHERE recette_name IS NOT NULL AND status NOT IN ('stopped', 'failed')
+		ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Deployment
+	for rows.Next() {
+		var d Deployment
+		var rn *string
+		rows.Scan(&d.ID, &d.ProjectName, &d.PipelineID, &d.Image,
+			&d.Port, &d.Status, &d.URL, &rn, &d.CreatedAt)
+		if rn != nil {
+			d.RecetteName = *rn
+		}
+		out = append(out, d)
+	}
+	return out, nil
+}
+
 func nilIfEmpty(s string) *string {
 	if s == "" {
 		return nil

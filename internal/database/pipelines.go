@@ -59,6 +59,26 @@ func (db *DB) ListPendingPipelines() ([]Pipeline, error) {
 	return pipelines, nil
 }
 
+// ListActivePipelines retourne les pipelines en état non-terminal (pending/running).
+func (db *DB) ListActivePipelines() ([]Pipeline, error) {
+	rows, err := db.Query(`
+		SELECT id, project_name, pipeline_id, type, status, triggered_by, created_at
+		FROM pipelines WHERE status NOT IN ('success', 'failed', 'canceled')
+		ORDER BY created_at DESC LIMIT 50`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Pipeline
+	for rows.Next() {
+		var p Pipeline
+		rows.Scan(&p.ID, &p.ProjectName, &p.PipelineID, &p.Type,
+			&p.Status, &p.TriggeredBy, &p.CreatedAt)
+		out = append(out, p)
+	}
+	return out, nil
+}
+
 func (db *DB) ListPipelines(projectName string) ([]Pipeline, error) {
 	rows, err := db.Query(`
 		SELECT id, project_name, pipeline_id, type, status, triggered_by, created_at

@@ -76,8 +76,21 @@ type Image struct {
 // Pour le MVP Docker, le déploiement et la destruction sont entièrement
 // délégués au pipeline CI (jobs deploy / deploy-recette / destroy-recette /
 // destroy-deploy). DeployProvider ne sert qu'à vérifier la connectivité du
-// daemon cible. Les futures implémentations (Kubernetes…) étendront ce contrat
+// daemon cible et à lire l'état courant des containers pour l'inventaire.
+// Les futures implémentations (Kubernetes…) étendront ce contrat
 // selon les besoins réels, sans toucher au core.
 type DeployProvider interface {
 	Ping() error
+	// ListContainers retourne les containers actifs gérés par ce provider.
+	// Appelé uniquement en lecture (inventaire) — jamais pour du provisioning.
+	ListContainers() ([]ContainerInfo, error)
+}
+
+type ContainerInfo struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Image   string `json:"image"`
+	Status  string `json:"status"`
+	Port    int    `json:"port,omitempty"`
+	Created int64  `json:"created"`
 }

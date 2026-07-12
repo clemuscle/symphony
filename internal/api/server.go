@@ -160,6 +160,9 @@ func NewServer(opts ServerOptions) *Server {
 		r.With(s.requireRole(rbac.RoleDeveloper)).Post("/api/v1/deployments", s.deployProject)
 		r.With(s.requireRole(rbac.RoleDeveloper)).Delete("/api/v1/deployments/{id}", s.stopDeployment)
 
+		// Inventaire des ressources actives (lecture = viewer+)
+		r.Get("/api/v1/inventory", s.getInventory)
+
 		// Audit (lecture = viewer+)
 		r.Get("/api/v1/audit", s.listAudit)
 	})
