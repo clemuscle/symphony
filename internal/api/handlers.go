@@ -11,11 +11,21 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/yourorg/symphony/internal/auth"
 	"github.com/yourorg/symphony/internal/catalog"
 	"github.com/yourorg/symphony/internal/database"
 )
 
 
+
+// actorID returns the authenticated user's email for audit log entries,
+// falling back to "system" in dev mode or when context has no user.
+func actorID(r *http.Request) string {
+	if u, ok := auth.UserFromContext(r.Context()); ok && u.Email != "" {
+		return u.Email
+	}
+	return "system"
+}
 
 func errSetupRequired() map[string]string {
 	return map[string]string{"error": "setup_required", "message": "Configurez les providers via le wizard d'initialisation"}
@@ -29,7 +39,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	if s.devMode {
 		respond(w, http.StatusOK, map[string]any{
 			"sub": "dev", "email": "dev@localhost", "name": "Dev Mode",
-			"groups": []string{"admin"}, "is_admin": true, "dev_mode": true,
+			"groups": []string{"admin"}, "role": "admin", "is_admin": true, "dev_mode": true,
 		})
 		return
 	}
@@ -118,7 +128,7 @@ func (s *Server) triggerAction(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	s.db.Log("trigger_action", svcName+"/"+actionName, fmt.Sprintf("%v", inputs), "system")
+	s.db.Log("trigger_action", svcName+"/"+actionName, fmt.Sprintf("%v", inputs), actorID(r))
 	respond(w, http.StatusOK, map[string]any{"status": "dispatched", "payload": payload})
 }
 
@@ -193,7 +203,7 @@ func (s *Server) triggerPipelineHandler(w http.ResponseWriter, r *http.Request) 
 		Status:      "pending",
 		TriggeredBy: "symphony-ui",
 	})
-	s.db.Log("trigger_pipeline", req.ProjectPath, "pipeline "+id, "system")
+	s.db.Log("trigger_pipeline", req.ProjectPath, "pipeline "+id, actorID(r))
 
 	respond(w, http.StatusOK, map[string]string{"pipeline_id": id})
 }
@@ -221,7 +231,7 @@ func (s *Server) getPipelineStatusHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if applied {
-		s.db.Log("update_pipeline_status", projectPath, "pipeline "+pipelineID+" -> "+status, "system")
+		s.db.Log("update_pipeline_status", projectPath, "pipeline "+pipelineID+" -> "+status, actorID(r))
 	} else {
 		log.Printf("statut ignoré pour pipeline %s (déjà dans un état final): %s", pipelineID, status)
 	}
@@ -279,7 +289,7 @@ func (s *Server) stopDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.db.UpdateDeploymentStatus(d.PipelineID, "stopped")
-	s.db.Log("stop_deployment", d.ProjectName, "destroy pipeline triggered", "system")
+	s.db.Log("stop_deployment", d.ProjectName, "destroy pipeline triggered", actorID(r))
 	respond(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 

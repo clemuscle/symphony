@@ -12,6 +12,7 @@ import (
 	"github.com/yourorg/symphony/internal/catalog"
 	"github.com/yourorg/symphony/internal/database"
 	"github.com/yourorg/symphony/internal/providers"
+	"github.com/yourorg/symphony/internal/rbac"
 	"github.com/yourorg/symphony/internal/templates"
 	"github.com/yourorg/symphony/internal/web"
 )
@@ -122,77 +123,66 @@ func NewServer(opts ServerOptions) *Server {
 
 		r.Get("/api/v1/auth/me", s.me)
 
-		// Setup wizard — accessible à tous les utilisateurs authentifiés pour /status,
-		// admin uniquement pour /test, /save, /reload
+		// Setup wizard — /status accessible à tous ; /test, /save, /reload réservés admin
 		r.Get("/api/v1/setup/status", s.setupStatus)
-		r.With(s.adminOnly).Post("/api/v1/setup/test", s.setupTest)
-		r.With(s.adminOnly).Post("/api/v1/setup/save", s.setupSave)
-		r.With(s.adminOnly).Post("/api/v1/config/reload", s.reloadConfig)
+		r.With(s.requireRole(rbac.RoleAdmin)).Post("/api/v1/setup/test", s.setupTest)
+		r.With(s.requireRole(rbac.RoleAdmin)).Post("/api/v1/setup/save", s.setupSave)
+		r.With(s.requireRole(rbac.RoleAdmin)).Post("/api/v1/config/reload", s.reloadConfig)
 
-		// Catalogue
+		// Catalogue (lecture = viewer+)
 		r.Get("/api/v1/services", s.listServices)
 		r.Get("/api/v1/services/{name}", s.getService)
-		r.Post("/api/v1/services/{name}/actions/{action}", s.triggerAction)
+		r.With(s.requireRole(rbac.RoleDeveloper)).Post("/api/v1/services/{name}/actions/{action}", s.triggerAction)
 
-		// Golden Paths
+		// Golden Paths (lecture = viewer+, rechargement = admin)
 		r.Get("/api/v1/golden-paths", s.listGoldenPaths)
-		r.Post("/api/v1/templates/reload", s.reloadTemplates)
+		r.With(s.requireRole(rbac.RoleAdmin)).Post("/api/v1/templates/reload", s.reloadTemplates)
 
-		// Projets
-		r.With(s.deployerOnly).Post("/api/v1/projects", s.createProject)
+		// Projets (lecture = viewer+, création = developer+)
+		r.With(s.requireRole(rbac.RoleDeveloper)).Post("/api/v1/projects", s.createProject)
 		r.Get("/api/v1/projects", s.listProjects)
 		r.Get("/api/v1/projects/{name}/steps", s.listProjectSteps)
 		r.Get("/api/v1/repos", s.listRepos)
 		r.Get("/api/v1/namespaces", s.listNamespaces)
 
-		// Recettes
+		// Recettes (lecture = viewer+, création/destruction = developer+)
 		r.Get("/api/v1/projects/{name}/recettes", s.listRecettes)
-		r.With(s.deployerOnly).Post("/api/v1/projects/{name}/recettes", s.createRecette)
-		r.With(s.deployerOnly).Delete("/api/v1/projects/{name}/recettes/{recette}", s.destroyRecette)
+		r.With(s.requireRole(rbac.RoleDeveloper)).Post("/api/v1/projects/{name}/recettes", s.createRecette)
+		r.With(s.requireRole(rbac.RoleDeveloper)).Delete("/api/v1/projects/{name}/recettes/{recette}", s.destroyRecette)
 
-		// Pipelines
-		r.With(s.deployerOnly).Post("/api/v1/pipelines/trigger", s.triggerPipelineHandler)
+		// Pipelines (lecture = viewer+, déclenchement = developer+)
+		r.With(s.requireRole(rbac.RoleDeveloper)).Post("/api/v1/pipelines/trigger", s.triggerPipelineHandler)
 		r.Get("/api/v1/pipelines/status", s.getPipelineStatusHandler)
 		r.Get("/api/v1/pipelines/{project}", s.listPipelinesHandler)
 
-		// Déploiements
+		// Déploiements (lecture = viewer+, création/arrêt = developer+)
 		r.Get("/api/v1/deployments", s.listDeployments)
-		r.With(s.deployerOnly).Post("/api/v1/deployments", s.deployProject)
-		r.With(s.deployerOnly).Delete("/api/v1/deployments/{id}", s.stopDeployment)
+		r.With(s.requireRole(rbac.RoleDeveloper)).Post("/api/v1/deployments", s.deployProject)
+		r.With(s.requireRole(rbac.RoleDeveloper)).Delete("/api/v1/deployments/{id}", s.stopDeployment)
 
-		// Audit
+		// Audit (lecture = viewer+)
 		r.Get("/api/v1/audit", s.listAudit)
 	})
 
 	return s
 }
 
-func (s *Server) adminOnly(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.devMode {
+func (s *Server) requireRole(min rbac.Role) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if s.devMode {
+				next.ServeHTTP(w, r)
+				return
+			}
+			user, ok := auth.UserFromContext(r.Context())
+			if !ok || !user.Role.AtLeast(min) {
+				respond(w, http.StatusForbidden, map[string]string{
+					"error":    "forbidden",
+					"required": string(min),
+				})
+				return
+			}
 			next.ServeHTTP(w, r)
-			return
-		}
-		user, ok := auth.UserFromContext(r.Context())
-		if !ok || !user.IsAdmin {
-			respond(w, http.StatusForbidden, map[string]string{"error": "admin required"})
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func (s *Server) deployerOnly(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.devMode {
-			next.ServeHTTP(w, r)
-			return
-		}
-		user, ok := auth.UserFromContext(r.Context())
-		if !ok || !s.auth.CanDeploy(user) {
-			respond(w, http.StatusForbidden, map[string]string{"error": "droits insuffisants"})
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+		})
+	}
 }
