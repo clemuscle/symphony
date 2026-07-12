@@ -106,5 +106,6 @@ type ProviderSet struct {
 	Registry     RegistryProvider
 	Deploy       DeployProvider
 	SCMBaseURL   string
+	SCMToken     string // token utilisé pour les variables CI (register-service)
 	CIConfigRepo string
 }

@@ -195,6 +195,7 @@ func buildProviderSet(cfg *providers.IntegrationConfig) (*providers.ProviderSet,
 		Registry:     registry,
 		Deploy:       deploy,
 		SCMBaseURL:   cfg.SCM.URL,
+		SCMToken:     cfg.SCM.Token,
 		CIConfigRepo: cfg.CI.ConfigRepo,
 	}, nil
 }

@@ -41,6 +41,9 @@
           <a v-if="p.repo_url" :href="p.repo_url + '/-/pipelines'" target="_blank" class="btn-ghost">
             Pipelines ↗
           </a>
+          <a v-if="monitoringURLs[p.language]" :href="monitoringURLs[p.language]" target="_blank" class="btn-ghost btn-metrics">
+            📊 Métriques ↗
+          </a>
           <button class="btn-ghost" @click="triggerPipeline(p)">
             {{ pipelineState[p.repo_path]?.loading ? '⏳' : '▶ Pipeline' }}
           </button>
@@ -163,6 +166,7 @@ const pipelineState = ref({})
 const deployState = ref({})
 const stepsState = ref({})
 const recetteState = ref({})
+const monitoringURLs = ref({}) // language → monitoring_url depuis les golden paths
 let pollInterval = null
 
 const langIcon = (lang) => ({ go: '🐹', python: '🐍', node: '💚', java: '☕' })[lang] || '📦'
@@ -181,9 +185,17 @@ async function load(isInitial = false) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   load(true)
   pollInterval = setInterval(load, 10000)
+  try {
+    const { data } = await api.getGoldenPaths()
+    const map = {}
+    for (const gp of data || []) {
+      if (gp.spec?.monitoring_url) map[gp.spec.language] = gp.spec.monitoring_url
+    }
+    monitoringURLs.value = map
+  } catch { /* non bloquant */ }
 })
 
 onUnmounted(() => {
@@ -439,6 +451,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-cta:hover { background: #5a6fd6; }
 
 .btn-steps { font-size: 12px; padding: 4px 10px; color: #c05621; border-color: #fed7aa; }
+.btn-metrics { color: #6b7280; }
 .steps-list { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; font-size: 12px; }
 .step-row { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; }
 .step-name { font-weight: 600; color: #555; min-width: 80px; }

@@ -11,6 +11,7 @@ variables:
   REGISTRY: $CI_REGISTRY
   SYMPHONY_GIT_URL: "{{.GitServerURL}}"
   SYMPHONY_CONFIG_REPO: "{{.ConfigRepoPath}}"
+  APP_PORT: "{{.Port}}"
 
 # ── TEST ──────────────────────────────────────────
 test:
@@ -45,7 +46,7 @@ deploy:
   script:
     - docker stop $IMAGE_NAME || true
     - docker rm $IMAGE_NAME || true
-    - docker run -d
+    - docker run -d -p $APP_PORT:$APP_PORT
         --name $IMAGE_NAME
         --restart unless-stopped
         $REGISTRY/$IMAGE_NAME:latest
@@ -94,7 +95,7 @@ deploy-recette:
     - docker rm $RECETTE_NAME || true
     - docker run -d
         --name $RECETTE_NAME
-        -p $RECETTE_PORT:{{.Port}}
+        -p $RECETTE_PORT:$APP_PORT
         --restart unless-stopped
         $REGISTRY/$IMAGE_NAME:latest
   tags:

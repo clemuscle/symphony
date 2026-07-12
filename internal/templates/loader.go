@@ -26,9 +26,10 @@ type GPMeta struct {
 }
 
 type GPSpec struct {
-	Language    string `yaml:"language"     json:"language"`
-	Type        string `yaml:"type"         json:"type"`
-	DefaultPort int    `yaml:"default_port" json:"default_port"`
+	Language      string `yaml:"language"       json:"language"`
+	Type          string `yaml:"type"           json:"type"`
+	DefaultPort   int    `yaml:"default_port"   json:"default_port"`
+	MonitoringURL string `yaml:"monitoring_url" json:"monitoring_url,omitempty"`
 }
 
 // ScaffoldVars are the variables available in golden path template files.
@@ -75,7 +76,9 @@ func (l *Loader) Load() error {
 		}
 		lp, err := l.loadOne(filepath.Join(l.baseDir, e.Name()))
 		if err != nil {
-			return fmt.Errorf("loader: %s: %w", e.Name(), err)
+			// Un golden path invalide ne casse pas les autres — log + skip
+			fmt.Printf("⚠️  golden path %s ignoré: %v\n", e.Name(), err)
+			continue
 		}
 		loaded = append(loaded, lp)
 	}

@@ -45,6 +45,7 @@ type CIProvider interface {
 	SetupPipeline(projectPath string, pipeline PipelineConfig) error
 	TriggerPipeline(projectPath, ref string, vars map[string]string) (string, error)
 	GetPipelineStatus(projectPath, pipelineID string) (string, error)
+	SetProjectVariable(projectPath, key, value string) error
 }
 
 type PipelineConfig struct {

@@ -4,3 +4,6 @@
 !.env.*.example
 config/integrations.yaml
 config/integrations.gitlab-com.yaml
+internal/web/static/
+!internal/web/static/.gitkeep
+symphony

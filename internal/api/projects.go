@@ -110,6 +110,12 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		ConfigRepoPath:     pvds.CIConfigRepo,
 	}
 	steps := []stepResult{
+		s.runStep(project.Name, "ci-vars", func() error {
+			if err := pvds.CI.SetProjectVariable(repo.Path, "SYMPHONY_TOKEN", pvds.SCMToken); err != nil {
+				return fmt.Errorf("SYMPHONY_TOKEN: %w", err)
+			}
+			return nil
+		}),
 		s.runStep(project.Name, "scaffold", func() error {
 			files, err := s.tmpl.RenderFiles(req.Language, scaffoldVars)
 			if err != nil {
