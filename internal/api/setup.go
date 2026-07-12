@@ -8,7 +8,7 @@ import (
 )
 
 func (s *Server) setupStatus(w http.ResponseWriter, r *http.Request) {
-	configured := s.getProviders() != nil
+	configured := s.devMode || s.getProviders() != nil
 	respond(w, http.StatusOK, map[string]any{
 		"configured": configured,
 	})
