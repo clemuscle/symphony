@@ -12,6 +12,7 @@ import (
 	"github.com/yourorg/symphony/internal/api"
 	"github.com/yourorg/symphony/internal/auth"
 	"github.com/yourorg/symphony/internal/catalog"
+	"github.com/yourorg/symphony/internal/costs"
 	"github.com/yourorg/symphony/internal/database"
 	"github.com/yourorg/symphony/internal/gitops"
 	"github.com/yourorg/symphony/internal/providers"
@@ -90,6 +91,9 @@ func main() {
 		log.Printf("✅ %d golden path(s) chargé(s)", len(tmplLoader.GetGoldenPaths()))
 	}
 
+	// Coûts — chargé depuis config/costs.yaml ; tarifs à zéro si absent (tracking usage seulement)
+	costCfg := loadCosts(getEnv("COSTS_CONFIG_PATH", "config/costs.yaml"))
+
 	// RBAC — chargé depuis config/rbac.yaml ; permissif si absent (small teams)
 	rbacMgr := loadRBAC(getEnv("RBAC_CONFIG_PATH", "config/rbac.yaml"))
 
@@ -158,6 +162,7 @@ func main() {
 		Reload:       initProviders,
 		TestProvider: testProvider,
 		CfgPath:      cfgPath,
+		CostCfg:      costCfg,
 	})
 	go reconcileDeployments(db, srv.GetProviders)
 	go reconcilePipelines(db, srv.GetProviders)
@@ -267,6 +272,19 @@ func reconcileDeployments(db *database.DB, getProviders func() *providers.Provid
 			}
 		}
 	}
+}
+
+func loadCosts(path string) costs.Config {
+	cfg, err := costs.LoadConfig(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("⚠️  costs: %v — tarifs à zéro (usage tracké, pas de valorisation)", err)
+		}
+		return costs.DefaultConfig()
+	}
+	log.Printf("✅ Coûts chargés depuis %s (container: %.4f %s/h, CI: %.4f %s/min)",
+		path, cfg.Rates.ContainerHourly, cfg.Currency, cfg.Rates.CIMinute, cfg.Currency)
+	return cfg
 }
 
 func loadRBAC(path string) *rbac.Manager {
