@@ -120,26 +120,19 @@ register-service:
     - export SYMPHONY_GIT_SCHEME=$(echo $SYMPHONY_GIT_URL | sed -E 's#^([a-z]+)://.*#\1#')
     - git clone "${SYMPHONY_GIT_SCHEME}://oauth2:${SYMPHONY_TOKEN}@${SYMPHONY_GIT_HOST}/${SYMPHONY_CONFIG_REPO}.git" /tmp/symphony-config
     - cd /tmp/symphony-config
-    - |
-      cat > services/{{.ServiceName}}.yaml << YAML
-      apiVersion: symphony/v1
-      kind: Service
-      metadata:
-        name: "{{.ServiceName}}"
-        owner: "${GITLAB_USER_LOGIN:-symphony-bot}"
-        tags:
-          - "{{.Language}}"
-          - "auto-registered"
-      spec:
-        type: "{{.Type}}"
-        links:
-          - title: "Repository"
-            url: "$CI_PROJECT_URL"
-          - title: "Registry"
-            url: "$CI_REGISTRY_IMAGE"
-          - title: "Pipelines"
-            url: "$CI_PROJECT_URL/-/pipelines"
-      YAML
+    - mkdir -p services
+    - echo 'apiVersion: symphony/v1' > services/{{.ServiceName}}.yaml
+    - echo 'kind: Service' >> services/{{.ServiceName}}.yaml
+    - echo 'metadata:' >> services/{{.ServiceName}}.yaml
+    - echo "  name: \"{{.ServiceName}}\"" >> services/{{.ServiceName}}.yaml
+    - echo "  owner: \"${GITLAB_USER_LOGIN:-symphony-bot}\"" >> services/{{.ServiceName}}.yaml
+    - echo "  tags: [{{.Language}}, auto-registered]" >> services/{{.ServiceName}}.yaml
+    - echo 'spec:' >> services/{{.ServiceName}}.yaml
+    - echo "  type: \"{{.Type}}\"" >> services/{{.ServiceName}}.yaml
+    - echo '  links:' >> services/{{.ServiceName}}.yaml
+    - echo "  - {title: Repository, url: \"$CI_PROJECT_URL\"}" >> services/{{.ServiceName}}.yaml
+    - echo "  - {title: Registry, url: \"$CI_REGISTRY_IMAGE\"}" >> services/{{.ServiceName}}.yaml
+    - echo "  - {title: Pipelines, url: \"$CI_PROJECT_URL/-/pipelines\"}" >> services/{{.ServiceName}}.yaml
     - git add services/{{.ServiceName}}.yaml
     - git diff --staged --quiet && echo "Pas de changement" || git commit -m "feat: register {{.ServiceName}} [symphony-bot]"
     - git push
