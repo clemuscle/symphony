@@ -121,20 +121,25 @@ register-service:
     - git clone "${SYMPHONY_GIT_SCHEME}://oauth2:${SYMPHONY_TOKEN}@${SYMPHONY_GIT_HOST}/${SYMPHONY_CONFIG_REPO}.git" /tmp/symphony-config
     - cd /tmp/symphony-config
     - mkdir -p services
-    - echo 'apiVersion: symphony/v1' > services/{{.ServiceName}}.yaml
-    - echo 'kind: Service' >> services/{{.ServiceName}}.yaml
-    - echo 'metadata:' >> services/{{.ServiceName}}.yaml
-    - echo "  name: \"{{.ServiceName}}\"" >> services/{{.ServiceName}}.yaml
-    - echo "  owner: \"${GITLAB_USER_LOGIN:-symphony-bot}\"" >> services/{{.ServiceName}}.yaml
-    - echo "  tags: [{{.Language}}, auto-registered]" >> services/{{.ServiceName}}.yaml
-    - echo 'spec:' >> services/{{.ServiceName}}.yaml
-    - echo "  type: \"{{.Type}}\"" >> services/{{.ServiceName}}.yaml
-    - echo '  links:' >> services/{{.ServiceName}}.yaml
-    - echo "  - {title: Repository, url: \"$CI_PROJECT_URL\"}" >> services/{{.ServiceName}}.yaml
-    - echo "  - {title: Registry, url: \"$CI_REGISTRY_IMAGE\"}" >> services/{{.ServiceName}}.yaml
-    - echo "  - {title: Pipelines, url: \"$CI_PROJECT_URL/-/pipelines\"}" >> services/{{.ServiceName}}.yaml
+    - "echo 'apiVersion: symphony/v1' > services/{{.ServiceName}}.yaml"
+    - "echo 'kind: Service' >> services/{{.ServiceName}}.yaml"
+    - "echo 'metadata:' >> services/{{.ServiceName}}.yaml"
+    - "echo '  name: {{.ServiceName}}' >> services/{{.ServiceName}}.yaml"
+    - "echo \"  owner: ${GITLAB_USER_LOGIN:-symphony-bot}\" >> services/{{.ServiceName}}.yaml"
+    - "echo '  tags:' >> services/{{.ServiceName}}.yaml"
+    - "echo '    - {{.Language}}' >> services/{{.ServiceName}}.yaml"
+    - "echo '    - auto-registered' >> services/{{.ServiceName}}.yaml"
+    - "echo 'spec:' >> services/{{.ServiceName}}.yaml"
+    - "echo '  type: {{.Type}}' >> services/{{.ServiceName}}.yaml"
+    - "echo '  links:' >> services/{{.ServiceName}}.yaml"
+    - "echo '  - title: Repository' >> services/{{.ServiceName}}.yaml"
+    - "echo \"    url: $CI_PROJECT_URL\" >> services/{{.ServiceName}}.yaml"
+    - "echo '  - title: Registry' >> services/{{.ServiceName}}.yaml"
+    - "echo \"    url: $CI_REGISTRY_IMAGE\" >> services/{{.ServiceName}}.yaml"
+    - "echo '  - title: Pipelines' >> services/{{.ServiceName}}.yaml"
+    - "echo \"    url: $CI_PROJECT_URL/-/pipelines\" >> services/{{.ServiceName}}.yaml"
     - git add services/{{.ServiceName}}.yaml
-    - git diff --staged --quiet && echo "Pas de changement" || git commit -m "feat: register {{.ServiceName}} [symphony-bot]"
+    - "git diff --staged --quiet && echo 'Pas de changement' || git commit -m 'feat: register {{.ServiceName}} [symphony-bot]'"
     - git push
   only:
     - main
