@@ -15,11 +15,12 @@ import (
 	"github.com/yourorg/symphony/internal/database"
 	"github.com/yourorg/symphony/internal/gitops"
 	"github.com/yourorg/symphony/internal/providers"
-	"github.com/yourorg/symphony/internal/templates"
 	gitlabregistry "github.com/yourorg/symphony/internal/providers/artifacts/gitlabregistry"
 	gitlabci "github.com/yourorg/symphony/internal/providers/ci/gitlabci"
 	dockerdeploy "github.com/yourorg/symphony/internal/providers/deploy/docker"
 	gitlabscm "github.com/yourorg/symphony/internal/providers/scm/gitlab"
+	"github.com/yourorg/symphony/internal/rbac"
+	"github.com/yourorg/symphony/internal/templates"
 )
 
 func main() {
@@ -89,6 +90,9 @@ func main() {
 		log.Printf("✅ %d golden path(s) chargé(s)", len(tmplLoader.GetGoldenPaths()))
 	}
 
+	// RBAC — chargé depuis config/rbac.yaml ; permissif si absent (small teams)
+	rbacMgr := loadRBAC(getEnv("RBAC_CONFIG_PATH", "config/rbac.yaml"))
+
 	// Auth OIDC — fail-closed par défaut.
 	// Sans OIDC_ISSUER, Symphony refuse de démarrer sauf si SYMPHONY_DEV_MODE=1
 	// est positionné explicitement (dev local uniquement, jamais en production).
@@ -100,7 +104,7 @@ func main() {
 			ClientID:     os.Getenv("OIDC_CLIENT_ID"),
 			ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
 			RedirectURL:  getEnv("OIDC_REDIRECT_URL", "http://localhost:8090/auth/callback"),
-		})
+		}, rbacMgr)
 		if err != nil {
 			log.Fatalf("auth OIDC: %v", err)
 		}
@@ -263,6 +267,20 @@ func reconcileDeployments(db *database.DB, getProviders func() *providers.Provid
 			}
 		}
 	}
+}
+
+func loadRBAC(path string) *rbac.Manager {
+	cfg, err := rbac.LoadConfig(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("⚠️  rbac: %v — rôles par défaut (developer = tous)", err)
+		} else {
+			log.Println("⚠️  config/rbac.yaml absent — rôles par défaut (developer = tous, admin = personne)")
+		}
+		return rbac.Default()
+	}
+	log.Printf("✅ RBAC chargé depuis %s", path)
+	return rbac.New(cfg)
 }
 
 func getEnv(key, fallback string) string {

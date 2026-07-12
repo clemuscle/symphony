@@ -32,14 +32,14 @@ type stepResult struct {
 // un repo déjà créé ne doit jamais être annulé parce qu'une étape suivante a
 // échoué. Seules les étapes en échec sont journalisées dans l'audit log, pour
 // ne pas multiplier son volume par le nombre d'étapes à chaque création.
-func (s *Server) runStep(projectName, step string, fn func() error) stepResult {
+func (s *Server) runStep(projectName, step, actor string, fn func() error) stepResult {
 	err := fn()
 	status := "success"
 	errMsg := ""
 	if err != nil {
 		status = "failed"
 		errMsg = err.Error()
-		s.db.Log("provisioning_step_failed", projectName, step+": "+errMsg, "system")
+		s.db.Log("provisioning_step_failed", projectName, step+": "+errMsg, actor)
 	}
 	s.db.UpsertProvisioningStep(projectName, step, status, errMsg)
 	return stepResult{Step: step, Status: status, Error: errMsg}
@@ -109,14 +109,15 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		GitServerURL:       pvds.SCMBaseURL,
 		ConfigRepoPath:     pvds.CIConfigRepo,
 	}
+	actor := actorID(r)
 	steps := []stepResult{
-		s.runStep(project.Name, "ci-vars", func() error {
+		s.runStep(project.Name, "ci-vars", actor, func() error {
 			if err := pvds.CI.SetProjectVariable(repo.Path, "SYMPHONY_TOKEN", pvds.SCMToken); err != nil {
 				return fmt.Errorf("SYMPHONY_TOKEN: %w", err)
 			}
 			return nil
 		}),
-		s.runStep(project.Name, "scaffold", func() error {
+		s.runStep(project.Name, "scaffold", actor, func() error {
 			files, err := s.tmpl.RenderFiles(req.Language, scaffoldVars)
 			if err != nil {
 				return err
@@ -129,7 +130,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 			}
 			return nil
 		}),
-		s.runStep(project.Name, "pipeline", func() error {
+		s.runStep(project.Name, "pipeline", actor, func() error {
 			content, err := s.tmpl.RenderCI(req.Language, scaffoldVars)
 			if err != nil || content == "" {
 				return err
@@ -137,7 +138,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 			return pvds.SCM.PushFile(repo.Path, repo.DefaultBranch, ".gitlab-ci.yml", content,
 				"ci: add pipeline [symphony]")
 		}),
-		s.runStep(project.Name, "registry", func() error {
+		s.runStep(project.Name, "registry", actor, func() error {
 			registryURL, err := pvds.Registry.GetRegistryURL(repo.Path)
 			if err != nil {
 				return err
@@ -159,7 +160,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	project.Status = overallStatus
 
 	s.db.Log("create_project", project.Name, fmt.Sprintf("lang=%s type=%s status=%s failed=%s",
-		req.Language, req.Type, overallStatus, strings.Join(failed, ",")), "system")
+		req.Language, req.Type, overallStatus, strings.Join(failed, ",")), actor)
 
 	respond(w, http.StatusCreated, map[string]any{
 		"project":   project,
@@ -211,7 +212,7 @@ func (s *Server) deployProject(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": "db: " + err.Error()})
 		return
 	}
-	s.db.Log("deploy", req.ProjectName, "pipeline="+pipelineID, "system")
+	s.db.Log("deploy", req.ProjectName, "pipeline="+pipelineID, actorID(r))
 
 	respond(w, http.StatusAccepted, d)
 }
@@ -277,7 +278,7 @@ func (s *Server) createRecette(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": "db: " + err.Error()})
 		return
 	}
-	s.db.Log("create_recette", projectName, "recette="+req.RecetteName+" port="+fmt.Sprintf("%d", req.Port), "system")
+	s.db.Log("create_recette", projectName, "recette="+req.RecetteName+" port="+fmt.Sprintf("%d", req.Port), actorID(r))
 
 	respond(w, http.StatusCreated, d)
 }
@@ -323,6 +324,6 @@ func (s *Server) destroyRecette(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.db.UpdateDeploymentStatus(recette.PipelineID, "stopped")
-	s.db.Log("destroy_recette", projectName, "recette="+recetteName, "system")
+	s.db.Log("destroy_recette", projectName, "recette="+recetteName, actorID(r))
 	respond(w, http.StatusOK, map[string]string{"status": "stopped"})
 }

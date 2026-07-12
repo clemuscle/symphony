@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/yourorg/symphony/internal/rbac"
 	"golang.org/x/oauth2"
 )
 
@@ -21,11 +21,12 @@ type Config struct {
 }
 
 type User struct {
-	Sub     string   `json:"sub"`
-	Email   string   `json:"email"`
-	Name    string   `json:"name"`
-	Groups  []string `json:"groups"`
-	IsAdmin bool     `json:"is_admin"`
+	Sub     string    `json:"sub"`
+	Email   string    `json:"email"`
+	Name    string    `json:"name"`
+	Groups  []string  `json:"groups"`
+	Role    rbac.Role `json:"role"`
+	IsAdmin bool      `json:"is_admin"` // derived from Role for backward compat
 }
 
 type ctxKey struct{}
@@ -36,28 +37,18 @@ func UserFromContext(ctx context.Context) (*User, bool) {
 }
 
 type Provider struct {
-	verifier       *oidc.IDTokenVerifier
-	oauth2         oauth2.Config
-	adminGroups    map[string]bool // groupes OIDC → is_admin (ADMIN_GROUPS)
-	deployerGroups map[string]bool // groupes OIDC → can_deploy (DEPLOYER_GROUPS, vide = tous)
+	verifier *oidc.IDTokenVerifier
+	oauth2   oauth2.Config
+	rbac     *rbac.Manager
 }
 
-func New(ctx context.Context, cfg Config) (*Provider, error) {
+func New(ctx context.Context, cfg Config, rbacMgr *rbac.Manager) (*Provider, error) {
 	p, err := oidc.NewProvider(ctx, cfg.Issuer)
 	if err != nil {
 		return nil, err
 	}
-	adminGroups := map[string]bool{}
-	for _, g := range strings.Split(os.Getenv("ADMIN_GROUPS"), ",") {
-		if g := strings.TrimSpace(g); g != "" {
-			adminGroups[g] = true
-		}
-	}
-	deployerGroups := map[string]bool{}
-	for _, g := range strings.Split(os.Getenv("DEPLOYER_GROUPS"), ",") {
-		if g := strings.TrimSpace(g); g != "" {
-			deployerGroups[g] = true
-		}
+	if rbacMgr == nil {
+		rbacMgr = rbac.Default()
 	}
 	return &Provider{
 		verifier: p.Verifier(&oidc.Config{ClientID: cfg.ClientID}),
@@ -68,8 +59,7 @@ func New(ctx context.Context, cfg Config) (*Provider, error) {
 			Endpoint:     p.Endpoint(),
 			Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
 		},
-		adminGroups:    adminGroups,
-		deployerGroups: deployerGroups,
+		rbac: rbacMgr,
 	}, nil
 }
 
@@ -120,16 +110,12 @@ func (p *Provider) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("symphony_token")
 		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":"unauthorized"}`))
+			jsonUnauthorized(w)
 			return
 		}
 		idToken, err := p.verifier.Verify(r.Context(), cookie.Value)
 		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":"unauthorized"}`))
+			jsonUnauthorized(w)
 			return
 		}
 		var claims struct {
@@ -140,9 +126,7 @@ func (p *Provider) Middleware(next http.Handler) http.Handler {
 			Groups            []string `json:"groups"`
 		}
 		if err := idToken.Claims(&claims); err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":"unauthorized"}`))
+			jsonUnauthorized(w)
 			return
 		}
 		name := claims.Name
@@ -152,25 +136,14 @@ func (p *Provider) Middleware(next http.Handler) http.Handler {
 		if name == "" {
 			name = claims.Email
 		}
-		isAdmin := false
-		if len(p.adminGroups) == 0 {
-			// Aucun groupe admin configuré — personne n'est admin par défaut.
-			// Configurer ADMIN_GROUPS pour activer les droits admin.
-			isAdmin = false
-		} else {
-			for _, g := range claims.Groups {
-				if p.adminGroups[g] {
-					isAdmin = true
-					break
-				}
-			}
-		}
+		role := p.rbac.ResolveRole(claims.Groups)
 		user := &User{
 			Sub:     claims.Sub,
 			Email:   claims.Email,
 			Name:    name,
 			Groups:  claims.Groups,
-			IsAdmin: isAdmin,
+			Role:    role,
+			IsAdmin: role == rbac.RoleAdmin,
 		}
 		ctx := context.WithValue(r.Context(), ctxKey{}, user)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -183,22 +156,10 @@ func (p *Provider) MeHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(user)
 }
 
-// CanDeploy returns true if the user is allowed to create projects, trigger
-// pipelines and deployments. Admins always pass. If DEPLOYER_GROUPS is empty
-// every authenticated user passes (permissive default for small teams).
-func (p *Provider) CanDeploy(user *User) bool {
-	if user.IsAdmin {
-		return true
-	}
-	if len(p.deployerGroups) == 0 {
-		return true
-	}
-	for _, g := range user.Groups {
-		if p.deployerGroups[g] {
-			return true
-		}
-	}
-	return false
+func jsonUnauthorized(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	w.Write([]byte(`{"error":"unauthorized"}`))
 }
 
 func randomState() string {
