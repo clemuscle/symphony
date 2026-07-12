@@ -7,8 +7,6 @@ stages:
   - register
 
 variables:
-  IMAGE_NAME: {{.ServiceName}}
-  REGISTRY: $CI_REGISTRY
   SYMPHONY_GIT_URL: "{{.GitServerURL}}"
   SYMPHONY_CONFIG_REPO: "{{.ConfigRepoPath}}"
   APP_PORT: "{{.Port}}"
@@ -22,34 +20,37 @@ test:
     - merge_requests
     - main
 
-# ── BUILD ─────────────────────────────────────────
+# ── BUILD (shared runners GitLab.com) ────────────
 build:
   stage: build
   image: docker:24
   services:
     - docker:24-dind
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_HOST: tcp://docker:2375
   script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker build -t $REGISTRY/$IMAGE_NAME:$CI_COMMIT_SHORT_SHA .
-    - docker push $REGISTRY/$IMAGE_NAME:$CI_COMMIT_SHORT_SHA
-    - docker tag $REGISTRY/$IMAGE_NAME:$CI_COMMIT_SHORT_SHA $REGISTRY/$IMAGE_NAME:latest
-    - docker push $REGISTRY/$IMAGE_NAME:latest
-  tags:
-    - docker
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+    - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE:latest
+    - docker push $CI_REGISTRY_IMAGE:latest
   only:
     - main
 
-# ── DEPLOY ────────────────────────────────────────
+# ── DEPLOY (runner local avec tag docker) ─────────
 deploy:
   stage: deploy
   image: docker:24
   script:
-    - docker stop $IMAGE_NAME || true
-    - docker rm $IMAGE_NAME || true
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker pull $CI_REGISTRY_IMAGE:latest
+    - docker stop {{.ServiceName}} || true
+    - docker rm {{.ServiceName}} || true
     - docker run -d -p $APP_PORT:$APP_PORT
-        --name $IMAGE_NAME
+        --name {{.ServiceName}}
         --restart unless-stopped
-        $REGISTRY/$IMAGE_NAME:latest
+        $CI_REGISTRY_IMAGE:latest
   tags:
     - docker
   only:
@@ -78,8 +79,8 @@ destroy-deploy:
   stage: deploy
   image: docker:24
   script:
-    - docker stop $IMAGE_NAME || true
-    - docker rm $IMAGE_NAME || true
+    - docker stop {{.ServiceName}} || true
+    - docker rm {{.ServiceName}} || true
   tags:
     - docker
   only:
@@ -91,13 +92,15 @@ deploy-recette:
   stage: deploy
   image: docker:24
   script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker pull $CI_REGISTRY_IMAGE:latest
     - docker stop $RECETTE_NAME || true
     - docker rm $RECETTE_NAME || true
     - docker run -d
         --name $RECETTE_NAME
         -p $RECETTE_PORT:$APP_PORT
         --restart unless-stopped
-        $REGISTRY/$IMAGE_NAME:latest
+        $CI_REGISTRY_IMAGE:latest
   tags:
     - docker
   only:
@@ -110,7 +113,7 @@ register-service:
   image: alpine:latest
   before_script:
     - apk add --no-cache curl git
-    - git config --global user.email "symphony-bot@gitlab.local"
+    - git config --global user.email "symphony-bot@symphony"
     - git config --global user.name "Symphony Bot"
   script:
     - export SYMPHONY_GIT_HOST=$(echo $SYMPHONY_GIT_URL | sed -E 's#^[a-z]+://##')
