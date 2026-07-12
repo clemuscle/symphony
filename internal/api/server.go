@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/yourorg/symphony/internal/auth"
 	"github.com/yourorg/symphony/internal/catalog"
+	"github.com/yourorg/symphony/internal/costs"
 	"github.com/yourorg/symphony/internal/database"
 	"github.com/yourorg/symphony/internal/providers"
 	"github.com/yourorg/symphony/internal/rbac"
@@ -24,6 +25,7 @@ type Server struct {
 	devMode bool // true = SYMPHONY_DEV_MODE=1, jamais en production
 	tmpl    *templates.Loader
 	cfgPath string
+	costCfg costs.Config
 	router  *chi.Mux
 	// providers protégés par mutex — nil = setup requis
 	mu     sync.RWMutex
@@ -65,6 +67,7 @@ type ServerOptions struct {
 	Reload       func() (*providers.ProviderSet, error)
 	TestProvider func(providerType string, cfg map[string]string) (string, error)
 	CfgPath      string
+	CostCfg      costs.Config
 }
 
 func NewServer(opts ServerOptions) *Server {
@@ -78,6 +81,7 @@ func NewServer(opts ServerOptions) *Server {
 		reload:       opts.Reload,
 		testProvider: opts.TestProvider,
 		cfgPath:      opts.CfgPath,
+		costCfg:      opts.CostCfg,
 	}
 	r := chi.NewRouter()
 	s.router = r
@@ -162,6 +166,9 @@ func NewServer(opts ServerOptions) *Server {
 
 		// Inventaire des ressources actives (lecture = viewer+)
 		r.Get("/api/v1/inventory", s.getInventory)
+
+		// Coûts par projet / équipe (lecture = viewer+)
+		r.Get("/api/v1/costs", s.getCosts)
 
 		// Audit (lecture = viewer+)
 		r.Get("/api/v1/audit", s.listAudit)

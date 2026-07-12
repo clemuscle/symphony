@@ -53,6 +53,9 @@ export const api = {
   // Inventaire
   getInventory: () => http.get('/api/v1/inventory'),
 
+  // Coûts
+  getCosts: (month) => http.get('/api/v1/costs' + (month ? `?month=${month}` : '')),
+
   // Audit
   listAudit: () => http.get('/api/v1/audit'),
 

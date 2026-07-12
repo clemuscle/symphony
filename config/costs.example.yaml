@@ -1,0 +1,11 @@
+currency: EUR
+
+rates:
+  # Coût par container-hour (prod + recettes).
+  # Exemple : 0.05 EUR/h ≈ tarif d'une petite instance cloud.
+  # Mettre à 0 si tu veux juste tracker les heures sans valorisation.
+  container_hourly: 0.05
+
+  # Coût par minute de pipeline CI.
+  # Exemple : 0.008 EUR/min ≈ tarif GitLab.com shared runners.
+  ci_minute: 0.008
