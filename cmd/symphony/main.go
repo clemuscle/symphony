@@ -242,32 +242,62 @@ func reconcileDeployments(db *database.DB, getProviders func() *providers.Provid
 		if pvds == nil {
 			continue
 		}
-		pending, err := db.ListPendingDeployments()
-		if err != nil || len(pending) == 0 {
+
+		// Pass 1 — pending : attend le résultat du pipeline CI.
+		if pending, err := db.ListPendingDeployments(); err == nil {
+			for _, d := range pending {
+				project, err := db.GetProject(d.ProjectName)
+				if err != nil {
+					continue
+				}
+				status, err := pvds.CI.GetPipelineStatus(project.RepoPath, d.PipelineID)
+				if err != nil {
+					continue
+				}
+				var next string
+				switch status {
+				case "success":
+					next = "running"
+				case "failed":
+					next = "failed"
+				case "canceled":
+					next = "stopped"
+				}
+				if next != "" {
+					if applied, err := db.UpdateDeploymentStatus(d.PipelineID, next); err == nil && applied {
+						log.Printf("deployment %s → %s (pipeline %s)", d.ProjectName, next, d.PipelineID)
+					}
+				}
+			}
+		}
+
+		// Pass 2 — running : détecte les containers disparus hors de Symphony.
+		live, err := pvds.Deploy.ListContainers()
+		if err != nil {
+			log.Printf("reconcile: list containers: %v", err)
 			continue
 		}
-		for _, d := range pending {
-			project, err := db.GetProject(d.ProjectName)
-			if err != nil {
-				continue
+		liveNames := make(map[string]bool, len(live))
+		for _, c := range live {
+			liveNames[c.Name] = true
+		}
+
+		if running, err := db.ListRunningDeployments(); err == nil {
+			for _, d := range running {
+				if !liveNames[d.ProjectName] {
+					if applied, err := db.MarkContainerStopped(d.ProjectName); err == nil && applied {
+						log.Printf("deployment %s → stopped (container disparu)", d.ProjectName)
+					}
+				}
 			}
-			status, err := pvds.CI.GetPipelineStatus(project.RepoPath, d.PipelineID)
-			if err != nil {
-				continue
-			}
-			var newStatus string
-			switch status {
-			case "success":
-				newStatus = "running"
-			case "failed":
-				newStatus = "failed"
-			case "canceled":
-				newStatus = "stopped"
-			}
-			if newStatus != "" {
-				applied, err := db.UpdateDeploymentStatus(d.PipelineID, newStatus)
-				if err == nil && applied {
-					log.Printf("deployment %s → %s (pipeline %s)", d.ProjectName, newStatus, d.PipelineID)
+		}
+
+		if recettes, err := db.ListRunningRecettes(); err == nil {
+			for _, r := range recettes {
+				if !liveNames[r.RecetteName] {
+					if applied, err := db.MarkContainerStopped(r.RecetteName); err == nil && applied {
+						log.Printf("recette %s → stopped (container disparu)", r.RecetteName)
+					}
 				}
 			}
 		}

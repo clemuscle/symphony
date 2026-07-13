@@ -194,6 +194,69 @@ func (db *DB) ListAllActiveRecettes() ([]Deployment, error) {
 	return out, nil
 }
 
+// ListRunningDeployments retourne les déploiements prod dont le container est
+// supposé tourner (status=running). Utilisé par la boucle de réconciliation
+// live Docker pour détecter les containers disparus hors de Symphony.
+func (db *DB) ListRunningDeployments() ([]Deployment, error) {
+	rows, err := db.Query(`
+		SELECT id, project_name, pipeline_id, image, port, status, url, created_at
+		FROM deployments
+		WHERE recette_name IS NULL AND status = 'running'
+		ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Deployment
+	for rows.Next() {
+		var d Deployment
+		rows.Scan(&d.ID, &d.ProjectName, &d.PipelineID, &d.Image,
+			&d.Port, &d.Status, &d.URL, &d.CreatedAt)
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+// ListRunningRecettes retourne les recettes dont le container est supposé tourner.
+func (db *DB) ListRunningRecettes() ([]Deployment, error) {
+	rows, err := db.Query(`
+		SELECT id, project_name, pipeline_id, image, port, status, url, recette_name, created_at
+		FROM deployments
+		WHERE recette_name IS NOT NULL AND status = 'running'
+		ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Deployment
+	for rows.Next() {
+		var d Deployment
+		var rn *string
+		rows.Scan(&d.ID, &d.ProjectName, &d.PipelineID, &d.Image,
+			&d.Port, &d.Status, &d.URL, &rn, &d.CreatedAt)
+		if rn != nil {
+			d.RecetteName = *rn
+		}
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+// MarkContainerStopped passe le déploiement running correspondant au container
+// (identifié par son nom) à stopped. N'affecte que les entrées running pour
+// éviter de rouvrir un état terminal.
+func (db *DB) MarkContainerStopped(containerName string) (bool, error) {
+	res, err := db.Exec(`
+		UPDATE deployments SET status='stopped', updated_at=NOW()
+		WHERE status='running' AND (project_name=$1 OR recette_name=$1)`,
+		containerName)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
 func nilIfEmpty(s string) *string {
 	if s == "" {
 		return nil
