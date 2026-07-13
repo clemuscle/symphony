@@ -36,11 +36,9 @@ services:
         # Performances réduites pour laptop / VM de démo
         puma['worker_processes'] = 2
         sidekiq['concurrency'] = 5
-        # Composants inutiles pour la démo
+        # Monitoring non nécessaire pour la démo
         prometheus_monitoring['enable'] = false
-        grafana['enable'] = false
         alertmanager['enable'] = false
-        gitlab_exporter['enable'] = false
         node_exporter['enable'] = false
         redis_exporter['enable'] = false
         postgres_exporter['enable'] = false
