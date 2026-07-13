@@ -59,11 +59,29 @@
           </template>
         </div>
 
-        <div class="pipeline-status" v-if="pipelineState[p.repo_path]?.id">
-          <span class="pipeline-label">Pipeline #{{ pipelineState[p.repo_path].id }}</span>
-          <span :class="['status-badge', 'sm', pipelineState[p.repo_path].status]">
-            {{ pipelineState[p.repo_path].status }}
-          </span>
+        <div class="pipeline-status" v-if="pipelineState[p.repo_path]?.id || pipelineMap[p.repo_path]">
+          <span class="pipeline-label">Pipeline</span>
+          <template v-if="pipelineState[p.repo_path]?.loading">
+            <span class="status-badge sm pending">⏳ déclenchement…</span>
+          </template>
+          <template v-else-if="pipelineState[p.repo_path]?.id">
+            <span class="pipeline-id">#{{ pipelineState[p.repo_path].id }}</span>
+            <span :class="['status-badge', 'sm', pipelineState[p.repo_path].status]">
+              {{ pipelineState[p.repo_path].status }}
+            </span>
+          </template>
+          <template v-else-if="pipelineMap[p.repo_path]">
+            <a
+              v-if="p.repo_url"
+              :href="`${p.repo_url}/-/pipelines/${pipelineMap[p.repo_path].pipeline_id}`"
+              target="_blank"
+              class="pipeline-id pipeline-link"
+            >#{{ pipelineMap[p.repo_path].pipeline_id }}</a>
+            <span v-else class="pipeline-id">#{{ pipelineMap[p.repo_path].pipeline_id }}</span>
+            <span :class="['status-badge', 'sm', pipelineMap[p.repo_path].status]">
+              {{ pipelineMap[p.repo_path].status }}
+            </span>
+          </template>
         </div>
 
         <div class="deploy-status" v-if="deployState[p.name]?.loading || deployState[p.name]?.error || (deploymentMap[p.name] && deploymentMap[p.name].status !== 'stopped')">
@@ -189,6 +207,7 @@ const projects = ref([])
 const loading = ref(true)
 const error = ref(null)
 const pipelineState = ref({})
+const pipelineMap = ref({})   // repo_path → dernier pipeline (source DB)
 const deployState = ref({})
 const deploymentMap = ref({}) // project_name → dernier déploiement (source DB)
 const stepsState = ref({})
@@ -217,6 +236,14 @@ async function load(isInitial = false) {
       if (!map[d.project_name]) map[d.project_name] = d // premier = plus récent (DESC)
     }
     deploymentMap.value = map
+  } catch { /* non bloquant */ }
+  try {
+    const { data } = await api.listAllPipelines()
+    const map = {}
+    for (const p of data || []) {
+      if (!map[p.project_name]) map[p.project_name] = p // premier = plus récent (DESC)
+    }
+    pipelineMap.value = map
   } catch { /* non bloquant */ }
 }
 
@@ -435,6 +462,9 @@ h2 { font-size: 22px; font-weight: 700; }
   font-size: 12px;
 }
 .pipeline-label { color: #888; flex: 1; }
+.pipeline-id { color: #666; font-family: monospace; font-size: 11px; }
+.pipeline-link { color: #2b6cb0; text-decoration: none; }
+.pipeline-link:hover { text-decoration: underline; }
 
 .deploy-status {
   display: flex;

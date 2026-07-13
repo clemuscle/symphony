@@ -38,6 +38,7 @@ export const api = {
   getPipelineStatus: (projectPath, pipelineID) =>
     http.get(`/api/v1/pipelines/status?project=${projectPath}&id=${pipelineID}`),
   listPipelines: (project) => http.get(`/api/v1/pipelines/${project}`),
+  listAllPipelines: () => http.get('/api/v1/pipelines'),
 
   // Déploiements
   listDeployments: () => http.get('/api/v1/deployments'),

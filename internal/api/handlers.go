@@ -201,7 +201,7 @@ func (s *Server) triggerPipelineHandler(w http.ResponseWriter, r *http.Request) 
 		PipelineID:  id,
 		Type:        "manual",
 		Status:      "pending",
-		TriggeredBy: "symphony-ui",
+		TriggeredBy: actorID(r),
 	})
 	s.db.Log("trigger_pipeline", req.ProjectPath, "pipeline "+id, actorID(r))
 
@@ -241,6 +241,18 @@ func (s *Server) getPipelineStatusHandler(w http.ResponseWriter, r *http.Request
 func (s *Server) listPipelinesHandler(w http.ResponseWriter, r *http.Request) {
 	project := chi.URLParam(r, "project")
 	pipelines, err := s.db.ListPipelines(project)
+	if err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if pipelines == nil {
+		pipelines = []database.Pipeline{}
+	}
+	respond(w, http.StatusOK, pipelines)
+}
+
+func (s *Server) listAllPipelinesHandler(w http.ResponseWriter, r *http.Request) {
+	pipelines, err := s.db.ListAllRecentPipelines()
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

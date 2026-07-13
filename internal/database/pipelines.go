@@ -79,6 +79,26 @@ func (db *DB) ListActivePipelines() ([]Pipeline, error) {
 	return out, nil
 }
 
+// ListAllRecentPipelines retourne les 50 derniers pipelines tous projets confondus.
+// Utilisé par la page Projets pour pré-charger l'historique au mount sans N+1.
+func (db *DB) ListAllRecentPipelines() ([]Pipeline, error) {
+	rows, err := db.Query(`
+		SELECT id, project_name, pipeline_id, type, status, triggered_by, created_at
+		FROM pipelines ORDER BY created_at DESC LIMIT 50`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Pipeline
+	for rows.Next() {
+		var p Pipeline
+		rows.Scan(&p.ID, &p.ProjectName, &p.PipelineID, &p.Type,
+			&p.Status, &p.TriggeredBy, &p.CreatedAt)
+		out = append(out, p)
+	}
+	return out, nil
+}
+
 func (db *DB) ListPipelines(projectName string) ([]Pipeline, error) {
 	rows, err := db.Query(`
 		SELECT id, project_name, pipeline_id, type, status, triggered_by, created_at

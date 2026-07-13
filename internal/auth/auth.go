@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/yourorg/symphony/internal/rbac"
@@ -57,7 +58,7 @@ func New(ctx context.Context, cfg Config, rbacMgr *rbac.Manager) (*Provider, err
 			ClientSecret: cfg.ClientSecret,
 			RedirectURL:  cfg.RedirectURL,
 			Endpoint:     p.Endpoint(),
-			Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+			Scopes:       oidcScopes(),
 		},
 		rbac: rbacMgr,
 	}, nil
@@ -160,6 +161,22 @@ func jsonUnauthorized(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	w.Write([]byte(`{"error":"unauthorized"}`))
+}
+
+// oidcScopes retourne les scopes OIDC à demander. Le scope "groups" est inclus
+// par défaut (requis par Dex et GitLab OIDC pour exposer les groupes dans le token).
+// OIDC_EXTRA_SCOPES permet d'ajouter des scopes supplémentaires séparés par des virgules
+// (ex: "roles,offline_access" pour certaines configurations Keycloak).
+func oidcScopes() []string {
+	base := []string{oidc.ScopeOpenID, "profile", "email", "groups"}
+	if extra := os.Getenv("OIDC_EXTRA_SCOPES"); extra != "" {
+		for _, s := range strings.Split(extra, ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				base = append(base, s)
+			}
+		}
+	}
+	return base
 }
 
 func randomState() string {
