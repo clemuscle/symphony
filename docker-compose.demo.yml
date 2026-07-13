@@ -1,0 +1,78 @@
+# Symphony — environnement de démo complet
+#
+# Usage :
+#   docker compose -f docker-compose.demo.yml --project-name symphony up -d
+#   make demo-init          # initialise GitLab (PAT, groupe, runner) — à lancer une seule fois
+#   PORT=8090 make run      # démarre Symphony localement (OIDC désactivé en mode démo)
+#
+# Prérequis : docker, docker compose v2, make, jq
+# GitLab CE prend ~3 min à démarrer. Attendre que demo-init annonce "GitLab prêt".
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: symphony
+      POSTGRES_PASSWORD: symphony123
+      POSTGRES_DB: symphony
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U symphony"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gitlab:
+    image: gitlab/gitlab-ce:17.4.0-ce.0
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://localhost:8929'
+        gitlab_rails['gitlab_shell_ssh_port'] = 2224
+        gitlab_rails['initial_root_password'] = 'SymphonyDemo2024!'
+        # Performances réduites pour laptop / VM de démo
+        puma['worker_processes'] = 2
+        sidekiq['concurrency'] = 5
+        # Composants inutiles pour la démo
+        prometheus_monitoring['enable'] = false
+        grafana['enable'] = false
+        alertmanager['enable'] = false
+        gitlab_exporter['enable'] = false
+        node_exporter['enable'] = false
+        redis_exporter['enable'] = false
+        postgres_exporter['enable'] = false
+        pgbouncer_exporter['enable'] = false
+    ports:
+      - "8929:8929"
+      - "2224:22"
+    volumes:
+      - gitlab_config:/etc/gitlab
+      - gitlab_logs:/var/log/gitlab
+      - gitlab_data:/var/opt/gitlab
+    shm_size: '256m'
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8929/-/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 180s
+
+  gitlab-runner:
+    image: gitlab/gitlab-runner:alpine
+    depends_on:
+      gitlab:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - gitlab_runner_config:/etc/gitlab-runner
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  gitlab_config:
+  gitlab_logs:
+  gitlab_data:
+  gitlab_runner_config:

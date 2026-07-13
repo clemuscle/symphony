@@ -4,6 +4,8 @@
 !.env.*.example
 config/integrations.yaml
 config/integrations.gitlab-com.yaml
+config/rbac.yaml
 internal/web/static/
 !internal/web/static/.gitkeep
 /symphony
+runner-config/
