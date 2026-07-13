@@ -90,6 +90,8 @@ func NewServer(opts ServerOptions) *Server {
 	r.Use(corsMiddleware)
 
 	r.Get("/healthz", s.healthz)
+	// Webhook GitLab — public, sécurisé par GITLAB_WEBHOOK_SECRET si configuré
+	r.Post("/api/v1/webhooks/gitlab", s.gitlabWebhook)
 
 	// Frontend embarqué — SPA fallback : toute route non-API sert index.html
 	staticFS, _ := fs.Sub(web.Static, "static")
@@ -157,6 +159,7 @@ func NewServer(opts ServerOptions) *Server {
 		// Pipelines (lecture = viewer+, déclenchement = developer+)
 		r.With(s.requireRole(rbac.RoleDeveloper)).Post("/api/v1/pipelines/trigger", s.triggerPipelineHandler)
 		r.Get("/api/v1/pipelines/status", s.getPipelineStatusHandler)
+		r.Get("/api/v1/pipelines", s.listAllPipelinesHandler)
 		r.Get("/api/v1/pipelines/{project}", s.listPipelinesHandler)
 
 		// Déploiements (lecture = viewer+, création/arrêt = developer+)
