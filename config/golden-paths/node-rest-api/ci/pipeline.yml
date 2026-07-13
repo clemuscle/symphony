@@ -11,16 +11,16 @@ variables:
   SYMPHONY_CONFIG_REPO: "{{.ConfigRepoPath}}"
   APP_PORT: "{{.Port}}"
 
-# ── TEST ──────────────────────────────────────────
+# ── TEST — tout push, toute branche, toute MR ────────
 test:
   stage: test
   script:
     - npm ci && npm test
-  only:
-    - merge_requests
-    - main
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
-# ── BUILD (shared runners GitLab.com) ────────────
+# ── BUILD — push vers main uniquement ─────────────────
 build:
   stage: build
   image: docker:24
@@ -35,13 +35,12 @@ build:
     - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
     - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE:latest
     - docker push $CI_REGISTRY_IMAGE:latest
-  only:
-    - main
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
 
-# ── DEPLOY (runner local avec tag docker) ─────────
+# ── DEPLOY production — déclenché par Symphony ou manuellement ──
 deploy:
   stage: deploy
-  image: docker:24
   script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - docker pull $CI_REGISTRY_IMAGE:latest
@@ -53,44 +52,15 @@ deploy:
         $CI_REGISTRY_IMAGE:latest
   tags:
     - docker
-  only:
-    - main
-  except:
-    variables:
-      - $RECETTE_NAME
-      - $DESTROY_RECETTE
-      - $DESTROY_DEPLOY
+  rules:
+    - if: '($CI_PIPELINE_SOURCE == "api" || $CI_PIPELINE_SOURCE == "trigger") && $RECETTE_NAME == null && $DESTROY_RECETTE == null && $DESTROY_DEPLOY == null'
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
+      when: manual
+      allow_failure: true
 
-# ── DESTROY-RECETTE ───────────────────────────────
-destroy-recette:
-  stage: deploy
-  image: docker:24
-  script:
-    - docker stop $DESTROY_RECETTE || true
-    - docker rm $DESTROY_RECETTE || true
-  tags:
-    - docker
-  only:
-    variables:
-      - $DESTROY_RECETTE
-
-# ── DESTROY-DEPLOY ────────────────────────────────
-destroy-deploy:
-  stage: deploy
-  image: docker:24
-  script:
-    - docker stop {{.ServiceName}} || true
-    - docker rm {{.ServiceName}} || true
-  tags:
-    - docker
-  only:
-    variables:
-      - $DESTROY_DEPLOY
-
-# ── DEPLOY-RECETTE ────────────────────────────────
+# ── DEPLOY-RECETTE — déclenché avec RECETTE_NAME ──────
 deploy-recette:
   stage: deploy
-  image: docker:24
   script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - docker pull $CI_REGISTRY_IMAGE:latest
@@ -103,11 +73,32 @@ deploy-recette:
         $CI_REGISTRY_IMAGE:latest
   tags:
     - docker
-  only:
-    variables:
-      - $RECETTE_NAME
+  rules:
+    - if: '$RECETTE_NAME'
 
-# ── REGISTER — Feedback GitOps vers Symphony ──────
+# ── DESTROY-RECETTE ───────────────────────────────────
+destroy-recette:
+  stage: deploy
+  script:
+    - docker stop $DESTROY_RECETTE || true
+    - docker rm $DESTROY_RECETTE || true
+  tags:
+    - docker
+  rules:
+    - if: '$DESTROY_RECETTE'
+
+# ── DESTROY-DEPLOY ────────────────────────────────────
+destroy-deploy:
+  stage: deploy
+  script:
+    - docker stop {{.ServiceName}} || true
+    - docker rm {{.ServiceName}} || true
+  tags:
+    - docker
+  rules:
+    - if: '$DESTROY_DEPLOY'
+
+# ── REGISTER — après build sur main ───────────────────
 register-service:
   stage: register
   image: alpine:latest
@@ -141,6 +132,7 @@ register-service:
     - git add services/{{.ServiceName}}.yaml
     - "git diff --staged --quiet && echo 'Pas de changement' || git commit -m 'feat: register {{.ServiceName}} [symphony-bot]'"
     - git push
-  only:
-    - main
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
+      when: on_success
   allow_failure: true
