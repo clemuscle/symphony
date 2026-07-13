@@ -13,6 +13,7 @@
         <RouterLink to="/inventory" class="nav-link">📋 Inventaire</RouterLink>
         <RouterLink to="/costs" class="nav-link">💶 Coûts</RouterLink>
         <RouterLink to="/audit" class="nav-link">🔍 Audit</RouterLink>
+        <RouterLink v-if="isAdmin" to="/admin" class="nav-link">⚙ Admin</RouterLink>
       </nav>
       <div class="user-widget">
         <span class="user-name">{{ auth.state.user.name }}</span>
@@ -30,6 +31,7 @@
 import { useRoute } from 'vue-router'
 import { useAuth } from './composables/useAuth'
 const auth = useAuth()
+const { isAdmin } = useAuth()
 const route = useRoute()
 </script>
 
@@ -50,6 +52,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #
 .user-name { font-size: 14px; color: #ccc; }
 .role-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: .04em; }
 .role-badge.admin { background: #7c3aed22; color: #c4b5fd; border: 1px solid #7c3aed44; }
+.role-badge.lead { background: #b4530022; color: #fbbf24; border: 1px solid #b4530044; }
 .role-badge.developer { background: #16743322; color: #6ee7b7; border: 1px solid #16743344; }
 .role-badge.viewer { background: #ffffff15; color: #888; border: 1px solid #ffffff20; }
 .btn-logout { background: transparent; border: 1px solid #ffffff30; color: #aaa; border-radius: 6px; padding: 5px 12px; font-size: 13px; cursor: pointer; transition: all .15s; }
