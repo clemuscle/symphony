@@ -66,10 +66,30 @@
           </span>
         </div>
 
-        <div class="deploy-status" v-if="deployState[p.name]?.status || deployState[p.name]?.error">
+        <div class="deploy-status" v-if="deployState[p.name]?.loading || deployState[p.name]?.error || (deploymentMap[p.name] && deploymentMap[p.name].status !== 'stopped')">
           <span class="pipeline-label">Déploiement</span>
-          <span v-if="deployState[p.name]?.error" class="status-badge sm failed">{{ deployState[p.name].error }}</span>
-          <span v-else :class="['status-badge', 'sm', deployState[p.name].status]">{{ deployState[p.name].status }}</span>
+          <template v-if="deployState[p.name]?.loading">
+            <span class="status-badge sm pending">⏳ lancement…</span>
+          </template>
+          <template v-else-if="deployState[p.name]?.error">
+            <span class="status-badge sm failed">{{ deployState[p.name].error }}</span>
+          </template>
+          <template v-else-if="deploymentMap[p.name]">
+            <a
+              v-if="deploymentMap[p.name].status === 'running'"
+              :href="deploymentMap[p.name].url || `http://localhost:${deploymentMap[p.name].port}`"
+              target="_blank"
+              class="deploy-link"
+            >:{{ deploymentMap[p.name].port }} ↗</a>
+            <span :class="['status-badge', 'sm', deploymentMap[p.name].status]">
+              {{ deploymentMap[p.name].status }}
+            </span>
+            <button
+              v-if="canDevelop && deploymentMap[p.name].status === 'running'"
+              class="btn-ghost btn-xs btn-danger"
+              @click="stopDeploy(deploymentMap[p.name])"
+            >⏹</button>
+          </template>
         </div>
 
         <button
@@ -170,6 +190,7 @@ const loading = ref(true)
 const error = ref(null)
 const pipelineState = ref({})
 const deployState = ref({})
+const deploymentMap = ref({}) // project_name → dernier déploiement (source DB)
 const stepsState = ref({})
 const recetteState = ref({})
 const monitoringURLs = ref({}) // language → monitoring_url depuis les golden paths
@@ -189,6 +210,14 @@ async function load(isInitial = false) {
   } finally {
     loading.value = false
   }
+  try {
+    const { data } = await api.listDeployments()
+    const map = {}
+    for (const d of data || []) {
+      if (!map[d.project_name]) map[d.project_name] = d // premier = plus récent (DESC)
+    }
+    deploymentMap.value = map
+  } catch { /* non bloquant */ }
 }
 
 onMounted(async () => {
@@ -212,10 +241,18 @@ async function deployProject(project) {
   deployState.value[project.name] = { loading: true }
   try {
     const { data } = await api.deploy({ project_name: project.name })
-    deployState.value[project.name] = { loading: false, status: data.status }
+    deploymentMap.value[project.name] = data
+    delete deployState.value[project.name]
   } catch (e) {
     deployState.value[project.name] = { loading: false, error: e.response?.data?.error || e.message }
   }
+}
+
+async function stopDeploy(deployment) {
+  try {
+    await api.stopDeployment(deployment.id)
+    deploymentMap.value[deployment.project_name] = { ...deployment, status: 'stopped' }
+  } catch { /* non bloquant */ }
 }
 
 async function toggleSteps(project) {
@@ -426,6 +463,10 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .status-badge.success { background: #f0fff4; color: #276749; }
 .status-badge.running { background: #ebf8ff; color: #2b6cb0; }
 .status-badge.canceled { background: #f4f4f4; color: #888; }
+.status-badge.stopped { background: #f4f4f4; color: #888; }
+
+.deploy-link { color: #2b6cb0; font-family: monospace; font-size: 11px; text-decoration: none; }
+.deploy-link:hover { text-decoration: underline; }
 
 /* Skeleton */
 .project-card.skeleton {
