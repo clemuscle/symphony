@@ -34,7 +34,7 @@ command -v docker >/dev/null || fail "docker est requis"
 
 info "Attente de GitLab CE (peut prendre 3-5 min au premier démarrage)…"
 MAX=60; i=0
-until curl -sf "$GITLAB_URL/-/health" >/dev/null 2>&1; do
+until curl -sf "$GITLAB_URL/users/sign_in" >/dev/null 2>&1; do
   i=$((i+1))
   [ $i -ge $MAX ] && fail "GitLab n'a pas démarré après $((MAX*10))s. Vérifiez : docker compose -f docker-compose.demo.yml logs gitlab"
   printf "."
@@ -150,6 +150,7 @@ fi
 
 cat > .env.demo << EOF
 # Généré par scripts/demo-init.sh — NE PAS COMMITTER
+GITLAB_URL=$GITLAB_URL
 GITLAB_TOKEN=$PAT
 PORT=8090
 DB_HOST=localhost
