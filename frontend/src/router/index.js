@@ -32,6 +32,17 @@ router.beforeEach(async (to) => {
   if (state.loading) await init()
   if (!state.user) return '/login'
 
+  // /setup : ouvert à tous avant la 1re configuration, admin seulement après
+  if (to.path === '/setup') {
+    try {
+      const r = await api.getSetupStatus()
+      if (r.data.configured) {
+        const isAdmin = state.user?.dev_mode || state.user?.role === 'admin'
+        if (!isAdmin) return '/'
+      }
+    } catch { /* laisser passer en cas d'erreur réseau */ }
+  }
+
   // Vérification du setup (sauf sur /setup lui-même)
   if (!to.meta.skipSetupCheck) {
     try {
