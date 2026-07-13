@@ -1,0 +1,23 @@
+# Dépendances et artefacts locaux
+frontend/node_modules/
+internal/web/static/
+!internal/web/static/.gitkeep
+
+# Secrets et config locaux
+.env
+.env.*
+!.env.*.example
+config/integrations.yaml
+config/integrations.gitlab-com.yaml
+config/rbac.yaml
+
+# Binaire compilé localement
+/symphony
+
+# Données de démo et volumes
+runner-config/
+.env.demo
+
+# Dev tools
+.claude/
+.git/

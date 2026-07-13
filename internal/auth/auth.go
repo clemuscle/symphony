@@ -37,6 +37,10 @@ func UserFromContext(ctx context.Context) (*User, bool) {
 	return u, ok && u != nil
 }
 
+func WithUser(ctx context.Context, u *User) context.Context {
+	return context.WithValue(ctx, ctxKey{}, u)
+}
+
 type Provider struct {
 	verifier *oidc.IDTokenVerifier
 	oauth2   oauth2.Config

@@ -125,6 +125,8 @@ func NewServer(opts ServerOptions) *Server {
 	r.Group(func(r chi.Router) {
 		if s.auth != nil {
 			r.Use(s.auth.Middleware)
+		} else if s.devMode {
+			r.Use(devModeUserMiddleware)
 		}
 
 		r.Get("/api/v1/auth/me", s.me)
@@ -178,6 +180,20 @@ func NewServer(opts ServerOptions) *Server {
 	})
 
 	return s
+}
+
+func devModeUserMiddleware(next http.Handler) http.Handler {
+	devUser := &auth.User{
+		Sub:     "dev",
+		Email:   "dev@localhost",
+		Name:    "Dev Mode",
+		Groups:  []string{"admin"},
+		Role:    rbac.RoleAdmin,
+		IsAdmin: true,
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), devUser)))
+	})
 }
 
 func (s *Server) requireRole(min rbac.Role) func(http.Handler) http.Handler {
