@@ -164,8 +164,8 @@ func NewServer(opts ServerOptions) *Server {
 
 		// Déploiements (lecture = viewer+, création/arrêt = developer+)
 		r.Get("/api/v1/deployments", s.listDeployments)
-		r.With(s.requireRole(rbac.RoleDeveloper)).Post("/api/v1/deployments", s.deployProject)
-		r.With(s.requireRole(rbac.RoleDeveloper)).Delete("/api/v1/deployments/{id}", s.stopDeployment)
+		r.With(s.requireRole(rbac.RoleLead)).Post("/api/v1/deployments", s.deployProject)
+		r.With(s.requireRole(rbac.RoleLead)).Delete("/api/v1/deployments/{id}", s.stopDeployment)
 
 		// Inventaire des ressources actives (lecture = viewer+)
 		r.Get("/api/v1/inventory", s.getInventory)

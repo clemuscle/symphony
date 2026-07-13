@@ -5,6 +5,7 @@ import Deployments from '../views/Deployments.vue'
 import Inventory from '../views/Inventory.vue'
 import Costs from '../views/Costs.vue'
 import Audit from '../views/Audit.vue'
+import Admin from '../views/Admin.vue'
 import Login from '../views/Login.vue'
 import Setup from '../views/Setup.vue'
 import { useAuth } from '../composables/useAuth'
@@ -21,6 +22,7 @@ const router = createRouter({
     { path: '/inventory', component: Inventory },
     { path: '/costs', component: Costs },
     { path: '/audit', component: Audit },
+    { path: '/admin', component: Admin, meta: { adminOnly: true } },
   ]
 })
 
@@ -31,6 +33,12 @@ router.beforeEach(async (to) => {
   const { state, init } = useAuth()
   if (state.loading) await init()
   if (!state.user) return '/login'
+
+  // /admin : admin uniquement
+  if (to.meta.adminOnly) {
+    const isAdmin = state.user?.dev_mode || state.user?.role === 'admin'
+    if (!isAdmin) return '/'
+  }
 
   // /setup : ouvert à tous avant la 1re configuration, admin seulement après
   if (to.path === '/setup') {

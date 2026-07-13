@@ -45,9 +45,17 @@
             📊 Métriques ↗
           </a>
           <template v-if="canDevelop">
+            <input
+              v-model="pipelineBranch[p.name]"
+              placeholder="main"
+              class="branch-input"
+              @keyup.enter="triggerPipeline(p)"
+            />
             <button class="btn-ghost" @click="triggerPipeline(p)">
               {{ pipelineState[p.repo_path]?.loading ? '⏳' : '▶ Pipeline' }}
             </button>
+          </template>
+          <template v-if="canDeploy">
             <button
               class="btn-ghost"
               :disabled="!p.registry_url || deployState[p.name]?.loading"
@@ -103,7 +111,7 @@
               {{ deploymentMap[p.name].status }}
             </span>
             <button
-              v-if="canDevelop && deploymentMap[p.name].status === 'running'"
+              v-if="canDeploy && deploymentMap[p.name].status === 'running'"
               class="btn-ghost btn-xs btn-danger"
               @click="stopDeploy(deploymentMap[p.name])"
             >⏹</button>
@@ -201,13 +209,14 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 import { useAuth } from '../composables/useAuth'
 
-const { canDevelop } = useAuth()
+const { canDevelop, canDeploy } = useAuth()
 
 const projects = ref([])
 const loading = ref(true)
 const error = ref(null)
 const pipelineState = ref({})
-const pipelineMap = ref({})   // repo_path → dernier pipeline (source DB)
+const pipelineMap = ref({})     // repo_path → dernier pipeline (source DB)
+const pipelineBranch = ref({})  // p.name → branche choisie (défaut: "main")
 const deployState = ref({})
 const deploymentMap = ref({}) // project_name → dernier déploiement (source DB)
 const stepsState = ref({})
@@ -302,7 +311,8 @@ async function triggerPipeline(project) {
   if (!path) return
   pipelineState.value[path] = { loading: true }
   try {
-    const { data } = await api.triggerPipeline(path, 'main', {})
+    const branch = pipelineBranch.value[project.name] || 'main'
+    const { data } = await api.triggerPipeline(path, branch, {})
     pipelineState.value[path] = { id: data.pipeline_id, status: 'pending', loading: false }
     pollStatus(path, data.pipeline_id)
   } catch (e) {
@@ -438,7 +448,9 @@ h2 { font-size: 22px; font-weight: 700; }
 .project-meta { display: flex; flex-wrap: wrap; gap: 10px; }
 .meta-item { font-size: 12px; color: #999; }
 
-.project-footer { display: flex; gap: 8px; padding-top: 4px; border-top: 1px solid #f0f0f0; margin-top: 2px; }
+.project-footer { display: flex; gap: 8px; padding-top: 4px; border-top: 1px solid #f0f0f0; margin-top: 2px; flex-wrap: wrap; align-items: center; }
+.branch-input { padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 12px; width: 80px; outline: none; color: #555; }
+.branch-input:focus { border-color: #667eea; }
 .btn-ghost {
   padding: 6px 14px;
   background: transparent;
