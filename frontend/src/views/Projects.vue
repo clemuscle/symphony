@@ -286,8 +286,10 @@ async function deployProject(project) {
 
 async function stopDeploy(deployment) {
   try {
+    // La destruction est déléguée au pipeline CI — le statut réel (encore
+    // "running" tant que le container n'a pas réellement disparu) revient
+    // via le polling de load(), pas ici.
     await api.stopDeployment(deployment.id)
-    deploymentMap.value[deployment.project_name] = { ...deployment, status: 'stopped' }
   } catch { /* non bloquant */ }
 }
 

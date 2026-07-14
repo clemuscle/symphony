@@ -8,7 +8,8 @@ import "time"
 //	pending → running  (pipeline success)
 //	pending → failed   (pipeline failed)    [terminal]
 //	pending → stopped  (pipeline canceled)  [terminal]
-//	running → stopped  (destroy déclenché)  [terminal]
+//	running → stopped  (container disparu, constaté par reconcileDeployments — jamais
+//	                     affirmé au moment où le destroy est déclenché) [terminal]
 type Deployment struct {
 	ID          int       `json:"id"`
 	ProjectName string    `json:"project_name"`
