@@ -293,16 +293,18 @@ func (s *Server) stopDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Principe #3 : destruction déléguée au pipeline CI (job destroy-deploy)
+	// Principe #3 : destruction déléguée au pipeline CI (job destroy-deploy).
+	// Le statut reste "running" jusqu'à ce que reconcileDeployments constate
+	// la disparition réelle du container (voir MarkContainerStopped) — on ne
+	// l'affirme jamais ici, le job de destruction peut échouer ou traîner.
 	if _, err := pvds.CI.TriggerPipeline(project.RepoPath, "main", map[string]string{
 		"DESTROY_DEPLOY": "1",
 	}); err != nil {
 		respond(w, http.StatusBadGateway, map[string]string{"error": "ci: " + err.Error()})
 		return
 	}
-	s.db.UpdateDeploymentStatus(d.PipelineID, "stopped")
 	s.db.Log("stop_deployment", d.ProjectName, "destroy pipeline triggered", actorID(r))
-	respond(w, http.StatusOK, map[string]string{"status": "stopped"})
+	respond(w, http.StatusAccepted, map[string]string{"status": d.Status})
 }
 
 func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
