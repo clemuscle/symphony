@@ -32,7 +32,9 @@ type Server struct {
 	pvds   *providers.ProviderSet
 	reload func() (*providers.ProviderSet, error) // callback défini dans main.go
 	// callback de test de connexion (évite d'importer les drivers ici)
-	testProvider func(providerType string, cfg map[string]string) (string, error)
+	testProvider func(category, providerType string, cfg map[string]string) (string, error)
+	// types de driver compilés par catégorie, pour peupler les sélecteurs du wizard
+	availableTypes map[string][]string
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -58,30 +60,32 @@ func (s *Server) setProviders(ps *providers.ProviderSet) {
 }
 
 type ServerOptions struct {
-	Store        *catalog.Store
-	DB           *database.DB
-	Auth         *auth.Provider
-	DevMode      bool // SYMPHONY_DEV_MODE=1 — désactive l'auth pour le dev local
-	Tmpl         *templates.Loader
-	Providers    *providers.ProviderSet // nil si pas encore configuré
-	Reload       func() (*providers.ProviderSet, error)
-	TestProvider func(providerType string, cfg map[string]string) (string, error)
-	CfgPath      string
-	CostCfg      costs.Config
+	Store          *catalog.Store
+	DB             *database.DB
+	Auth           *auth.Provider
+	DevMode        bool // SYMPHONY_DEV_MODE=1 — désactive l'auth pour le dev local
+	Tmpl           *templates.Loader
+	Providers      *providers.ProviderSet // nil si pas encore configuré
+	Reload         func() (*providers.ProviderSet, error)
+	TestProvider   func(category, providerType string, cfg map[string]string) (string, error)
+	AvailableTypes map[string][]string
+	CfgPath        string
+	CostCfg        costs.Config
 }
 
 func NewServer(opts ServerOptions) *Server {
 	s := &Server{
-		store:        opts.Store,
-		db:           opts.DB,
-		auth:         opts.Auth,
-		devMode:      opts.DevMode,
-		tmpl:         opts.Tmpl,
-		pvds:         opts.Providers,
-		reload:       opts.Reload,
-		testProvider: opts.TestProvider,
-		cfgPath:      opts.CfgPath,
-		costCfg:      opts.CostCfg,
+		store:          opts.Store,
+		db:             opts.DB,
+		auth:           opts.Auth,
+		devMode:        opts.DevMode,
+		tmpl:           opts.Tmpl,
+		pvds:           opts.Providers,
+		reload:         opts.Reload,
+		testProvider:   opts.TestProvider,
+		availableTypes: opts.AvailableTypes,
+		cfgPath:        opts.CfgPath,
+		costCfg:        opts.CostCfg,
 	}
 	r := chi.NewRouter()
 	s.router = r
@@ -131,8 +135,9 @@ func NewServer(opts ServerOptions) *Server {
 
 		r.Get("/api/v1/auth/me", s.me)
 
-		// Setup wizard — /status accessible à tous ; /test, /save, /reload réservés admin
+		// Setup wizard — /status accessible à tous ; /config, /test, /save, /reload réservés admin
 		r.Get("/api/v1/setup/status", s.setupStatus)
+		r.With(s.requireRole(rbac.RoleAdmin)).Get("/api/v1/setup/config", s.setupConfig)
 		r.With(s.requireRole(rbac.RoleAdmin)).Post("/api/v1/setup/test", s.setupTest)
 		r.With(s.requireRole(rbac.RoleAdmin)).Post("/api/v1/setup/save", s.setupSave)
 		r.With(s.requireRole(rbac.RoleAdmin)).Post("/api/v1/config/reload", s.reloadConfig)

@@ -65,7 +65,8 @@ export const api = {
 
   // Setup wizard
   getSetupStatus: () => http.get('/api/v1/setup/status'),
-  testProvider: (type, config) => http.post('/api/v1/setup/test', { type, config }),
+  getSetupConfig: () => http.get('/api/v1/setup/config'),
+  testProvider: (category, type, config) => http.post('/api/v1/setup/test', { category, type, config }),
   saveSetup: (data) => http.post('/api/v1/setup/save', data),
   reloadConfig: () => http.post('/api/v1/config/reload'),
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,20 +19,31 @@ type IntegrationConfig struct {
 }
 
 type SCMConfig struct {
-	Type  string `yaml:"type"`
-	URL   string `yaml:"url"`
-	Token string `yaml:"token"`
+	Type string `yaml:"type"`
+	URL  string `yaml:"url"`
+	// Token n'est jamais lu ni écrit dans le YAML — toujours fourni par
+	// variable d'environnement (voir ApplyEnvOverrides). Aucun secret ne
+	// peut donc atterrir dans config/integrations.yaml, ni via le wizard
+	// ni via une édition manuelle.
+	Token string `yaml:"-"`
 }
 
 type CIConfig struct {
 	Type          string `yaml:"type"`
 	ConfigRepo    string `yaml:"config_repo"`
 	TemplatesRepo string `yaml:"templates_repo"`
+	// Token optionnel, scope minimal dédié CI. Vide => fallback sur
+	// SCM.Token (voir BuildProviderSet) — c'est le cas courant tant qu'un
+	// seul PAT GitLab couvre SCM+CI+Registry.
+	Token string `yaml:"-"`
 }
 
 type RegistryConfig struct {
 	Type string `yaml:"type"`
 	URL  string `yaml:"url"`
+	// Token optionnel, scope minimal dédié Registry (ex: GitLab Deploy
+	// Token read_registry+write_registry). Vide => fallback sur SCM.Token.
+	Token string `yaml:"-"`
 }
 
 type DeployConfig struct {
@@ -39,9 +51,11 @@ type DeployConfig struct {
 	Socket string `yaml:"socket"`
 }
 
-// IsConfigured retourne true si les champs minimaux requis sont présents.
+// IsConfigured retourne true si les 4 catégories de provider ont un type
+// déclaré. La validité réelle (driver connu, connexion possible) est
+// vérifiée par BuildProviderSet, appelé juste après par l'appelant.
 func (c *IntegrationConfig) IsConfigured() bool {
-	return c.SCM.URL != "" && c.SCM.Token != ""
+	return c.SCM.Type != "" && c.CI.Type != "" && c.Registry.Type != "" && c.Deploy.Type != ""
 }
 
 // ApplyEnvOverrides applique les variables d'environnement par-dessus le YAML.
@@ -53,6 +67,12 @@ func (c *IntegrationConfig) ApplyEnvOverrides() {
 	}
 	if v := os.Getenv("GITLAB_TOKEN"); v != "" {
 		c.SCM.Token = v
+	}
+	if v := os.Getenv("SYMPHONY_CI_TOKEN"); v != "" {
+		c.CI.Token = v
+	}
+	if v := os.Getenv("SYMPHONY_REGISTRY_TOKEN"); v != "" {
+		c.Registry.Token = v
 	}
 	if v := os.Getenv("REGISTRY_URL"); v != "" {
 		c.Registry.URL = v
@@ -66,6 +86,37 @@ func (c *IntegrationConfig) ApplyEnvOverrides() {
 	if v := os.Getenv("DOCKER_SOCKET"); v != "" {
 		c.Deploy.Socket = v
 	}
+}
+
+// DefaultEnvPath est le fichier .env géré par Symphony pour les secrets —
+// jamais config/integrations.yaml (voir Token yaml:"-" ci-dessus).
+const DefaultEnvPath = ".env"
+
+// UpsertEnv fusionne values dans le fichier .env situé à path (le crée si
+// absent), sans toucher aux autres clés déjà présentes. Une valeur vide dans
+// values est ignorée — c'est la convention "laisser vide = ne pas changer"
+// utilisée par le wizard pour ne jamais écraser un secret existant avec un
+// champ de formulaire non renseigné.
+func UpsertEnv(path string, values map[string]string) error {
+	existing, err := godotenv.Read(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		existing = map[string]string{}
+	}
+	changed := false
+	for k, v := range values {
+		if v == "" {
+			continue
+		}
+		existing[k] = v
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return godotenv.Write(existing, path)
 }
 
 const DefaultConfigPath = "config/integrations.yaml"

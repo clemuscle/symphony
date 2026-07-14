@@ -17,6 +17,7 @@
           À utiliser après avoir modifié les tokens GitLab, l'URL du registre, ou le socket Docker.
         </p>
         <div class="card-footer">
+          <router-link class="btn-action" to="/setup">⚙ Modifier les providers</router-link>
           <button class="btn-action" :disabled="cfg.loading" @click="reloadConfig">
             {{ cfg.loading ? '⏳ Rechargement…' : '↻ Recharger la configuration' }}
           </button>

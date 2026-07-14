@@ -9,7 +9,7 @@
 scm:
   type: gitlab
   url: https://gitlab.com
-  token: ${GITLAB_TOKEN}
+  # token: jamais ici (champ exclu du YAML) — chargé depuis GITLAB_TOKEN
 
 ci:
   type: gitlabci
