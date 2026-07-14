@@ -262,6 +262,17 @@ une nouvelle.
 - Tokens de service des drivers à scope minimal — un token GitLab de
   Symphony n'a accès qu'au groupe qu'il gère, jamais à l'instance
   entière, même pour les opérations de provisioning direct.
+- Un flag de confort dev (ex: `SYMPHONY_DEV_MODE`) ne relâche jamais
+  qu'une exigence d'**authentification** (qui tu es) — jamais une
+  exigence de **configuration** du produit (ce que Symphony peut faire).
+  `SYMPHONY_DEV_MODE=1` injecte un faux utilisateur admin, mais ne doit
+  jamais dispenser de configurer les providers via le wizard : sinon le
+  wizard n'est jamais réellement exercé en dev/démo, et les bugs qu'il
+  aurait attrapés (scopes de token incorrects, dispatch par type cassé)
+  ne sont découverts qu'en environnement réel. Repéré via un vrai bug :
+  `setupStatus` traitait `devMode` comme équivalent à "providers
+  configurés", ce qui cachait le wizard pendant toute une session de
+  démo (voir historique git `internal/api/setup.go`).
 
 ## Stack technique
 
