@@ -33,6 +33,11 @@ services:
         external_url 'http://localhost:8929'
         gitlab_rails['gitlab_shell_ssh_port'] = 2224
         gitlab_rails['initial_root_password'] = 'SymphonyDemo2024!'
+        # Container Registry — nécessaire pour le stage build (docker push) des golden paths
+        registry_external_url 'http://localhost:5050'
+        # Auto DevOps désactivé — collisionne avec le .gitlab-ci.yml du golden path
+        # (job "build" dupliqué + scans SAST/container non pertinents pour la démo)
+        gitlab_rails['auto_devops_enabled'] = false
         # Performances réduites pour laptop / VM de démo
         puma['worker_processes'] = 2
         sidekiq['concurrency'] = 5
@@ -46,6 +51,7 @@ services:
     ports:
       - "8929:8929"
       - "2224:22"
+      - "5050:5050"
     volumes:
       - gitlab_config:/etc/gitlab
       - gitlab_logs:/var/log/gitlab
