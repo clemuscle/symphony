@@ -1,15 +1,27 @@
 # Exemple de configuration des providers Symphony
 # Copier ce fichier vers config/integrations.yaml et adapter les valeurs.
-# Le fichier config/integrations.yaml est gitignore — ne pas y mettre les tokens
-# en clair pour la production : utiliser des variables d'environnement à la place.
+# Le fichier config/integrations.yaml est gitignore.
+#
+# Les tokens ne se mettent JAMAIS dans ce fichier — le champ est exclu du
+# schéma YAML (yaml:"-") pour qu'il ne puisse structurellement pas y
+# atterrir, ni via une édition manuelle ni via le wizard. Ils vivent
+# uniquement dans un fichier .env (lui aussi gitignore), un token par
+# catégorie :
+#   GITLAB_TOKEN             — scope minimal : api (ou read_repository +
+#                               write_repository) — SCM, requis
+#   SYMPHONY_CI_TOKEN         — optionnel, sinon réutilise GITLAB_TOKEN
+#   SYMPHONY_REGISTRY_TOKEN   — optionnel, sinon réutilise GITLAB_TOKEN
+#                               (ex: un Deploy Token GitLab scopé
+#                               read_registry+write_registry plutôt qu'un
+#                               PAT large)
 #
 # Priorité : variables d'environnement > valeurs du YAML
 # Rechargement à chaud : POST /api/v1/config/reload (admin uniquement)
+# Types disponibles par catégorie : GET /api/v1/setup/config (admin)
 
 scm:
   type: gitlab
   url: https://gitlab.example.com
-  token: ${GITLAB_TOKEN}   # ou valeur en clair pour le dev local
 
 ci:
   type: gitlabci

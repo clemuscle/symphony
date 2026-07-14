@@ -16,8 +16,6 @@ import (
 	"github.com/yourorg/symphony/internal/database"
 )
 
-
-
 // actorID returns the authenticated user's email for audit log entries,
 // falling back to "system" in dev mode or when context has no user.
 func actorID(r *http.Request) string {

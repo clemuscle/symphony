@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -14,12 +13,9 @@ import (
 	"github.com/yourorg/symphony/internal/catalog"
 	"github.com/yourorg/symphony/internal/costs"
 	"github.com/yourorg/symphony/internal/database"
+	"github.com/yourorg/symphony/internal/drivers"
 	"github.com/yourorg/symphony/internal/gitops"
 	"github.com/yourorg/symphony/internal/providers"
-	gitlabregistry "github.com/yourorg/symphony/internal/providers/artifacts/gitlabregistry"
-	gitlabci "github.com/yourorg/symphony/internal/providers/ci/gitlabci"
-	dockerdeploy "github.com/yourorg/symphony/internal/providers/deploy/docker"
-	gitlabscm "github.com/yourorg/symphony/internal/providers/scm/gitlab"
 	"github.com/yourorg/symphony/internal/rbac"
 	"github.com/yourorg/symphony/internal/templates"
 )
@@ -51,6 +47,11 @@ func main() {
 		cfg.ApplyEnvOverrides()
 	}
 
+	// Catalogue + GitOps sync — syncer hissé ici pour pouvoir être retargeté
+	// à chaud (UpdateConfig) depuis initProviders sans redémarrer le process.
+	store := catalog.NewStore()
+	var syncer *gitops.Syncer
+
 	// Callback de réinitialisation des providers (utilisé par le wizard et /config/reload)
 	initProviders := func() (*providers.ProviderSet, error) {
 		c, err := providers.LoadConfig(cfgPath)
@@ -60,26 +61,31 @@ func main() {
 			c = &providers.IntegrationConfig{}
 			c.ApplyEnvOverrides()
 		}
-		return buildProviderSet(c)
+		pvds, err := drivers.BuildProviderSet(c)
+		if err != nil {
+			return nil, err
+		}
+		if syncer == nil {
+			syncer = gitops.NewSyncer(c.SCM.URL, c.SCM.Token, c.CI.ConfigRepo, store)
+			go syncer.Start()
+		} else {
+			syncer.UpdateConfig(c.SCM.URL, c.SCM.Token, c.CI.ConfigRepo)
+		}
+		return pvds, nil
 	}
 
 	if cfg.IsConfigured() {
-		pvds, err = buildProviderSet(cfg)
+		pvds, err = drivers.BuildProviderSet(cfg)
 		if err != nil {
 			log.Printf("⚠️  providers: %v — démarrage en mode setup", err)
 			pvds = nil
 		} else {
 			log.Println("✅ Providers initialisés")
+			syncer = gitops.NewSyncer(cfg.SCM.URL, cfg.SCM.Token, cfg.CI.ConfigRepo, store)
+			go syncer.Start()
 		}
 	} else {
 		log.Println("⚠️  Providers non configurés — démarrez le wizard d'initialisation")
-	}
-
-	// Catalogue + GitOps sync
-	store := catalog.NewStore()
-	if cfg.IsConfigured() {
-		syncer := gitops.NewSyncer(cfg.SCM.URL, cfg.SCM.Token, cfg.CI.ConfigRepo, store)
-		go syncer.Start()
 	}
 
 	// Template loader
@@ -120,93 +126,24 @@ func main() {
 		log.Fatalf("OIDC_ISSUER non configuré. Définir OIDC_ISSUER ou SYMPHONY_DEV_MODE=1 pour le dev local.")
 	}
 
-	// Test de connexion provider (utilisé par le wizard — connaît tous les drivers)
-	testProvider := func(providerType string, config map[string]string) (string, error) {
-		switch providerType {
-		case "gitlab":
-			scm, err := gitlabscm.New(config["url"], config["token"])
-			if err != nil {
-				return "", err
-			}
-			repos, err := scm.ListRepos()
-			if err != nil {
-				return "", fmt.Errorf("GitLab inaccessible: %w", err)
-			}
-			return fmt.Sprintf("GitLab accessible — %d dépôts visibles", len(repos)), nil
-		case "docker":
-			socket := config["socket"]
-			if socket == "" {
-				socket = "/var/run/docker.sock"
-			}
-			deploy, err := dockerdeploy.New(socket)
-			if err != nil {
-				return "", err
-			}
-			if err := deploy.Ping(); err != nil {
-				return "", fmt.Errorf("Docker daemon inaccessible: %w", err)
-			}
-			return "Docker daemon accessible", nil
-		default:
-			return "", fmt.Errorf("type inconnu: %s", providerType)
-		}
-	}
-
 	addr := ":" + getEnv("PORT", "8080")
 	srv := api.NewServer(api.ServerOptions{
-		Store:        store,
-		DB:           db,
-		Auth:         authProvider,
-		DevMode:      devMode,
-		Tmpl:         tmplLoader,
-		Providers:    pvds,
-		Reload:       initProviders,
-		TestProvider: testProvider,
-		CfgPath:      cfgPath,
-		CostCfg:      costCfg,
+		Store:          store,
+		DB:             db,
+		Auth:           authProvider,
+		DevMode:        devMode,
+		Tmpl:           tmplLoader,
+		Providers:      pvds,
+		Reload:         initProviders,
+		TestProvider:   drivers.TestProvider,
+		AvailableTypes: drivers.AvailableTypes(),
+		CfgPath:        cfgPath,
+		CostCfg:        costCfg,
 	})
 	go reconcileDeployments(db, srv.GetProviders)
 	go reconcilePipelines(db, srv.GetProviders)
 	log.Printf("🎼 Symphony démarré sur %s", addr)
 	log.Fatal(http.ListenAndServe(addr, srv))
-}
-
-func buildProviderSet(cfg *providers.IntegrationConfig) (*providers.ProviderSet, error) {
-	scm, err := gitlabscm.New(cfg.SCM.URL, cfg.SCM.Token)
-	if err != nil {
-		return nil, fmt.Errorf("scm: %w", err)
-	}
-	if err := scm.Ping(); err != nil {
-		return nil, fmt.Errorf("scm: %w", err)
-	}
-	ci, err := gitlabci.New(cfg.SCM.URL, cfg.SCM.Token, cfg.CI.ConfigRepo)
-	if err != nil {
-		return nil, fmt.Errorf("ci: %w", err)
-	}
-	registryURL := cfg.Registry.URL
-	if registryURL == "" {
-		registryURL = cfg.SCM.URL
-	}
-	registry, err := gitlabregistry.New(cfg.SCM.URL, registryURL, cfg.SCM.Token)
-	if err != nil {
-		return nil, fmt.Errorf("registry: %w", err)
-	}
-	socket := cfg.Deploy.Socket
-	if socket == "" {
-		socket = "/var/run/docker.sock"
-	}
-	deploy, err := dockerdeploy.New(socket)
-	if err != nil {
-		return nil, fmt.Errorf("deploy: %w", err)
-	}
-	return &providers.ProviderSet{
-		SCM:          scm,
-		CI:           ci,
-		Registry:     registry,
-		Deploy:       deploy,
-		SCMBaseURL:   cfg.SCM.URL,
-		SCMToken:     cfg.SCM.Token,
-		CIConfigRepo: cfg.CI.ConfigRepo,
-	}, nil
 }
 
 func reconcilePipelines(db *database.DB, getProviders func() *providers.ProviderSet) {
