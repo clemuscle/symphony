@@ -1,7 +1,7 @@
 BIN     := symphony
 COMPOSE := docker compose -f docker-compose.demo.yml --project-name symphony
 
-.PHONY: build run dev clean demo-up demo-init demo-down
+.PHONY: build run dev clean demo-up demo-start demo-down
 
 ## build : compile le frontend puis le binaire Go (produit un binaire autonome)
 build:
@@ -25,21 +25,19 @@ clean:
 	rm -rf internal/web/static/*
 
 # ── Démo ──────────────────────────────────────────────────────────────────────
+# Parcours complet : make demo-up, puis suivre DEMO.md (connexion GitLab,
+# création des tokens, wizard Symphony) jusqu'à make demo-start.
 
-## demo-up : démarre PostgreSQL + GitLab CE + GitLab Runner (attend la santé de GitLab)
+## demo-up : vérifie les prérequis, construit le frontend si besoin, démarre
+##           PostgreSQL + GitLab CE + GitLab Runner, attend que GitLab soit prêt
 demo-up:
-	$(COMPOSE) up -d
-	@echo "GitLab CE démarre (~3-5 min). Suivre avec : $(COMPOSE) logs -f gitlab"
-	@echo "Quand GitLab est prêt, lancer : make demo-init"
+	@./scripts/demo-up.sh
 
-## demo-init : initialise GitLab (PAT, groupe, runner) et affiche la config Symphony
-demo-init:
-	@./scripts/demo-init.sh
-
-## demo-start : démarre Symphony avec la config générée par demo-init
+## demo-start : démarre Symphony (config via config/integrations.yaml + .env,
+##              voir DEMO.md — le wizard providers s'ouvre au premier lancement)
 demo-start:
-	@[ -f .env.demo ] || { echo "Lancer 'make demo-init' d'abord"; exit 1; }
-	@set -a && . ./.env.demo && set +a && go run ./cmd/symphony
+	@[ -f .env ] || { echo "Lancer 'cp .env.demo.example .env' d'abord (voir DEMO.md)"; exit 1; }
+	@go run ./cmd/symphony
 
 ## demo-down : arrête et supprime tous les volumes de démo (destructif)
 demo-down:

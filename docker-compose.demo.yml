@@ -1,12 +1,13 @@
 # Symphony — environnement de démo complet
 #
 # Usage :
-#   docker compose -f docker-compose.demo.yml --project-name symphony up -d
-#   make demo-init          # initialise GitLab (PAT, groupe, runner) — à lancer une seule fois
-#   PORT=8090 make run      # démarre Symphony localement (OIDC désactivé en mode démo)
+#   make demo-up   # prérequis + démarre postgres/gitlab/runner, attend que GitLab soit prêt
+#   Puis suivre DEMO.md : connexion GitLab, création des tokens, wizard
+#   Symphony (http://localhost:8090), jusqu'à un premier déploiement local.
 #
-# Prérequis : docker, docker compose v2, make, jq
-# GitLab CE prend ~3 min à démarrer. Attendre que demo-init annonce "GitLab prêt".
+# Prérequis : docker, docker compose v2, go, node/npm (voir DEMO.md et
+# scripts/demo-up.sh, qui les vérifient).
+# GitLab CE prend ~3-5 min à démarrer au premier lancement.
 
 services:
 
