@@ -128,7 +128,7 @@ fi
 
 info "Enregistrement du GitLab Runner…"
 RUNNER_RESP=$(gl_post "$GITLAB_URL/api/v4/user/runners" \
-  -d '{"runner_type":"instance_type","run_untagged":true,"description":"symphony-demo-runner"}' 2>/dev/null || true)
+  -d '{"runner_type":"instance_type","run_untagged":true,"tag_list":"docker","description":"symphony-demo-runner"}' 2>/dev/null || true)
 RUNNER_TOKEN=$(echo "$RUNNER_RESP" | jq -r '.token // empty')
 
 if [ -n "$RUNNER_TOKEN" ]; then
