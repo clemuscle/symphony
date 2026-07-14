@@ -107,6 +107,12 @@
         <!-- Étape 3 : Registry -->
         <div v-if="step === 3" class="form-section">
           <h2>Registre d'artefacts</h2>
+          <p class="field-note" style="margin: -8px 0 16px;">
+            Le test de connexion interroge le registre du dépôt de configuration
+            saisi à l'étape CI (<code>{{ form.ci.configRepo || '—' }}</code>) —
+            c'est toujours à un projet précis que Symphony s'adresse pour le
+            registre, jamais une liste générale.
+          </p>
 
           <div class="field">
             <label>Type</label>
@@ -122,8 +128,12 @@
             <label>Token registre <span class="hint">(optionnel)</span></label>
             <input v-model="form.registry.token" type="password" :placeholder="tokenPlaceholder(existing.registry, 'laisser vide = réutilise le token SCM')" />
             <p class="field-note">
-              Un <strong>Deploy Token</strong> GitLab scopé <code>read_registry</code> +
-              <code>write_registry</code> est préférable ici à un PAT large — droits minimaux.
+              Symphony interroge le registre via l'API GitLab
+              (<code>/api/v4/.../registry/repositories</code>), pas le protocole
+              Docker — le scope <code>read_registry</code>/<code>write_registry</code>
+              ne s'applique pas ici (c'est pour <code>docker login</code>). Un
+              token <code>read_api</code> (lecture seule) suffit à ce que
+              Symphony fait aujourd'hui avec le registre.
             </p>
           </div>
 
@@ -268,7 +278,12 @@ function testConfigFor(category) {
     case 'ci':
       return { url: form.value.scm.url, token: f.token || form.value.scm.token }
     case 'registry':
-      return { scm_url: form.value.scm.url, url: f.url, token: f.token || form.value.scm.token }
+      return {
+        scm_url: form.value.scm.url,
+        url: f.url,
+        token: f.token || form.value.scm.token,
+        project_path: form.value.ci.configRepo,
+      }
     case 'deploy':
       return { socket: f.socket }
     default:

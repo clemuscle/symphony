@@ -87,6 +87,18 @@ done
 echo ""
 ok "GitLab est prêt ($GITLAB_URL)"
 
+# ── 5. Auto DevOps ────────────────────────────────────────────────────────────
+# gitlab_rails['auto_devops_enabled'] = false dans le GITLAB_OMNIBUS_CONFIG du
+# compose ne seed pas fiablement ce réglage en base sur un volume neuf — sans
+# ce correctif, GitLab injecte son propre job "build" (buildpacks,
+# gl-auto-build-variables.env) à côté de celui du golden path, qui échoue.
+# Pur réglage d'infra sans valeur pédagogique — jamais quelque chose que le
+# guide demande de faire à la main.
+info "Désactivation d'Auto DevOps (collisionne avec le .gitlab-ci.yml du golden path)…"
+$COMPOSE exec -T gitlab gitlab-rails runner "ApplicationSetting.current.update!(auto_devops_enabled: false)" >/dev/null 2>&1 \
+  && ok "Auto DevOps désactivé" \
+  || warn "Impossible de désactiver Auto DevOps automatiquement — si le stage 'build' d'un projet échoue avec des artefacts gl-auto-build-variables.env, relancer ce script"
+
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║              Infra démo prête                         ║${NC}"

@@ -41,8 +41,10 @@ type CIConfig struct {
 type RegistryConfig struct {
 	Type string `yaml:"type"`
 	URL  string `yaml:"url"`
-	// Token optionnel, scope minimal dédié Registry (ex: GitLab Deploy
-	// Token read_registry+write_registry). Vide => fallback sur SCM.Token.
+	// Token optionnel, scope minimal dédié Registry — un GitLab access
+	// token scopé read_api suffit (le driver passe par l'API REST GitLab,
+	// pas le protocole Docker : read_registry/write_registry ne s'appliquent
+	// pas ici). Vide => fallback sur SCM.Token.
 	Token string `yaml:"-"`
 }
 

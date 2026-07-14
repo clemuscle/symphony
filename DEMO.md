@@ -113,10 +113,16 @@ séparément.
 ### Token Registry (optionnel)
 
 Même chose : vide dans le wizard = réutilise le token SCM. Pour un scope
-minimal dédié au registre, crée un token `symphony-registry` avec les
-scopes `read_registry` + `write_registry` uniquement (pas `api`) —
-suffisant pour que Symphony liste/consulte les images du registre, sans
-lui donner accès à la gestion des repos.
+minimal dédié au registre, crée un token `symphony-registry` avec le
+scope `read_api` uniquement.
+
+> ⚠️ Pas `read_registry`/`write_registry` : ces scopes autorisent le
+> protocole Docker (`docker login` sur le registre directement), pas
+> l'API GitLab. Symphony interroge le registre via l'API REST GitLab
+> (`/api/v4/.../registry/repositories`), qui a besoin de `api` ou
+> `read_api` comme n'importe quel autre endpoint GitLab — `read_api`
+> suffit puisque Symphony ne fait aujourd'hui que consulter le registre,
+> jamais y écrire.
 
 > Ne colle **aucun** de ces tokens dans un fichier `.env` à la main pour
 > cette démo — ils se saisissent exclusivement dans le wizard Symphony
@@ -146,9 +152,15 @@ docker compose -f docker-compose.demo.yml --project-name symphony exec gitlab-ru
   --docker-image docker:latest \
   --docker-volumes /var/run/docker.sock:/var/run/docker.sock \
   --docker-network-mode host \
-  --tag-list docker \
   --description symphony-demo-runner
 ```
+
+> Pas de `--tag-list` ici : depuis le nouveau workflow de création de
+> runner GitLab (token d'authentification `glrt-...`), les tags se
+> configurent uniquement côté serveur — c'est ce que tu as fait à l'étape 2
+> ci-dessus. Les repasser en argument de `register` fait échouer la
+> commande (`FATAL: Runner configuration other than name and executor
+> configuration is reserved...`).
 
 Le runner utilise le socket Docker de la machine hôte (monté dans le
 conteneur runner) plutôt que du docker-in-docker — c'est pour ça que les
