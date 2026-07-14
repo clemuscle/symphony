@@ -89,7 +89,15 @@ func (p *Provider) SetupPipeline(projectPath string, cfg providers.PipelineConfi
 
 func (p *Provider) SetProjectVariable(projectPath, key, value string) error {
 	encoded := url.PathEscape(projectPath)
-	payload := map[string]any{"key": key, "value": value, "masked": true, "protected": false}
+	// protected: true — cette variable porte le token de service SCM de
+	// Symphony (scope groupe). Sans cette restriction, n'importe quelle
+	// branche non protégée (donc n'importe quel développeur avec accès au
+	// projet) pourrait l'exfiltrer et obtenir le même niveau d'accès que
+	// Symphony sur tout le groupe. Le seul job qui la consomme
+	// (register-service) ne tourne déjà que sur la branche par défaut
+	// (protégée par GitLab à la création du projet), donc aucune perte de
+	// fonctionnalité.
+	payload := map[string]any{"key": key, "value": value, "masked": true, "protected": true}
 	_, status, err := p.api("POST",
 		fmt.Sprintf("/projects/%s/variables", encoded), payload)
 	if err != nil {

