@@ -116,7 +116,13 @@ func UpsertEnv(path string, values map[string]string) error {
 	if !changed {
 		return nil
 	}
-	return godotenv.Write(existing, path)
+	// godotenv.Write crée le fichier via os.Create (0666 masqué par umask,
+	// souvent 0644 en pratique) — un fichier de secrets doit rester
+	// illisible par les autres utilisateurs de la machine.
+	if err := godotenv.Write(existing, path); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0600)
 }
 
 const DefaultConfigPath = "config/integrations.yaml"

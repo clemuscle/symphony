@@ -132,15 +132,16 @@ func BuildProviderSet(cfg *providers.IntegrationConfig) (*providers.ProviderSet,
 	}, nil
 }
 
-// TestProvider vérifie qu'un provider est joignable avec la config fournie,
-// sans construire un ProviderSet complet — utilisé par le bouton "Tester la
-// connexion" du wizard, catégorie par catégorie.
-func TestProvider(category, providerType string, config map[string]string) (string, error) {
-	switch category {
-	case "scm":
-		if providerType != "gitlab" {
-			return "", fmt.Errorf("type inconnu: %s", providerType)
-		}
+// Tables de test de connexion, un smoke test par type de driver compilé —
+// même principe que les tables de constructeurs ci-dessus : ajouter un
+// driver, c'est ajouter une entrée ici aussi. drivers_test.go vérifie que
+// chaque type des tables de constructeurs a bien une entrée correspondante
+// ici, pour qu'un driver sans test échoue au `go test` plutôt que de dériver
+// silencieusement (bouton "Tester" renvoyant "type inconnu" alors que le
+// sélecteur du wizard le propose).
+
+var scmTests = map[string]func(config map[string]string) (string, error){
+	"gitlab": func(config map[string]string) (string, error) {
 		scm, err := gitlabscm.New(config["url"], config["token"])
 		if err != nil {
 			return "", err
@@ -150,13 +151,13 @@ func TestProvider(category, providerType string, config map[string]string) (stri
 			return "", fmt.Errorf("GitLab inaccessible: %w", err)
 		}
 		return fmt.Sprintf("GitLab accessible — %d dépôts visibles", len(repos)), nil
+	},
+}
 
-	case "ci":
-		if providerType != "gitlabci" {
-			return "", fmt.Errorf("type inconnu: %s", providerType)
-		}
-		// Le driver CI GitLab parle la même API que le SCM — un token valide
-		// capable de lister les projets suffit à confirmer la connectivité.
+var ciTests = map[string]func(config map[string]string) (string, error){
+	// Le driver CI GitLab parle la même API que le SCM — un token valide
+	// capable de lister les projets suffit à confirmer la connectivité.
+	"gitlabci": func(config map[string]string) (string, error) {
 		scm, err := gitlabscm.New(config["url"], config["token"])
 		if err != nil {
 			return "", err
@@ -165,15 +166,14 @@ func TestProvider(category, providerType string, config map[string]string) (stri
 			return "", fmt.Errorf("API GitLab (CI) inaccessible avec ce token: %w", err)
 		}
 		return "Token CI valide — API GitLab accessible", nil
+	},
+}
 
-	case "registry":
-		if providerType != "gitlabregistry" {
-			return "", fmt.Errorf("type inconnu: %s", providerType)
-		}
-		// Le driver registre GitLab passe entièrement par l'API GitLab
-		// (/api/v4/projects/.../registry/repositories) — jamais un appel
-		// direct à l'hôte du registre — donc le même test de token que CI
-		// s'applique ici.
+var registryTests = map[string]func(config map[string]string) (string, error){
+	// Le driver registre GitLab passe entièrement par l'API GitLab
+	// (/api/v4/projects/.../registry/repositories) — jamais un appel direct
+	// à l'hôte du registre — donc le même test de token que CI s'applique.
+	"gitlabregistry": func(config map[string]string) (string, error) {
 		scm, err := gitlabscm.New(config["scm_url"], config["token"])
 		if err != nil {
 			return "", err
@@ -182,11 +182,11 @@ func TestProvider(category, providerType string, config map[string]string) (stri
 			return "", fmt.Errorf("API GitLab (registry) inaccessible avec ce token: %w", err)
 		}
 		return "Token registre valide — API GitLab accessible", nil
+	},
+}
 
-	case "deploy":
-		if providerType != "docker" {
-			return "", fmt.Errorf("type inconnu: %s", providerType)
-		}
+var deployTests = map[string]func(config map[string]string) (string, error){
+	"docker": func(config map[string]string) (string, error) {
 		socket := config["socket"]
 		if socket == "" {
 			socket = "/var/run/docker.sock"
@@ -199,8 +199,29 @@ func TestProvider(category, providerType string, config map[string]string) (stri
 			return "", fmt.Errorf("Docker daemon inaccessible: %w", err)
 		}
 		return "Docker daemon accessible", nil
+	},
+}
 
-	default:
+func testTables() map[string]map[string]func(config map[string]string) (string, error) {
+	return map[string]map[string]func(config map[string]string) (string, error){
+		"scm":      scmTests,
+		"ci":       ciTests,
+		"registry": registryTests,
+		"deploy":   deployTests,
+	}
+}
+
+// TestProvider vérifie qu'un provider est joignable avec la config fournie,
+// sans construire un ProviderSet complet — utilisé par le bouton "Tester la
+// connexion" du wizard, catégorie par catégorie.
+func TestProvider(category, providerType string, config map[string]string) (string, error) {
+	tests, ok := testTables()[category]
+	if !ok {
 		return "", fmt.Errorf("catégorie inconnue: %s", category)
 	}
+	fn, ok := tests[providerType]
+	if !ok {
+		return "", fmt.Errorf("type inconnu: %s", providerType)
+	}
+	return fn(config)
 }
