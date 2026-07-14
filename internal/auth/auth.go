@@ -69,10 +69,14 @@ func New(ctx context.Context, cfg Config, rbacMgr *rbac.Manager) (*Provider, err
 }
 
 func (p *Provider) LoginHandler(w http.ResponseWriter, r *http.Request) {
-	state := randomState()
+	state, err := randomState()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name: "oauth_state", Value: state,
-		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 300,
+		Path: "/", HttpOnly: true, Secure: secureCookies(), SameSite: http.SameSiteLaxMode, MaxAge: 300,
 	})
 	http.Redirect(w, r, p.oauth2.AuthCodeURL(state), http.StatusFound)
 }
@@ -101,7 +105,7 @@ func (p *Provider) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name: "symphony_token", Value: rawIDToken,
-		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 86400,
+		Path: "/", HttpOnly: true, Secure: secureCookies(), SameSite: http.SameSiteLaxMode, MaxAge: 86400,
 	})
 	http.Redirect(w, r, frontendURL(), http.StatusFound)
 }
@@ -183,10 +187,22 @@ func oidcScopes() []string {
 	return base
 }
 
-func randomState() string {
+func randomState() (string, error) {
 	b := make([]byte, 16)
-	rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// secureCookies détermine si les cookies d'auth portent le flag Secure
+// (jamais envoyés en clair sur http). Vrai par défaut — l'OIDC réel
+// (par opposition à SYMPHONY_DEV_MODE, qui ne pose aucun cookie) est
+// supposé tourner derrière TLS. SYMPHONY_INSECURE_COOKIES=1 est un
+// opt-out explicite pour tester l'OIDC en local sans TLS, jamais un
+// défaut silencieux.
+func secureCookies() bool {
+	return os.Getenv("SYMPHONY_INSECURE_COOKIES") != "1"
 }
 
 func frontendURL() string {

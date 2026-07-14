@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -24,13 +25,20 @@ type gitlabPipelineEvent struct {
 // immédiatement les statuts en DB, sans attendre le cycle de polling 30s.
 //
 // Route : POST /api/v1/webhooks/gitlab — publique (pas de cookie auth),
-// sécurisée par le secret X-Gitlab-Token si GITLAB_WEBHOOK_SECRET est défini.
+// sécurisée par le secret X-Gitlab-Token via GITLAB_WEBHOOK_SECRET. Fail-closed
+// si absent : la réconciliation 30s (cmd/symphony/main.go) reste le mécanisme
+// authoritative, donc refuser silencieusement le webhook ne casse rien —
+// l'alternative (accepter sans authentification) permettrait à n'importe qui
+// avec un accès réseau de forger un pipeline_id et corrompre pipelines/deployments.
 func (s *Server) gitlabWebhook(w http.ResponseWriter, r *http.Request) {
-	if secret := os.Getenv("GITLAB_WEBHOOK_SECRET"); secret != "" {
-		if r.Header.Get("X-Gitlab-Token") != secret {
-			respond(w, http.StatusUnauthorized, map[string]string{"error": "invalid token"})
-			return
-		}
+	secret := os.Getenv("GITLAB_WEBHOOK_SECRET")
+	if secret == "" {
+		respond(w, http.StatusServiceUnavailable, map[string]string{"error": "webhook non configuré (GITLAB_WEBHOOK_SECRET absent)"})
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Gitlab-Token")), []byte(secret)) != 1 {
+		respond(w, http.StatusUnauthorized, map[string]string{"error": "invalid token"})
+		return
 	}
 
 	var event gitlabPipelineEvent

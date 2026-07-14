@@ -165,7 +165,7 @@ func NewServer(opts ServerOptions) *Server {
 
 		// Pipelines (lecture = viewer+, déclenchement = developer+)
 		r.With(s.requireRole(rbac.RoleDeveloper)).Post("/api/v1/pipelines/trigger", s.triggerPipelineHandler)
-		r.Get("/api/v1/pipelines/status", s.getPipelineStatusHandler)
+		r.Post("/api/v1/pipelines/status", s.getPipelineStatusHandler)
 		r.Get("/api/v1/pipelines", s.listAllPipelinesHandler)
 		r.Get("/api/v1/pipelines/{project}", s.listPipelinesHandler)
 

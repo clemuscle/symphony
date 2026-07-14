@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -15,6 +18,42 @@ import (
 	"github.com/yourorg/symphony/internal/catalog"
 	"github.com/yourorg/symphony/internal/database"
 )
+
+// webhookClient a un timeout explicite — http.DefaultClient (utilisé par
+// http.Post) n'en a aucun, une action déclenchée pourrait bloquer
+// indéfiniment sur un endpoint qui ne répond jamais.
+var webhookClient = &http.Client{Timeout: 10 * time.Second}
+
+// validateWebhookURL empêche triggerAction (SSRF) de sonder le réseau interne
+// via une webhook_url du catalogue GitOps pointée sur une IP privée/loopback/
+// link-local (ex: 169.254.169.254, métadonnées cloud). webhook_url vient d'un
+// repo Git dont l'écriture suppose déjà un accès privilégié, mais n'importe
+// quel developer peut déclencher l'action une fois le service catalogué —
+// donc valider côté serveur avant l'appel sortant, pas seulement faire
+// confiance au contenu du repo.
+func validateWebhookURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("URL invalide: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("scheme non autorisé: %q", u.Scheme)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("hôte manquant")
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("résolution DNS: %w", err)
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			return fmt.Errorf("adresse réseau interne/privée non autorisée: %s", ip)
+		}
+	}
+	return nil
+}
 
 // actorID returns the authenticated user's email for audit log entries,
 // falling back to "system" in dev mode or when context has no user.
@@ -82,6 +121,10 @@ func (s *Server) triggerAction(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "no webhook_url configured"})
 		return
 	}
+	if err := validateWebhookURL(action.WebhookURL); err != nil {
+		respond(w, http.StatusBadGateway, map[string]string{"error": "webhook_url: " + err.Error()})
+		return
+	}
 
 	var inputs map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&inputs); err != nil && err != io.EOF {
@@ -119,7 +162,7 @@ func (s *Server) triggerAction(w http.ResponseWriter, r *http.Request) {
 		"triggered": time.Now().UTC().Format(time.RFC3339),
 	}
 	body, _ := json.Marshal(payload)
-	resp, err := http.Post(action.WebhookURL, "application/json", bytes.NewReader(body))
+	resp, err := webhookClient.Post(action.WebhookURL, "application/json", bytes.NewReader(body))
 	if err != nil {
 		respond(w, http.StatusBadGateway, map[string]string{"error": fmt.Sprintf("webhook: %v", err)})
 		return
@@ -170,6 +213,19 @@ func (s *Server) listNamespaces(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, ns)
 }
 
+// reservedPipelineVars pilotent le déploiement/la destruction dans les golden
+// paths (voir config/golden-paths/*/ci/pipeline.yml, rules: des jobs deploy/
+// deploy-recette/destroy-*) et ont leurs propres endpoints, gardés à un rôle
+// plus élevé (RoleLead pour deployProject/stopDeployment). Les accepter ici,
+// sur un endpoint gardé RoleDeveloper, permettrait à un simple developer de
+// contourner ce gate en les glissant dans vars.
+var reservedPipelineVars = map[string]bool{
+	"DESTROY_DEPLOY":  true,
+	"DESTROY_RECETTE": true,
+	"RECETTE_NAME":    true,
+	"RECETTE_PORT":    true,
+}
+
 func (s *Server) triggerPipelineHandler(w http.ResponseWriter, r *http.Request) {
 	pvds := s.getProviders()
 	if pvds == nil {
@@ -184,6 +240,16 @@ func (s *Server) triggerPipelineHandler(w http.ResponseWriter, r *http.Request) 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
+	}
+	if _, err := s.db.GetProjectByRepoPath(req.ProjectPath); err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "projet inconnu de Symphony"})
+		return
+	}
+	for k := range req.Vars {
+		if reservedPipelineVars[k] {
+			respond(w, http.StatusBadRequest, map[string]string{"error": k + " ne peut pas être positionnée ici — utiliser l'endpoint dédié"})
+			return
+		}
 	}
 	if req.Ref == "" {
 		req.Ref = "main"
@@ -206,16 +272,32 @@ func (s *Server) triggerPipelineHandler(w http.ResponseWriter, r *http.Request) 
 	respond(w, http.StatusOK, map[string]string{"pipeline_id": id})
 }
 
+// getPipelineStatusHandler interroge GitLab ET persiste le statut observé
+// (UpdatePipelineStatus) — un effet de bord qui n'a pas sa place derrière un
+// GET (voir server.go : monté en POST pour cette raison, pas par souci
+// esthétique — un GET avec effet de bord reste déclenchable via une simple
+// navigation top-level cross-site malgré SameSite=Lax).
 func (s *Server) getPipelineStatusHandler(w http.ResponseWriter, r *http.Request) {
 	pvds := s.getProviders()
 	if pvds == nil {
 		respond(w, http.StatusServiceUnavailable, errSetupRequired())
 		return
 	}
-	projectPath := r.URL.Query().Get("project")
-	pipelineID := r.URL.Query().Get("id")
+	var req struct {
+		ProjectPath string `json:"project"`
+		PipelineID  string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	projectPath, pipelineID := req.ProjectPath, req.PipelineID
 	if projectPath == "" || pipelineID == "" {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "project et id requis"})
+		return
+	}
+	if _, err := s.db.GetProjectByRepoPath(projectPath); err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "projet inconnu de Symphony"})
 		return
 	}
 	status, err := pvds.CI.GetPipelineStatus(projectPath, pipelineID)
@@ -347,8 +429,19 @@ func toInt(v any) (int, bool) {
 
 const defaultAllowedOrigin = "http://localhost:5173"
 
+var warnWildcardOriginOnce sync.Once
+
 func allowedOrigin() string {
 	if origin := os.Getenv("ALLOWED_ORIGIN"); origin != "" {
+		if origin == "*" {
+			// Access-Control-Allow-Origin: * combiné à Allow-Credentials: true
+			// est rejeté par les navigateurs, mais mieux vaut ne jamais
+			// l'émettre que de dépendre de ce garde-fou côté client.
+			warnWildcardOriginOnce.Do(func() {
+				log.Println("⚠️  ALLOWED_ORIGIN=* ignoré (incompatible avec Allow-Credentials) — utilisation de la valeur par défaut")
+			})
+			return defaultAllowedOrigin
+		}
 		return origin
 	}
 	return defaultAllowedOrigin
