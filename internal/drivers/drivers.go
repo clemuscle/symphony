@@ -170,18 +170,31 @@ var ciTests = map[string]func(config map[string]string) (string, error){
 }
 
 var registryTests = map[string]func(config map[string]string) (string, error){
-	// Le driver registre GitLab passe entièrement par l'API GitLab
-	// (/api/v4/projects/.../registry/repositories) — jamais un appel direct
-	// à l'hôte du registre — donc le même test de token que CI s'applique.
+	// gitlabregistry.Provider passe entièrement par l'API REST GitLab
+	// (/api/v4/projects/:id/registry/repositories), jamais le protocole
+	// Docker — read_registry/write_registry ne s'appliquent pas ici, il
+	// faut un scope api/read_api comme pour n'importe quel autre endpoint
+	// GitLab (voir Setup.vue). Cet endpoint est toujours scopé à un projet
+	// précis, donc le test utilise le dépôt de configuration (project_path)
+	// déjà saisi à l'étape CI du wizard plutôt qu'un appel générique.
 	"gitlabregistry": func(config map[string]string) (string, error) {
-		scm, err := gitlabscm.New(config["scm_url"], config["token"])
+		projectPath := config["project_path"]
+		if projectPath == "" {
+			return "", fmt.Errorf("renseigner le dépôt de configuration à l'étape CI avant de tester le registre")
+		}
+		registryURL := config["url"]
+		if registryURL == "" {
+			registryURL = config["scm_url"]
+		}
+		reg, err := gitlabregistry.New(config["scm_url"], registryURL, config["token"])
 		if err != nil {
 			return "", err
 		}
-		if _, err := scm.ListRepos(); err != nil {
-			return "", fmt.Errorf("API GitLab (registry) inaccessible avec ce token: %w", err)
+		images, err := reg.ListImages(projectPath)
+		if err != nil {
+			return "", fmt.Errorf("registre inaccessible pour %s: %w", projectPath, err)
 		}
-		return "Token registre valide — API GitLab accessible", nil
+		return fmt.Sprintf("Registre accessible pour %s — %d image(s)", projectPath, len(images)), nil
 	},
 }
 

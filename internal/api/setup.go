@@ -9,9 +9,11 @@ import (
 )
 
 func (s *Server) setupStatus(w http.ResponseWriter, r *http.Request) {
-	configured := s.devMode || s.getProviders() != nil
+	// devMode ne bypass que l'auth (qui tu es), jamais l'exigence de
+	// configurer les providers (quoi Symphony peut faire) — sinon le
+	// wizard n'apparaît jamais en démo (SYMPHONY_DEV_MODE=1 y est déjà actif).
 	respond(w, http.StatusOK, map[string]any{
-		"configured": configured,
+		"configured": s.getProviders() != nil,
 	})
 }
 

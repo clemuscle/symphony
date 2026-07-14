@@ -16,6 +16,8 @@ test:
   stage: test
   script:
     - mvn test
+  tags:
+    - docker
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -33,6 +35,8 @@ build:
     - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
     - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE:latest
     - docker push $CI_REGISTRY_IMAGE:latest
+  tags:
+    - docker
   rules:
     - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
 
@@ -146,6 +150,8 @@ register-service:
     - git add services/{{.ServiceName}}.yaml
     - "git diff --staged --quiet && echo 'Pas de changement' || git commit -m 'feat: register {{.ServiceName}} [symphony-bot]'"
     - git push
+  tags:
+    - docker
   rules:
     - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
       when: on_success

@@ -37,7 +37,11 @@ services:
         # Container Registry — nécessaire pour le stage build (docker push) des golden paths
         registry_external_url 'http://localhost:5050'
         # Auto DevOps désactivé — collisionne avec le .gitlab-ci.yml du golden path
-        # (job "build" dupliqué + scans SAST/container non pertinents pour la démo)
+        # (job "build" dupliqué + scans SAST/container non pertinents pour la démo).
+        # Cette ligne seule ne suffit pas : elle ne seed pas fiablement le
+        # réglage en base sur un volume neuf — scripts/demo-up.sh le force
+        # explicitement après le démarrage de GitLab, c'est la source de
+        # vérité réelle.
         gitlab_rails['auto_devops_enabled'] = false
         # Performances réduites pour laptop / VM de démo
         puma['worker_processes'] = 2
