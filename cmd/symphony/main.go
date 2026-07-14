@@ -137,6 +137,10 @@ func main() {
 		log.Fatalf("OIDC_ISSUER non configuré. Définir OIDC_ISSUER ou SYMPHONY_DEV_MODE=1 pour le dev local.")
 	}
 
+	if os.Getenv("GITLAB_WEBHOOK_SECRET") == "" {
+		log.Println("⚠️  GITLAB_WEBHOOK_SECRET absent — webhook GitLab désactivé (fail-closed), la réconciliation 30s reste active")
+	}
+
 	addr := ":" + getEnv("PORT", "8080")
 	srv := api.NewServer(api.ServerOptions{
 		Store:          store,
