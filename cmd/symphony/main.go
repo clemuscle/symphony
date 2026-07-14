@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -49,8 +50,24 @@ func main() {
 
 	// Catalogue + GitOps sync — syncer hissé ici pour pouvoir être retargeté
 	// à chaud (UpdateConfig) depuis initProviders sans redémarrer le process.
+	// syncerMu sérialise le check-then-act sur syncer : initProviders est
+	// appelable concurremment depuis le wizard et /config/reload, sans elle
+	// deux reloads simultanés pourraient tous deux le trouver nil et lancer
+	// deux goroutines Start(), ou se marcher dessus sur le pointeur lui-même.
 	store := catalog.NewStore()
 	var syncer *gitops.Syncer
+	var syncerMu sync.Mutex
+
+	startOrUpdateSyncer := func(c *providers.IntegrationConfig) {
+		syncerMu.Lock()
+		defer syncerMu.Unlock()
+		if syncer == nil {
+			syncer = gitops.NewSyncer(c.SCM.URL, c.SCM.Token, c.CI.ConfigRepo, store)
+			go syncer.Start()
+		} else {
+			syncer.UpdateConfig(c.SCM.URL, c.SCM.Token, c.CI.ConfigRepo)
+		}
+	}
 
 	// Callback de réinitialisation des providers (utilisé par le wizard et /config/reload)
 	initProviders := func() (*providers.ProviderSet, error) {
@@ -65,12 +82,7 @@ func main() {
 		if err != nil {
 			return nil, err
 		}
-		if syncer == nil {
-			syncer = gitops.NewSyncer(c.SCM.URL, c.SCM.Token, c.CI.ConfigRepo, store)
-			go syncer.Start()
-		} else {
-			syncer.UpdateConfig(c.SCM.URL, c.SCM.Token, c.CI.ConfigRepo)
-		}
+		startOrUpdateSyncer(c)
 		return pvds, nil
 	}
 
@@ -81,8 +93,7 @@ func main() {
 			pvds = nil
 		} else {
 			log.Println("✅ Providers initialisés")
-			syncer = gitops.NewSyncer(cfg.SCM.URL, cfg.SCM.Token, cfg.CI.ConfigRepo, store)
-			go syncer.Start()
+			startOrUpdateSyncer(cfg)
 		}
 	} else {
 		log.Println("⚠️  Providers non configurés — démarrez le wizard d'initialisation")
