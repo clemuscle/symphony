@@ -8,6 +8,14 @@ type SCMProvider interface {
 	PushFile(projectPath, branch, filePath, content, commitMsg string) error
 	ListRepos() ([]Repo, error)
 	ListNamespaces() ([]Namespace, error)
+	ListBranches(projectPath string) ([]Branch, error)
+}
+
+// Branch représente une branche du dépôt — utilisé par la page détail projet
+// pour afficher la liste des branches (5 max, défaut en premier).
+type Branch struct {
+	Name    string `json:"name"`
+	Default bool   `json:"default"`
 }
 
 type Namespace struct {

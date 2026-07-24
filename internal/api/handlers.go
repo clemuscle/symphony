@@ -319,7 +319,14 @@ func (s *Server) getPipelineStatusHandler(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) listPipelinesHandler(w http.ResponseWriter, r *http.Request) {
-	project := chi.URLParam(r, "project")
+	// chi conserve %2F tel quel dans un segment de route plutôt que de le
+	// décoder en "/" — nécessaire ici puisque project_path (ex:
+	// "namespace/repo") contient lui-même un "/".
+	project, err := url.PathUnescape(chi.URLParam(r, "project"))
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "project invalide"})
+		return
+	}
 	pipelines, err := s.db.ListPipelines(project)
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
