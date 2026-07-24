@@ -5,7 +5,7 @@
         <h2>Projets</h2>
         <p class="subtitle">{{ projects.length }} projet(s) créé(s) via Symphony</p>
       </div>
-      <RouterLink v-if="canDevelop" to="/" class="btn-new">+ Nouveau projet</RouterLink>
+      <RouterLink v-if="canDevelop" to="/catalogue" class="btn-new">+ Nouveau projet</RouterLink>
     </div>
 
     <div v-if="error" class="error-banner">⚠️ {{ error }}</div>
@@ -199,7 +199,7 @@
       <div class="empty-icon">🗂</div>
       <div class="empty-title">Aucun projet Symphony</div>
       <div class="empty-sub">Crée ton premier projet depuis le Catalogue</div>
-      <RouterLink to="/" class="btn-cta">Explorer le catalogue →</RouterLink>
+      <RouterLink to="/catalogue" class="btn-cta">Explorer le catalogue →</RouterLink>
     </div>
   </div>
 </template>

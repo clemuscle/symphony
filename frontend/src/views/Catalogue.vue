@@ -229,7 +229,7 @@ async function createProject() {
 }
 
 function goToProjects() {
-  router.push('/projects')
+  router.push('/')
 }
 
 function resetForm() {
