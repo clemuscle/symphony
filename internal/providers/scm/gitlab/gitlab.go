@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -210,6 +211,34 @@ func (p *Provider) ListNamespaces() ([]providers.Namespace, error) {
 		ns[i] = providers.Namespace{ID: r.ID, Name: r.Name, Path: r.Path, Kind: r.Kind}
 	}
 	return ns, nil
+}
+
+// ListBranches retourne les branches du dépôt, la branche par défaut en
+// premier — utilisé par la page détail projet (Symphony ne connaît pas de
+// notion de branching model, il expose simplement ce que GitLab renvoie).
+func (p *Provider) ListBranches(projectPath string) ([]providers.Branch, error) {
+	encoded := url.PathEscape(projectPath)
+	data, status, err := p.api("GET", fmt.Sprintf("/projects/%s/repository/branches?per_page=100", encoded), nil)
+	if err != nil {
+		return nil, err
+	}
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("gitlab listBranches %s: %d — %s", projectPath, status, string(data))
+	}
+	var raw []struct {
+		Name    string `json:"name"`
+		Default bool   `json:"default"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("gitlab listBranches %s: decode response: %w", projectPath, err)
+	}
+
+	branches := make([]providers.Branch, len(raw))
+	for i, b := range raw {
+		branches[i] = providers.Branch{Name: b.Name, Default: b.Default}
+	}
+	sort.SliceStable(branches, func(i, j int) bool { return branches[i].Default && !branches[j].Default })
+	return branches, nil
 }
 
 func (p *Provider) resolveNamespace(name string) (int, error) {

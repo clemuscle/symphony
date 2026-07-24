@@ -49,8 +49,8 @@
             </button>
           </div>
 
-          <div class="pipeline-status" v-if="pipelineState.id || lastPipeline">
-            <span class="pipeline-label">Dernier pipeline</span>
+          <div class="pipeline-status" v-if="pipelineState.id || pipelineState.loading">
+            <span class="pipeline-label">Pipeline en cours</span>
             <template v-if="pipelineState.loading">
               <span class="status-badge sm pending">⏳ déclenchement…</span>
             </template>
@@ -58,18 +58,52 @@
               <span class="pipeline-id">#{{ pipelineState.id }}</span>
               <span :class="['status-badge', 'sm', pipelineState.status]">{{ pipelineState.status }}</span>
             </template>
-            <template v-else-if="lastPipeline">
+          </div>
+
+          <div class="job-list" v-if="recentPipelines.length">
+            <div class="job-list-title">5 derniers jobs</div>
+            <div v-for="p in recentPipelines.slice(0, 5)" :key="p.id" class="job-row">
               <a
                 v-if="project.repo_url"
-                :href="`${project.repo_url}/-/pipelines/${lastPipeline.pipeline_id}`"
+                :href="`${project.repo_url}/-/pipelines/${p.pipeline_id}`"
                 target="_blank"
                 class="pipeline-id pipeline-link"
-              >#{{ lastPipeline.pipeline_id }}</a>
-              <span v-else class="pipeline-id">#{{ lastPipeline.pipeline_id }}</span>
-              <span :class="['status-badge', 'sm', lastPipeline.status]">{{ lastPipeline.status }}</span>
-            </template>
+              >#{{ p.pipeline_id }}</a>
+              <span v-else class="pipeline-id">#{{ p.pipeline_id }}</span>
+              <span :class="['status-badge', 'sm', p.status]">{{ p.status }}</span>
+              <span class="job-date">{{ formatDate(p.created_at) }}</span>
+            </div>
           </div>
           <div v-else class="empty-inline">Aucun pipeline lancé pour l'instant</div>
+        </div>
+      </section>
+
+      <!-- Images -->
+      <section class="card">
+        <div class="card-title">📦 Images</div>
+        <div class="card-body">
+          <div class="image-list" v-if="images.length">
+            <div v-for="img in images" :key="`${img.name}:${img.tag}`" class="image-row">
+              <span class="image-name">{{ img.name }}</span>
+              <span class="image-tag">{{ img.tag }}</span>
+            </div>
+          </div>
+          <div v-else class="empty-inline">{{ imagesError || 'Aucune image poussée pour l’instant' }}</div>
+        </div>
+      </section>
+
+      <!-- Branches -->
+      <section class="card">
+        <div class="card-title">🌿 Branches</div>
+        <div class="card-body">
+          <div class="branch-list" v-if="branches.length">
+            <span
+              v-for="b in branches.slice(0, 5)"
+              :key="b.name"
+              :class="['branch-chip', { default: b.default }]"
+            >{{ b.name }}<template v-if="b.default"> · défaut</template></span>
+          </div>
+          <div v-else class="empty-inline">{{ branchesError || 'Aucune branche trouvée' }}</div>
         </div>
       </section>
 
@@ -185,7 +219,7 @@ const error = ref(null)
 
 const pipelineState = ref({ loading: false, id: null, status: null })
 const pipelineBranch = ref('main')
-const lastPipeline = ref(null)
+const recentPipelines = ref([])
 
 const deployState = ref({ loading: false, error: null })
 const deployment = ref(null)
@@ -193,6 +227,11 @@ const deployment = ref(null)
 const stepsOpen = ref(false)
 const stepsLoading = ref(false)
 const steps = ref([])
+
+const images = ref([])
+const imagesError = ref(null)
+const branches = ref([])
+const branchesError = ref(null)
 
 const recettes = ref([])
 const recettesLoading = ref(false)
@@ -209,6 +248,7 @@ let pollInterval = null
 
 const langIcon = (lang) => ({ go: '🐹', python: '🐍', node: '💚', java: '☕' })[lang] || '📦'
 const statusLabel = (s) => ({ ready: 'Prêt', provisioning: 'En cours', degraded: 'Dégradé', failed: 'Échec' })[s] || s
+const formatDate = (d) => d ? new Date(d).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''
 
 async function loadProject() {
   const { data } = await api.listProjects()
@@ -225,8 +265,30 @@ async function loadPipeline(p) {
   if (!p.repo_path) return
   try {
     const { data } = await api.listPipelines(p.repo_path)
-    lastPipeline.value = (data && data[0]) || null
+    recentPipelines.value = data || []
   } catch { /* non bloquant */ }
+}
+
+async function loadImages(p) {
+  try {
+    const { data } = await api.listProjectImages(p.name)
+    images.value = data || []
+    imagesError.value = null
+  } catch (e) {
+    images.value = []
+    imagesError.value = e.response?.data?.error || null
+  }
+}
+
+async function loadBranches(p) {
+  try {
+    const { data } = await api.listProjectBranches(p.name)
+    branches.value = data || []
+    branchesError.value = null
+  } catch (e) {
+    branches.value = []
+    branchesError.value = e.response?.data?.error || null
+  }
 }
 
 async function loadDeployment(p) {
@@ -272,7 +334,11 @@ async function refresh(isInitial = false) {
 
 onMounted(async () => {
   await refresh(true)
-  if (project.value) loadMonitoring(project.value)
+  if (project.value) {
+    loadMonitoring(project.value)
+    loadImages(project.value)
+    loadBranches(project.value)
+  }
   pollInterval = setInterval(() => refresh(false), 10000)
 })
 
@@ -409,6 +475,22 @@ h2 { font-size: 22px; font-weight: 700; }
 .deploy-link:hover { text-decoration: underline; }
 
 .empty-inline { font-size: 13px; color: #aaa; }
+
+.job-list { display: flex; flex-direction: column; gap: 4px; }
+.job-list-title { font-size: 11px; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+.job-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid #f0f0f0; font-size: 12px; }
+.job-row:last-child { border-bottom: none; }
+.job-date { color: #aaa; margin-left: auto; }
+
+.image-list { display: flex; flex-direction: column; gap: 4px; }
+.image-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+.image-row:last-child { border-bottom: none; }
+.image-name { font-weight: 600; color: #444; }
+.image-tag { font-family: monospace; font-size: 12px; color: #667eea; background: #f0f2ff; padding: 1px 8px; border-radius: 10px; }
+
+.branch-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.branch-chip { font-size: 12px; padding: 4px 12px; border-radius: 20px; background: #f4f4f7; color: #555; font-family: monospace; }
+.branch-chip.default { background: #eef2ff; color: #4338ca; font-weight: 600; }
 
 .status-badge { font-size: 12px; padding: 3px 10px; border-radius: 20px; font-weight: 600; white-space: nowrap; }
 .status-badge.sm { font-size: 11px; padding: 2px 8px; }

@@ -155,6 +155,8 @@ func NewServer(opts ServerOptions) *Server {
 		r.With(s.requireRole(rbac.RoleDeveloper)).Post("/api/v1/projects", s.createProject)
 		r.Get("/api/v1/projects", s.listProjects)
 		r.Get("/api/v1/projects/{name}/steps", s.listProjectSteps)
+		r.Get("/api/v1/projects/{name}/branches", s.listProjectBranches)
+		r.Get("/api/v1/projects/{name}/images", s.listProjectImages)
 		r.Get("/api/v1/repos", s.listRepos)
 		r.Get("/api/v1/namespaces", s.listNamespaces)
 

@@ -249,6 +249,56 @@ func (s *Server) listProjectSteps(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, steps)
 }
 
+// listProjectBranches expose SCMProvider.ListBranches pour la page détail
+// projet — lecture seule, jamais utilisé pour du provisioning.
+func (s *Server) listProjectBranches(w http.ResponseWriter, r *http.Request) {
+	pvds := s.getProviders()
+	if pvds == nil {
+		respond(w, http.StatusServiceUnavailable, errSetupRequired())
+		return
+	}
+	name := chi.URLParam(r, "name")
+	project, err := s.db.GetProject(name)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+		return
+	}
+	branches, err := pvds.SCM.ListBranches(project.RepoPath)
+	if err != nil {
+		respond(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	if branches == nil {
+		branches = []providers.Branch{}
+	}
+	respond(w, http.StatusOK, branches)
+}
+
+// listProjectImages expose RegistryProvider.ListImages pour la page détail
+// projet — lecture seule, jamais utilisé pour du provisioning.
+func (s *Server) listProjectImages(w http.ResponseWriter, r *http.Request) {
+	pvds := s.getProviders()
+	if pvds == nil {
+		respond(w, http.StatusServiceUnavailable, errSetupRequired())
+		return
+	}
+	name := chi.URLParam(r, "name")
+	project, err := s.db.GetProject(name)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+		return
+	}
+	images, err := pvds.Registry.ListImages(project.RepoPath)
+	if err != nil {
+		respond(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	if images == nil {
+		images = []providers.Image{}
+	}
+	respond(w, http.StatusOK, images)
+}
+
 func (s *Server) createRecette(w http.ResponseWriter, r *http.Request) {
 	pvds := s.getProviders()
 	if pvds == nil {

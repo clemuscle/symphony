@@ -29,6 +29,8 @@ export const api = {
   createProject: (data) => http.post('/api/v1/projects', data),
   listProjects: () => http.get('/api/v1/projects'),
   listProjectSteps: (name) => http.get(`/api/v1/projects/${encodeURIComponent(name)}/steps`),
+  listProjectBranches: (name) => http.get(`/api/v1/projects/${encodeURIComponent(name)}/branches`),
+  listProjectImages: (name) => http.get(`/api/v1/projects/${encodeURIComponent(name)}/images`),
   listRepos: () => http.get('/api/v1/repos'),
   listNamespaces: () => http.get('/api/v1/namespaces'),
 
@@ -37,7 +39,7 @@ export const api = {
     http.post('/api/v1/pipelines/trigger', { project_path: projectPath, ref, vars }),
   getPipelineStatus: (projectPath, pipelineID) =>
     http.post('/api/v1/pipelines/status', { project: projectPath, id: pipelineID }),
-  listPipelines: (project) => http.get(`/api/v1/pipelines/${project}`),
+  listPipelines: (project) => http.get(`/api/v1/pipelines/${encodeURIComponent(project)}`),
   listAllPipelines: () => http.get('/api/v1/pipelines'),
 
   // Déploiements
