@@ -98,7 +98,7 @@ backloguer comme actionnable tant que C2 n'est pas tranché.
 
 ## EPIC B — Page projets en accueil + page détail par projet
 
-### B1 🟢 La page d'accueil devient la liste des projets
+### B1 ✅ Livré (2026-07-24, `1e1a745`) — La page d'accueil devient la liste des projets
 
 **Constat code** : aujourd'hui `/` pointe vers `Catalogue.vue` (le catalogue
 de golden paths), et `Projects.vue` est une route séparée `/projects`
@@ -113,7 +113,7 @@ de golden paths), et `Projects.vue` est une route séparée `/projects`
   plateforme veut d'abord voir l'état de ses projets, pas recréer un projet.
 - Pas de changement backend.
 
-### B2 🟢 Page détail par projet (route dédiée)
+### B2 ✅ Livré (2026-07-24, `a81ed30`) — Page détail par projet (route dédiée)
 
 **Constat code** : il n'existe aujourd'hui aucune route `/projects/:name` —
 `Projects.vue` (586 lignes) semble tout gérer en une seule vue. Le retour
@@ -360,8 +360,8 @@ aucun item 🟡 en attente de clarification.
 
 | Item | Statut | Effort estimé | Bloque quoi |
 |---|---|---|---|
-| B1 — accueil = projets | 🟢 | XS (routing) | — |
-| B2 — page détail projet | 🟢 | S | B3 |
+| B1 — accueil = projets | ✅ livré | XS (routing) | — |
+| B2 — page détail projet | ✅ livré | S | B3 |
 | B3 — jobs/images/branches | 🟢 | M (extension SCMProvider) | — |
 | A1 — seed démo multi-stades | 🟢 | S | — |
 | A2 — doc démo pipeline complet (inclut A3) | 🟢 | XS (doc) | — |
