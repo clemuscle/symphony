@@ -7,8 +7,8 @@
         <span class="subtitle">Internal Developer Portal</span>
       </div>
       <nav class="nav">
-        <RouterLink to="/" class="nav-link">📦 Catalogue</RouterLink>
-        <RouterLink to="/projects" class="nav-link">🗂 Projets</RouterLink>
+        <RouterLink to="/" class="nav-link">🗂 Projets</RouterLink>
+        <RouterLink to="/catalogue" class="nav-link">📦 Catalogue</RouterLink>
         <RouterLink to="/deployments" class="nav-link">🚀 Déploiements</RouterLink>
         <RouterLink to="/inventory" class="nav-link">📋 Inventaire</RouterLink>
         <RouterLink to="/costs" class="nav-link">💶 Coûts</RouterLink>

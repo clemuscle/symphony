@@ -16,8 +16,9 @@ const router = createRouter({
   routes: [
     { path: '/login', component: Login, meta: { public: true } },
     { path: '/setup', component: Setup, meta: { skipSetupCheck: true } },
-    { path: '/', component: Catalogue },
-    { path: '/projects', component: Projects },
+    { path: '/', component: Projects },
+    { path: '/catalogue', component: Catalogue },
+    { path: '/projects', redirect: '/' },
     { path: '/deployments', component: Deployments },
     { path: '/inventory', component: Inventory },
     { path: '/costs', component: Costs },
