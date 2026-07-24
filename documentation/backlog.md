@@ -185,7 +185,7 @@ nouveau type de provider "Monitoring" ?) à passer devant
 (pas de RBAC granulaire pour l'instant) ; multi-provider en **design
 seulement**, pas d'implémentation dans ce cycle.
 
-### C1 🟢 Mode "super admin" — bascule sur le rôle existant, UI façon GitLab
+### C1 ✅ Livré (2026-07-24, `10771cf`) — Mode "super admin" — bascule sur le rôle existant, UI façon GitLab
 
 **Constat code** : une route `/admin` existe déjà, gated par
 `state.user?.dev_mode || state.user?.role === 'admin'`
@@ -365,7 +365,7 @@ aucun item 🟡 en attente de clarification.
 | B3 — jobs/images/branches | ✅ livré | M (extension SCMProvider) | — |
 | A1 — seed démo multi-stades | 🟢 | S | — |
 | A2 — doc démo pipeline complet (inclut A3) | 🟢 | XS (doc) | — |
-| C1 — mode super-admin (bascule UI) | 🟢 | XS | — |
+| C1 — mode super-admin (bascule UI) | ✅ livré | XS | — |
 | D1 — environment + tags | 🟢 | S (migration additive) | politique rétention (Q ouverte #1, hors scope de ce ticket) |
 | F1 — templating granulaire (variables) | 🟢 | M | Q ouverte #3 résiduelle traitée dans le même ticket |
 | C2 — multi-provider (design seul, pas de code) | 🟢 (livrable = doc) | S | A4 reste différé |
