@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Catalogue from '../views/Catalogue.vue'
 import Projects from '../views/Projects.vue'
+import ProjectDetail from '../views/ProjectDetail.vue'
 import Deployments from '../views/Deployments.vue'
 import Inventory from '../views/Inventory.vue'
 import Costs from '../views/Costs.vue'
@@ -19,6 +20,7 @@ const router = createRouter({
     { path: '/', component: Projects },
     { path: '/catalogue', component: Catalogue },
     { path: '/projects', redirect: '/' },
+    { path: '/projects/:name', component: ProjectDetail },
     { path: '/deployments', component: Deployments },
     { path: '/inventory', component: Inventory },
     { path: '/costs', component: Costs },
