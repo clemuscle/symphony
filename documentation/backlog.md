@@ -127,7 +127,7 @@ demande une page à part au clic sur un projet.
 - `Projects.vue` redevient une liste compacte (nom, statut, langage, lien),
   chaque ligne route vers le détail.
 
-### B3 🟢 Enrichir le détail projet : 5 derniers jobs, images, branches (5 max, défaut en premier)
+### B3 ✅ Livré (2026-07-24, `b3ee341`) — Enrichir le détail projet : 5 derniers jobs, images, branches (5 max, défaut en premier)
 
 **Spec** :
 - **5 derniers jobs/pipelines** : déjà disponible via l'endpoint pipelines
@@ -362,7 +362,7 @@ aucun item 🟡 en attente de clarification.
 |---|---|---|---|
 | B1 — accueil = projets | ✅ livré | XS (routing) | — |
 | B2 — page détail projet | ✅ livré | S | B3 |
-| B3 — jobs/images/branches | 🟢 | M (extension SCMProvider) | — |
+| B3 — jobs/images/branches | ✅ livré | M (extension SCMProvider) | — |
 | A1 — seed démo multi-stades | 🟢 | S | — |
 | A2 — doc démo pipeline complet (inclut A3) | 🟢 | XS (doc) | — |
 | C1 — mode super-admin (bascule UI) | 🟢 | XS | — |
