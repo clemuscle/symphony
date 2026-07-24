@@ -59,19 +59,30 @@ existante (`GET /api/v1/projects/:name/pipelines`). Le travail restant est
   que `CIProvider.GetPipelineStatus` renvoie déjà ; à vérifier avant d'ajouter
   du code.
 
-### A3 🟡 (Futur) L'utilisateur enregistre lui-même un provider dans la démo
+### A3 🟢 L'utilisateur enregistre lui-même un provider dans la démo — résolu, fusionné dans A2
 
-**Bloqué sur** : ambiguïté à trancher avec le fondateur. Deux lectures très
-différentes :
-- Enregistrer une **instance** d'un type de provider déjà compilé dans
-  Symphony (ex: une nouvelle URL/token GitLab via le wizard) → cohérent avec
-  l'architecture, c'est juste exposer le wizard existant en démo.
-- Enregistrer un **type** de provider non compilé (un adaptateur inconnu) →
-  contredit frontalement la décision d'architecture n°2 (drivers compilés,
-  jamais de plugin dynamique runtime).
+**Réponse (2026-07-24)** : ça ne peut être qu'une **instance** d'un type déjà
+compilé — enregistrer un *type* inconnu contredirait la décision
+d'architecture n°2 (drivers compilés, jamais de plugin dynamique runtime), et
+le multi-provider par catégorie reste de toute façon au stade design-only
+(C2), donc "enregistrer un second provider de la même catégorie" n'est même
+pas buildable dans ce cycle.
 
-**Action requise** : confirmer avec le fondateur laquelle des deux lectures
-est visée avant d'écrire une spec. Voir question posée en fin de document.
+En relisant le retour à la lumière de ça, la lecture la plus utile n'est pas
+"ajouter un 2ᵉ provider" mais : **faire dérouler le wizard de config par
+l'utilisateur lui-même pendant la démo**, plutôt que de le laisser
+pré-configuré silencieusement par le script d'infra. C'est exactement le
+principe déjà documenté dans la section Sécurité de CLAUDE.md ("si
+`SYMPHONY_DEV_MODE` dispense aussi de la config, le wizard n'est jamais
+réellement exercé en dev/démo — bug déjà rencontré une fois").
+
+**Spec** : ce point n'est plus un item séparé, il devient une exigence
+explicite de **A2** — le script de démo (infra) ne doit préconfigurer que ce
+qui est strictement nécessaire pour que l'app démarre (base Postgres, GitLab
+local up), et `DEMO.md` doit faire passer l'utilisateur par `/setup` pour
+saisir lui-même au moins un provider (ex: token GitLab), avant le seed de
+projets (A1). Aucun changement de code requis au-delà de A1/A2, seulement
+l'ordre des étapes dans `DEMO.md`.
 
 ### A4 🔴 Intégration d'un projet déjà existant (GitHub.com + Docker Hub + AWS)
 
@@ -136,18 +147,35 @@ demande une page à part au clic sur un projet.
   à risque faible, pas d'exécution applicative, rien ne contredit la
   décision n°3.
 
-### B4 🟡 Graphiques / métriques sur la page détail
+### B4 🟢 Panneau d'état opérationnel (pas des graphiques) sur la page détail — résolu
 
-**Bloqué sur** : le fondateur a lui-même laissé ce point volontairement flou
-("à voir si nécessaire, quelles métriques"). CLAUDE.md est explicite : le
-monitoring poussé est hors MVP (lien externe Prometheus uniquement). Ne rien
-construire tant que la liste de métriques n'est pas choisie — le risque est
-de reconstruire un mini-Grafana alors que le produit promet justement de ne
-pas le faire.
+**Réponse (2026-07-24)** : ne pas construire de graphiques/métriques
+numériques (CPU, latence, etc.) pour ce cycle. Deux raisons cumulatives : le
+fondateur a lui-même laissé le point flou, et CLAUDE.md est explicite — le
+monitoring poussé reste hors MVP (lien externe Prometheus, déjà implémenté
+via `monitoring_url` dans `golden-path.yaml` et affiché dans `Projects.vue`).
+Construire des graphiques inline reviendrait à reconstruire un mini-Grafana,
+exactement ce que le produit promet de ne pas faire.
 
-**Action requise** : si le fondateur veut avancer là-dessus, définir d'abord
-la liste fermée de métriques avant toute spec (voir question en fin de
-document).
+**Proposition** : à la place, un **panneau de statut opérationnel** — pas des
+métriques au sens Prometheus, mais des données que Symphony possède déjà
+nativement, donc sans risque d'intégration ni de nouvelle dépendance :
+- **État des déploiements par environnement** (recette/préprod/prod, cf. D1)
+  — running/stopped/failed, via `DeployProvider.ListContainers()`
+  (`internal/providers/interfaces.go:82-87`), déjà en lecture seule.
+- **Taux de succès des N derniers pipelines** (ex: 10 derniers) — dérivé de
+  la table `pipelines` déjà en base, aucun nouveau provider requis.
+- **Dernière image poussée par environnement** — via
+  `RegistryProvider.ListImages()` (déjà existant), croisée avec B3.
+- Le lien vers `monitoring_url` reste le point d'entrée pour tout ce qui est
+  métriques réelles (CPU, mémoire, latence) — Symphony ne duplique jamais ce
+  que Prometheus fait déjà.
+
+**Ce qui reste explicitement hors scope** : toute jauge/graphique temporel,
+tout appel direct à l'API Prometheus depuis Symphony. Si un besoin réel
+apparaît plus tard, ce serait une décision d'architecture à part entière (un
+nouveau type de provider "Monitoring" ?) à passer devant
+`architecture-guardian`, pas une extension silencieuse de ce panneau.
 
 ---
 
@@ -250,19 +278,39 @@ aujourd'hui ni colonne `environment`, ni notion de tag — seul un champ texte
 
 ## EPIC E — Méthodologie d'administration de la plateforme (gitflow, triggers)
 
-### E1 🟡 Comment un admin DevOps configure Symphony selon le mode de travail de son entreprise
+### E1 🟢 Comment un admin DevOps configure Symphony selon le mode de travail de son entreprise — résolu
 
-Ce n'est pas une feature au sens où le reste du backlog l'entend — c'est une
-question de recherche produit encore ouverte, que le fondateur pose
-lui-même sans y répondre. Elle touche potentiellement au contrat
-`CIProvider` (`TriggerPipeline`, `SetupPipeline`) et aux templates de
-pipeline (EPIC F), donc rien ne doit être conçu avant d'avoir une réponse.
+**Réponse (2026-07-24)** : en relisant `CIProvider` (`internal/providers/interfaces.go:44-49`),
+Symphony n'a **pas besoin de connaître** gitflow, trunk-based ou toute autre
+convention comme concept de premier ordre. `TriggerPipeline(projectPath, ref
+string, ...)` prend déjà un `ref` (branche/tag) générique, et
+`GetPipelineStatus` ne présuppose aucune structure de branches particulière.
+Le comportement différencié par branche (ex: `develop` déclenche un déploiement
+recette auto, `main` non ; `release/*` a des règles différentes) est déjà
+nativement exprimable dans `ci/pipeline.yml` via la syntaxe `rules:`/`only:`/
+`except:` de l'outil CI cible (GitLab CI aujourd'hui) — **sans aucun code
+Symphony**, cohérent avec la décision n°5 (templates déclaratifs, admin
+n'écrit jamais de Go) et la décision n°3 (exécution toujours déléguée à
+l'outil CI).
 
-**Action requise** : le fondateur doit d'abord lister *quelles* méthodologies
-(gitflow ? trunk-based ? déclenchement manuel vs automatique sur push/MR ?)
-Symphony prétend supporter au MVP. Sans cette liste, impossible de
-distinguer "ce qui doit être configurable par golden path" de "ce qui reste
-une convention imposée par Symphony". Voir question en fin de document.
+**Ce que Symphony garantit, indépendamment de la méthodologie choisie par
+l'entreprise** :
+- le déclenchement manuel depuis l'UI fonctionne pour n'importe quel `ref`
+  (branche/tag), pas seulement la branche par défaut ;
+- le suivi de statut (webhook + réconciliation 30s) fonctionne quel que soit
+  le branching model, puisqu'il est indexé sur `pipeline_id`, pas sur un nom
+  de branche particulier ;
+- le template `ci/pipeline.yml` de chaque golden path reste éditable par
+  l'admin pour y ajouter ses propres règles par branche, sans que Symphony
+  n'impose une convention.
+
+**Conséquence pour le backlog** : pas de ticket de développement séparé.
+Documenter simplement, dans le futur guide admin (`config/golden-paths/*/README`
+ou équivalent), que la stratégie de branching est **la responsabilité de
+l'admin dans le template CI**, pas une fonctionnalité de Symphony. Si un
+besoin concret et bloquant apparaît plus tard (ex: un vrai client qui ne peut
+pas exprimer sa règle en `rules:` GitLab CI), rouvrir ce point avec un cas
+précis plutôt que dans l'abstrait.
 
 ---
 
@@ -307,48 +355,48 @@ est un template statique par golden path, aucune variable de choix d'outil.
 
 ## Résumé priorisation (mis à jour après arbitrages du 2026-07-24)
 
+Tous les points sont désormais résolus ou explicitement différés — plus
+aucun item 🟡 en attente de clarification.
+
 | Item | Statut | Effort estimé | Bloque quoi |
 |---|---|---|---|
 | B1 — accueil = projets | 🟢 | XS (routing) | — |
 | B2 — page détail projet | 🟢 | S | B3 |
 | B3 — jobs/images/branches | 🟢 | M (extension SCMProvider) | — |
 | A1 — seed démo multi-stades | 🟢 | S | — |
-| A2 — doc démo pipeline complet | 🟢 | XS (doc) | — |
+| A2 — doc démo pipeline complet (inclut A3) | 🟢 | XS (doc) | — |
 | C1 — mode super-admin (bascule UI) | 🟢 | XS | — |
 | D1 — environment + tags | 🟢 | S (migration additive) | politique rétention (Q ouverte #1, hors scope de ce ticket) |
 | F1 — templating granulaire (variables) | 🟢 | M | Q ouverte #3 résiduelle traitée dans le même ticket |
 | C2 — multi-provider (design seul, pas de code) | 🟢 (livrable = doc) | S | A4 reste différé |
-| E1 — méthodologie admin (gitflow/triggers) | 🟡 | recherche produit — réponse libre attendue | F1 v2 potentiellement |
-| A3 — provider en démo (instance vs type) | 🟡 | dépend clarification | — |
-| B4 — graphiques/métriques | 🟡 | dépend liste métriques | — |
+| E1 — méthodologie admin (gitflow/triggers) | 🟢 (pas de dev requis, cf. réponse) | — (documentation seule) | — |
+| B4 — panneau de statut opérationnel (pas de graphiques) | 🟢 | S | — |
 | A4 — import projet existant | 🔴 | — | dépend d'un futur C2 "implémenter" |
 
-Ordre d'attaque recommandé : **B1 → B2 → B3 → A1 → A2 → C1 → D1 → F1 → C2**
-(tout actionnable dès maintenant). E1, A3 et B4 restent en attente d'une
-réponse libre du fondateur (voir ci-dessous) — pas de spec tant que ces
-listes ne sont pas données, conformément à la règle CLAUDE.md sur les
-zones non tranchées.
+Ordre d'attaque recommandé : **B1 → B2 → B3 → A1 → A2 → C1 → D1 → F1 → B4 →
+C2**, E1 se limitant à une note dans la doc admin (pas de développement).
+A4 reste le seul item différé, dans l'attente d'une future décision
+d'implémenter réellement le multi-provider (C2).
 
 ---
 
-## Encore à préciser (réponse libre, pas un choix parmi des options)
+## Décisions prises le 2026-07-24 (log)
 
-Ces trois points ne se prêtent pas à un choix multiple — ils demandent une
-liste ou une clarification en texte libre de ta part avant qu'une spec
-puisse être écrite :
+Pour traçabilité — ces réponses ont été proposées par Claude en rôle de CTO
+(cf. `.claude/CLAUDE.md`, section "comment travailler sur ce projet") et
+valent décision de travail jusqu'à contre-ordre du fondateur :
 
-1. **E1 — méthodologies à supporter au MVP** : quelles stratégies de
-   branching/déclenchement Symphony doit-il connaître (gitflow ? trunk-based
-   ? déclenchement manuel uniquement vs auto sur push/MR) ? Sans cette
-   liste, impossible de savoir ce qui doit devenir un paramètre de golden
-   path vs rester une convention imposée par Symphony.
-2. **A3 — "l'utilisateur enregistre un provider" en démo** : confirmer que
-   ça veut dire enregistrer une *instance* d'un type déjà compilé (ex:
-   pointer vers un second GitLab via le wizard) et pas un *type* de provider
-   inconnu de Symphony (ce qui contredirait la décision n°2 sur les drivers
-   compilés).
-3. **B4 — métriques à afficher sur la page détail projet** : quelle liste
-   fermée de métriques (ex: CPU/mémoire des instances, taux d'erreur,
-   latence...) ? Sans liste fermée, risque de reconstruire un mini-Grafana
-   alors que le produit promet justement un lien externe vers Prometheus
-   pour aller plus loin.
+1. **E1 — méthodologies à supporter au MVP** : Symphony ne modélise aucune
+   méthodologie (gitflow, trunk-based...) comme concept propre. Le contrat
+   `CIProvider` est déjà générique sur `ref` ; la logique par branche se
+   pose dans `ci/pipeline.yml` via la syntaxe native de l'outil CI, pas dans
+   Symphony. Aucun développement requis — juste une note dans la doc admin.
+2. **A3 — "l'utilisateur enregistre un provider" en démo** : confirmé comme
+   instance d'un type déjà compilé, et reformulé en exigence pour A2 — le
+   script de démo laisse l'utilisateur passer par `/setup` lui-même au lieu
+   de tout préconfigurer silencieusement.
+3. **B4 — métriques sur la page détail projet** : pas de graphiques
+   temporels pour ce cycle. À la place, un panneau de statut opérationnel
+   basé sur des données déjà possédées par Symphony (état des déploiements,
+   taux de succès des derniers pipelines, dernière image poussée), le lien
+   `monitoring_url` restant le point d'entrée pour les vraies métriques.
