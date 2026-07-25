@@ -18,7 +18,18 @@ Chaque item est classé :
 
 ## EPIC A — Démo réaliste, multi-projets
 
-### A1 ✅ Livré (2026-07-25, `0f536cc`) — Seed de projets à plusieurs stades d'avancement
+### A1 ✅ Livré (2026-07-25, `0f536cc`, automatisation complète en `a4bef28`) — Seed de projets à plusieurs stades d'avancement
+
+**Mise à jour (2026-07-25, en session)** : premier retour direct de
+l'utilisateur en testant la démo — le bootstrap GitLab (groupe, tokens,
+runner) exigeait encore des manipulations manuelles répétées à chaque
+run. `scripts/demo-up.sh` automatise désormais tout ce qui n'a aucune
+valeur pédagogique (groupe/projet/token/runner via l'API GitLab,
+idempotent) ; seul le wizard Symphony reste manuel — voir `DEMO.md`. Bug
+trouvé en testant : les lookups d'existence avec `curl -f` tuaient le
+script silencieusement sous `set -e`/`pipefail` au premier 404 (cas
+normal du premier run) — corrigé par une vérification explicite du JSON
+retourné.
 
 **Besoin** : la démo actuelle ne montre qu'un scénario de création à vide.
 Le retour demande de pré-charger plusieurs projets à des stades différents
