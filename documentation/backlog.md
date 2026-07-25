@@ -206,17 +206,16 @@ d'environnement dans la carte Déploiement (déjà renvoyée par l'API,
 simplement pas affichée jusqu'ici). "État des déploiements par
 environnement" était déjà couvert par D1 — rien à refaire.
 
-**Découverte pendant la vérification, non corrigée ici (hors scope)** : voir
-EPIC G ci-dessous — `triggerPipelineHandler` ("Lancer pipeline") peut
-déclencher un vrai déploiement sans que Symphony n'en garde aucune trace,
-ce qui rend ce panneau honnête vis-à-vis de la base... mais la base
-elle-même peut être fausse sur ce chemin précis.
+**Découverte pendant la vérification, corrigée séparément** : voir EPIC G
+ci-dessous — `triggerPipelineHandler` ("Lancer pipeline") pouvait
+déclencher un vrai déploiement en contournant le gate RoleLead, sans que
+Symphony n'en garde aucune trace. Corrigé en `d460583`.
 
 ---
 
 ## EPIC G — Bug découvert en testant B4 : déploiement invisible via "Lancer pipeline"
 
-### G1 🟡 `triggerPipelineHandler` peut déployer en prod sans créer de ligne `deployments`
+### G1 ✅ Corrigé (2026-07-25, `d460583`) — `triggerPipelineHandler` contournait le gate RoleLead et déployait en prod sans créer de ligne `deployments`
 
 **Constat, vérifié en conditions réelles (2026-07-25) contre le vrai stack de
 démo** : le golden path route tout pipeline déclenché par Symphony (pas
@@ -244,12 +243,45 @@ pas que B4 (ou toute autre vue) omette une donnée — c'est que la donnée
 elle-même n'est jamais créée. Aucun panneau de statut, aussi honnête
 soit-il envers la base, ne peut réparer ça.
 
-**Action requise avant de corriger** : décider si `triggerPipelineHandler`
-doit (a) toujours créer une ligne `deployments` comme les deux autres
-handlers, (b) refuser de déclencher un pipeline "nu" tant qu'aucune
-variable ne précise l'intention (test/deploy/recette), ou (c) autre chose —
-c'est un choix de contrat API, pas une correction évidente à deviner
-silencieusement. Ne pas implémenter avant clarification avec le fondateur.
+**En creusant plus loin avant de proposer un correctif** : ce n'est pas
+qu'un problème de traçabilité. `POST /api/v1/deployments` (Déployer) et
+`DELETE /api/v1/deployments/{id}` (Arrêter) sont gardés `RoleLead`, mais
+`POST /api/v1/pipelines/trigger` n'était gardé qu'à `RoleDeveloper`. Le
+commentaire de `reservedPipelineVars` (`handlers.go`) explique que
+`RECETTE_NAME`/`DESTROY_*` sont bloquées sur cet endpoint précisément pour
+empêcher un `developer` de contourner le gate `RoleLead` en les glissant
+dans `vars` — mais le cas *par défaut* (aucune variable) contourne ce même
+gate sans avoir besoin d'aucune variable réservée. Un utilisateur
+`developer` pouvait donc déployer en prod par un chemin détourné,
+exactement le contournement que le code cherchait à empêcher par un autre
+chemin. Le rôle `developer` est explicitement documenté dans
+`internal/rbac/rbac.go` comme pouvant "trigger CI, déploie en recette" —
+l'intention RBAC d'origine (CI = safe pour un developer, deploy prod =
+réservé à un lead) a divergé du comportement réel des règles CI du golden
+path.
+
+**Correctif appliqué** (validé par le fondateur avant implémentation,
+minimal, sans toucher aux templates CI) :
+1. Route élevée à `RoleLead`, même niveau que `/deployments`.
+2. `triggerPipelineHandler` crée désormais une ligne `deployments`
+   (symétrique à `deployProject`/`createRecette`) — plus de déploiement
+   invisible ni impossible à arrêter, même pour un lead légitime.
+3. `ProjectDetail.vue` : bouton "Lancer pipeline" passe de `canDevelop` à
+   `canDeploy`, pour ne pas afficher une action qui échouerait en 403.
+
+**Effet de bord assumé** : un `developer` perd la capacité de déclencher un
+pipeline "nu" via Symphony — il n'y avait de toute façon aucun mode "juste
+lancer les tests" atteignable par ce chemin (`test`/`build` ne tournent que
+sur un vrai push git, jamais sur un trigger Symphony, voir `DEMO.md` §11).
+Restaurer un vrai mode test-only nécessiterait de revoir les règles CI des
+golden paths — explicitement hors scope de ce correctif de sécurité.
+
+Vérifié en conditions réelles contre le vrai stack de démo : cycle complet
+déclenchement → `pending` → `running` → arrêt via l'UI → `stopped`, aucune
+erreur console. Non vérifiable en direct dans cette session le rejet 403
+pour un rôle `developer` réel (`SYMPHONY_DEV_MODE=1` contourne entièrement
+les contrôles de rôle) — confiance basée sur l'identité de motif avec la
+route `/deployments` déjà en production.
 
 ---
 
@@ -436,13 +468,13 @@ aucun item 🟡 en attente de clarification.
 | C2 — multi-provider (design seul, pas de code) | ✅ livré (doc) | S | A4 reste différé |
 | E1 — méthodologie admin (gitflow/triggers) | 🟢 (pas de dev requis, cf. réponse) | — (documentation seule) | — |
 | B4 — panneau de statut opérationnel (pas de graphiques) | ✅ livré | S | — |
-| G1 — deploy invisible via "Lancer pipeline" | 🟡 | dépend clarification | — |
+| G1 — contournement RBAC + deploy invisible | ✅ corrigé | S | — |
 | A4 — import projet existant | 🔴 | — | dépend d'un futur C2 "implémenter" |
 
 Ordre d'attaque recommandé : **B1 → B2 → B3 → A1 → A2 → C1 → D1 → F1 → B4 →
-C2**, E1 se limitant à une note dans la doc admin (pas de développement).
-G1 découvert pendant la vérification de B4 — nécessite une décision du
-fondateur avant tout code (voir EPIC G).
+G1 → C2**, E1 se limitant à une note dans la doc admin (pas de
+développement). G1, découvert et corrigé pendant la vérification de B4,
+clôt tous les items actionnables du backlog.
 A4 reste le seul item différé, dans l'attente d'une future décision
 d'implémenter réellement le multi-provider (C2).
 
