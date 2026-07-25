@@ -18,7 +18,7 @@ Chaque item est classé :
 
 ## EPIC A — Démo réaliste, multi-projets
 
-### A1 🟢 Seed de projets à plusieurs stades d'avancement
+### A1 ✅ Livré (2026-07-25, `0f536cc`) — Seed de projets à plusieurs stades d'avancement
 
 **Besoin** : la démo actuelle ne montre qu'un scénario de création à vide.
 Le retour demande de pré-charger plusieurs projets à des stades différents
@@ -42,7 +42,7 @@ pour que l'utilisateur voie tout de suite la diversité des statuts possibles.
   s'exécuter *après* que les providers réels (ou de démo) soient configurés,
   jamais en les court-circuitant.
 
-### A2 🟢 Parcours "créer mon propre projet" en démo, avec visibilité complète du pipeline
+### A2 ✅ Livré (2026-07-25, `0f536cc`) — Parcours "créer mon propre projet" en démo, avec visibilité complète du pipeline
 
 **Besoin** : au-delà des projets pré-créés, l'utilisateur qui lance la démo
 doit pouvoir créer un projet lui-même et suivre tests → build → push
@@ -58,6 +58,29 @@ existante (`GET /api/v1/projects/:name/pipelines`). Le travail restant est
   a un statut visible distinct (pas juste "running" global) — dépend de ce
   que `CIProvider.GetPipelineStatus` renvoie déjà ; à vérifier avant d'ajouter
   du code.
+
+**Ce que la vérification a trouvé (aucun code ajouté, conforme au cadrage
+"documentaire/UX")** : `GetPipelineStatus` ne renvoie que le statut global
+du pipeline, jamais par job — confirmé volontairement pas de code pour
+cette granularité (scope de ce ticket). Deux comportements réels plus
+importants découverts en creusant les règles `rules:` du golden path,
+documentés dans `DEMO.md` (§11-12) :
+1. **Symphony ne trace jamais le pipeline automatique déclenché par un
+   push git** — seuls les pipelines que Symphony déclenche lui-même
+   (déploiement, recette, bouton "Lancer pipeline") sont enregistrés dans
+   sa table `pipelines`. La fiche projet affiche donc "aucun pipeline
+   lancé" même après un build réussi : comportement normal, pas un bug ni
+   une fenêtre de course.
+2. **Le bouton "Lancer pipeline" ne "rejoue" pas les tests** — il route
+   vers le job `deploy` du golden path (redéploiement prod réel), puisque
+   `test`/`build` sont conditionnés à un déclenchement par push git, jamais
+   par Symphony.
+
+Vérifié en conditions réelles via `make demo-seed` (A1) contre un vrai
+GitLab CE : les 4 états s'affichent correctement dans l'UI reconstruite
+aujourd'hui (B1-D1), y compris la garantie "un état terminal ne se rouvre
+jamais" (`demo-failed` reste `failed` même après qu'une image a fini par
+être poussée).
 
 ### A3 🟢 L'utilisateur enregistre lui-même un provider dans la démo — résolu, fusionné dans A2
 
@@ -354,8 +377,8 @@ aucun item 🟡 en attente de clarification.
 | B1 — accueil = projets | ✅ livré | XS (routing) | — |
 | B2 — page détail projet | ✅ livré | S | B3 |
 | B3 — jobs/images/branches | ✅ livré | M (extension SCMProvider) | — |
-| A1 — seed démo multi-stades | 🟢 | S | — |
-| A2 — doc démo pipeline complet (inclut A3) | 🟢 | XS (doc) | — |
+| A1 — seed démo multi-stades | ✅ livré | S | — |
+| A2 — doc démo pipeline complet (inclut A3) | ✅ livré | XS (doc) | — |
 | C1 — mode super-admin (bascule UI) | ✅ livré | XS | — |
 | D1 — environment + tags | ✅ livré | S (migration additive) | politique rétention (Q ouverte #1, hors scope de ce ticket) |
 | F1 — templating granulaire (variables) | ✅ livré | M | Q ouverte #3 résiduelle traitée dans le même ticket |
