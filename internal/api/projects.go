@@ -27,6 +27,21 @@ func validateSlug(name string) error {
 	return nil
 }
 
+// deployEnvironments — deployProject ne couvre jamais "recette" : c'est le
+// rôle de createRecette, qui force cette valeur lui-même (voir EPIC D du
+// backlog). Un déploiement "recette" créé via /deployments contournerait la
+// distinction déjà portée par recette_name.
+var deployEnvironments = map[string]bool{"prod": true, "preprod": true}
+
+func validateTags(tags []string) error {
+	for _, t := range tags {
+		if !validSlug.MatchString(t) {
+			return fmt.Errorf("tag %q invalide (mêmes règles qu'un slug)", t)
+		}
+	}
+	return nil
+}
+
 type CreateProjectRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -197,7 +212,9 @@ func (s *Server) deployProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ProjectName string `json:"project_name"`
+		ProjectName string   `json:"project_name"`
+		Environment string   `json:"environment"`
+		Tags        []string `json:"tags"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
@@ -205,6 +222,17 @@ func (s *Server) deployProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ProjectName == "" {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "project_name requis"})
+		return
+	}
+	if req.Environment == "" {
+		req.Environment = "prod"
+	}
+	if !deployEnvironments[req.Environment] {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "environment doit être 'prod' ou 'preprod'"})
+		return
+	}
+	if err := validateTags(req.Tags); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -226,6 +254,8 @@ func (s *Server) deployProject(w http.ResponseWriter, r *http.Request) {
 		Image:       project.RegistryURL,
 		Port:        project.Port,
 		Status:      "pending",
+		Environment: req.Environment,
+		Tags:        req.Tags,
 	}
 	if err := s.db.CreateDeployment(d); err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": "db: " + err.Error()})
@@ -307,8 +337,9 @@ func (s *Server) createRecette(w http.ResponseWriter, r *http.Request) {
 	}
 	projectName := chi.URLParam(r, "name")
 	var req struct {
-		RecetteName string `json:"recette_name"`
-		Port        int    `json:"port"`
+		RecetteName string   `json:"recette_name"`
+		Port        int      `json:"port"`
+		Tags        []string `json:"tags"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
@@ -320,6 +351,10 @@ func (s *Server) createRecette(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := validateSlug(req.RecetteName); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "recette_name: " + err.Error()})
+		return
+	}
+	if err := validateTags(req.Tags); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -346,6 +381,11 @@ func (s *Server) createRecette(w http.ResponseWriter, r *http.Request) {
 		Status:      "pending",
 		RecetteName: req.RecetteName,
 		URL:         fmt.Sprintf("http://localhost:%d", req.Port),
+		// "recette" est fixé ici par le handler, jamais lu depuis le body —
+		// c'est la nature même de cet endpoint, pas une valeur déduite du
+		// nom de la recette (voir documentation/backlog.md EPIC D).
+		Environment: "recette",
+		Tags:        req.Tags,
 	}
 	if err := s.db.CreateDeployment(d); err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": "db: " + err.Error()})

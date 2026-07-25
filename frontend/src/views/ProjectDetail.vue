@@ -112,6 +112,10 @@
         <div class="card-title">🚀 Déploiement</div>
         <div class="card-body">
           <div class="inline-actions" v-if="canDeploy">
+            <select v-model="deployEnvironment" class="env-select">
+              <option value="prod">prod</option>
+              <option value="preprod">preprod</option>
+            </select>
             <button
               class="btn-ghost"
               :disabled="!project.registry_url || deployState.loading"
@@ -122,27 +126,32 @@
             </button>
           </div>
 
-          <div class="deploy-status" v-if="deployState.loading || deployState.error || (deployment && deployment.status !== 'stopped')">
+          <div class="deploy-status" v-if="deployState.loading || deployState.error">
             <template v-if="deployState.loading">
               <span class="status-badge sm pending">⏳ lancement…</span>
             </template>
             <template v-else-if="deployState.error">
               <span class="status-badge sm failed">{{ deployState.error }}</span>
             </template>
-            <template v-else-if="deployment">
+          </div>
+
+          <div class="env-deploy-list" v-if="Object.keys(deploymentsByEnv).length">
+            <div v-for="(d, env) in deploymentsByEnv" :key="env" class="deploy-status">
+              <span :class="['env-badge', env]">{{ env }}</span>
               <a
-                v-if="deployment.status === 'running'"
-                :href="deployment.url || `http://localhost:${deployment.port}`"
+                v-if="d.status === 'running'"
+                :href="d.url || `http://localhost:${d.port}`"
                 target="_blank"
                 class="deploy-link"
-              >:{{ deployment.port }} ↗</a>
-              <span :class="['status-badge', 'sm', deployment.status]">{{ deployment.status }}</span>
+              >:{{ d.port }} ↗</a>
+              <span :class="['status-badge', 'sm', d.status]">{{ d.status }}</span>
+              <span class="tag-chip" v-for="t in d.tags" :key="t">{{ t }}</span>
               <button
-                v-if="canDeploy && deployment.status === 'running'"
+                v-if="canDeploy && d.status === 'running'"
                 class="btn-ghost btn-xs btn-danger"
-                @click="stopDeploy"
+                @click="stopDeploy(d)"
               >⏹ Arrêter</button>
-            </template>
+            </div>
           </div>
           <div v-else class="empty-inline">Pas de déploiement actif</div>
         </div>
@@ -172,6 +181,7 @@
               <span class="recette-name">{{ rec.recette_name }}</span>
               <span class="recette-port">:{{ rec.port }}</span>
               <span :class="['status-badge', 'sm', rec.status]">{{ rec.status }}</span>
+              <span class="tag-chip" v-for="t in rec.tags" :key="t">{{ t }}</span>
               <a v-if="rec.url" :href="rec.url" target="_blank" class="btn-ghost btn-xs">↗</a>
               <button
                 v-if="canDevelop"
@@ -222,7 +232,8 @@ const pipelineBranch = ref('main')
 const recentPipelines = ref([])
 
 const deployState = ref({ loading: false, error: null })
-const deployment = ref(null)
+const deploymentsByEnv = ref({})
+const deployEnvironment = ref('prod')
 
 const stepsOpen = ref(false)
 const stepsLoading = ref(false)
@@ -294,7 +305,13 @@ async function loadBranches(p) {
 async function loadDeployment(p) {
   try {
     const { data } = await api.listDeployments()
-    deployment.value = (data || []).find(d => d.project_name === p.name && !d.recette_name) || null
+    const byEnv = {}
+    for (const d of data || []) {
+      // Liste déjà triée DESC par created_at côté API — le premier
+      // rencontré par environnement est le plus récent.
+      if (d.project_name === p.name && !byEnv[d.environment]) byEnv[d.environment] = d
+    }
+    deploymentsByEnv.value = byEnv
   } catch { /* non bloquant */ }
 }
 
@@ -373,19 +390,19 @@ function pollStatus(id, attempts = 0) {
 async function deployProject() {
   deployState.value = { loading: true }
   try {
-    const { data } = await api.deploy({ project_name: project.value.name })
-    deployment.value = data
+    const { data } = await api.deploy({ project_name: project.value.name, environment: deployEnvironment.value })
+    deploymentsByEnv.value = { ...deploymentsByEnv.value, [data.environment]: data }
     deployState.value = { loading: false, error: null }
   } catch (e) {
     deployState.value = { loading: false, error: e.response?.data?.error || e.message }
   }
 }
 
-async function stopDeploy() {
+async function stopDeploy(d) {
   try {
     // La destruction est déléguée au pipeline CI — le statut réel revient via
     // le polling de refresh(), pas ici.
-    await api.stopDeployment(deployment.value.id)
+    await api.stopDeployment(d.id)
   } catch { /* non bloquant */ }
 }
 
@@ -467,6 +484,7 @@ h2 { font-size: 22px; font-weight: 700; }
 }
 .pipeline-status { background: #f8f9fb; }
 .deploy-status { background: #f0f4ff; }
+.env-deploy-list { display: flex; flex-direction: column; gap: 6px; }
 .pipeline-label { color: #888; flex: 1; }
 .pipeline-id { color: #666; font-family: monospace; font-size: 11px; }
 .pipeline-link { color: #2b6cb0; text-decoration: none; }
@@ -491,6 +509,16 @@ h2 { font-size: 22px; font-weight: 700; }
 .branch-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .branch-chip { font-size: 12px; padding: 4px 12px; border-radius: 20px; background: #f4f4f7; color: #555; font-family: monospace; }
 .branch-chip.default { background: #eef2ff; color: #4338ca; font-weight: 600; }
+
+.env-select { padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px; color: #555; background: white; }
+.env-select:focus { border-color: #667eea; outline: none; }
+
+.env-badge { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; text-transform: uppercase; letter-spacing: .03em; }
+.env-badge.prod { background: #fef2f2; color: #b91c1c; }
+.env-badge.preprod { background: #fffbeb; color: #92400e; }
+.env-badge.recette { background: #eff6ff; color: #1d4ed8; }
+
+.tag-chip { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #f4f4f7; color: #666; font-family: monospace; }
 
 .status-badge { font-size: 12px; padding: 3px 10px; border-radius: 20px; font-weight: 600; white-space: nowrap; }
 .status-badge.sm { font-size: 11px; padding: 2px 8px; }
