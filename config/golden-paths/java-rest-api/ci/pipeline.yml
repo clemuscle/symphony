@@ -15,7 +15,7 @@ variables:
 test:
   stage: test
   script:
-    - mvn test
+    - {{.TestTool}}
   tags:
     - docker
   rules:

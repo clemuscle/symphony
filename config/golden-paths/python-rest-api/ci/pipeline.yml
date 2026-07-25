@@ -15,7 +15,7 @@ variables:
 test:
   stage: test
   script:
-    - pip install -r requirements.txt && pytest
+    - {{.TestTool}}
   tags:
     - docker
   rules:

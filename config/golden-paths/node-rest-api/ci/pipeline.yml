@@ -15,7 +15,7 @@ variables:
 test:
   stage: test
   script:
-    - npm ci && npm test
+    - {{.TestTool}}
   tags:
     - docker
   rules:
