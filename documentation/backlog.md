@@ -211,34 +211,25 @@ token — jamais un mécanisme d'élévation de droits côté client.
   supplémentaire — s'il faut plus de granularité, ça passe par la question
   ouverte n°2, pas par une extension ad hoc de ce bouton.
 
-### C2 🟢 (Design uniquement) Modèle de config multi-provider par catégorie
+### C2 ✅ Livré (2026-07-25) — Modèle de config multi-provider par catégorie — livrable de design
 
 **Décision** : ne pas fermer la porte à plusieurs providers par catégorie
 (scm: gitlab+github ; déploiement: docker+kube+aws), mais ne rien implémenter
 dans ce cycle — MVP reste mono-provider tel que documenté. Ce ticket est un
 **livrable de design** (document, pas de code fonctionnel).
 
-**Constat code** : `config/integrations.yaml` porte aujourd'hui un objet
-unique par catégorie (`scm:` n'est pas une liste). Le dispatch actuel
-(handlers → "le" provider d'une catégorie) suppose l'unicité partout dans
-`internal/api/` et `internal/providers/`.
+**Livrable** : voir `documentation/design-multi-provider.md`. Contient le
+schéma cible `integrations.yaml` (liste d'instances nommées, rétrocompatible
+avec la forme singulière actuelle), 3 options de mécanisme de dispatch avec
+recommandation (défaut par golden path, prolongeant le principe déjà en
+place pour F1), l'inventaire chiffré des ~16 sites du core qui supposent
+l'unicité aujourd'hui, et une complication de sécurité non anticipée par le
+retour initial : le nommage des tokens par variable d'environnement
+(`GITLAB_TOKEN`, etc.) est aujourd'hui fixe par catégorie, pas par instance
+— à trancher avant tout code, ce n'est pas un détail.
 
-**Spec du livrable** (à produire, pas à coder) :
-- Esquisser le schéma cible `integrations.yaml` avec plusieurs entrées par
-  catégorie, chacune nommée (ex: `scm: [{name: gitlab-primary, type: gitlab,
-  ...}, {name: github-secondary, type: github, ...}]`).
-- Définir le mécanisme de dispatch : à quel niveau un projet choisit "son"
-  provider parmi ceux disponibles (au moment de la création via le golden
-  path ? un défaut par golden path ? un choix explicite dans le wizard de
-  création de projet ?). C'est la vraie question de design, pas le schéma de
-  config lui-même.
-- Lister les points du core qui supposent aujourd'hui l'unicité (grep
-  `internal/api/` et `internal/providers/` pour tout endroit qui résout "le"
-  SCMProvider/DeployProvider sans paramètre de sélection) pour chiffrer
-  l'effort du jour où ce sera implémenté.
-- Ce document sert de base pour repasser devant `architecture-guardian` le
-  jour où l'implémentation réelle sera décidée — ne pas coder avant ce
-  passage.
+Aucun code produit. Ce document sert de base pour un futur passage devant
+`architecture-guardian` le jour où l'implémentation réelle sera décidée.
 
 ---
 
@@ -368,7 +359,7 @@ aucun item 🟡 en attente de clarification.
 | C1 — mode super-admin (bascule UI) | ✅ livré | XS | — |
 | D1 — environment + tags | ✅ livré | S (migration additive) | politique rétention (Q ouverte #1, hors scope de ce ticket) |
 | F1 — templating granulaire (variables) | ✅ livré | M | Q ouverte #3 résiduelle traitée dans le même ticket |
-| C2 — multi-provider (design seul, pas de code) | 🟢 (livrable = doc) | S | A4 reste différé |
+| C2 — multi-provider (design seul, pas de code) | ✅ livré (doc) | S | A4 reste différé |
 | E1 — méthodologie admin (gitflow/triggers) | 🟢 (pas de dev requis, cf. réponse) | — (documentation seule) | — |
 | B4 — panneau de statut opérationnel (pas de graphiques) | 🟢 | S | — |
 | A4 — import projet existant | 🔴 | — | dépend d'un futur C2 "implémenter" |
