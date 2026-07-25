@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
-# Symphony demo — infra uniquement.
+# Symphony demo — infra + bootstrap GitLab, entièrement automatisé.
 #
-# Ce script fait ce qui est purement mécanique et sans intérêt pédagogique :
-#   1. Vérifie les prérequis (docker, docker compose, go, node/npm, RAM, ports)
+# Ce script fait tout ce qui est mécanique et sans intérêt pédagogique :
+#   1. Vérifie les prérequis (docker, docker compose, go, node/npm, jq, RAM, ports)
 #   2. Construit le frontend une fois si besoin (assets embarqués absents)
 #   3. Démarre PostgreSQL + GitLab CE + GitLab Runner (docker compose)
-#   4. Attend que GitLab CE soit prêt
+#   4. Attend que GitLab CE soit prêt, désactive Auto DevOps
+#   5. Crée le groupe symphony-demo + le projet infra, un token SCM, et
+#      enregistre le runner — idempotent, rejouable sans tout redémarrer.
 #
-# Tout le reste (créer le groupe/projet, les tokens, enregistrer le runner,
-# configurer Symphony) se fait à la main en suivant DEMO.md — c'est
-# volontairement pas automatisé ici.
+# Il n'y a plus qu'une seule étape volontairement manuelle : coller le token
+# SCM affiché en fin de script dans le wizard Symphony (DEMO.md, étape
+# "Wizard"). C'est le seul endroit où faire remplir le formulaire soi-même a
+# une vraie valeur pédagogique (comprendre la config providers de
+# Symphony) — le reste (groupe/projet/tokens/runner GitLab) n'apprend rien
+# sur Symphony, d'où l'automatisation complète ici.
 #
 # Appel : make demo-up  (ou ./scripts/demo-up.sh depuis la racine du repo)
 
@@ -33,7 +38,8 @@ docker compose version >/dev/null 2>&1 || fail "docker compose (v2, plugin) est 
 command -v go >/dev/null || fail "go est requis pour lancer Symphony (make demo-start)"
 command -v node >/dev/null || fail "node est requis pour construire le frontend"
 command -v npm >/dev/null || fail "npm est requis pour construire le frontend"
-ok "docker, docker compose, go, node, npm présents"
+command -v jq >/dev/null || fail "jq est requis pour le bootstrap GitLab (https://jqlang.org)"
+ok "docker, docker compose, go, node, npm, jq présents"
 
 if command -v free >/dev/null 2>&1; then
   AVAIL_MB=$(free -m | awk '/^Mem:/ {print $7}')
@@ -99,11 +105,103 @@ $COMPOSE exec -T gitlab gitlab-rails runner "ApplicationSetting.current.update!(
   && ok "Auto DevOps désactivé" \
   || warn "Impossible de désactiver Auto DevOps automatiquement — si le stage 'build' d'un projet échoue avec des artefacts gl-auto-build-variables.env, relancer ce script"
 
+# ── 6. Bootstrap GitLab (groupe, projet infra, token SCM, runner) ─────────────
+# Rien ici n'apprend quoi que ce soit sur Symphony (c'est de la plomberie
+# GitLab pure) — entièrement automatisé, contrairement au wizard Symphony qui
+# reste volontairement manuel (voir DEMO.md).
+
+info "Bootstrap GitLab (groupe, projet infra, token, runner)…"
+
+# Jeton root généré via la console Rails (jamais affiché, usage interne à ce
+# script uniquement) — même mécanisme que la désactivation d'Auto DevOps
+# ci-dessus, pas de nouvelle surface de confiance.
+ROOT_TOKEN=$($COMPOSE exec -T gitlab gitlab-rails runner \
+  "puts User.find_by(username: 'root').personal_access_tokens.create!(scopes: ['api'], name: 'symphony-bootstrap', expires_at: 1.day.from_now).token" \
+  2>/dev/null | tail -n1)
+[ -n "$ROOT_TOKEN" ] || fail "Impossible de générer un token root pour le bootstrap GitLab"
+
+# Pas de curl -f ici, volontairement : -f fait perdre le corps de la
+# réponse (donc le message d'erreur GitLab) et, combiné à set -e/pipefail,
+# tue le script sans un mot au premier 404 rencontré — exactement le cas
+# normal d'un lookup d'existence sur une ressource pas encore créée. Chaque
+# appel est donc vérifié explicitement ci-dessous, avec le corps affiché en
+# cas d'échec réel.
+gl() { curl -s -H "PRIVATE-TOKEN: $ROOT_TOKEN" "$@"; }
+
+# Groupe symphony-demo — idempotent : réutilise s'il existe déjà.
+GROUP_ID=$(gl "$GITLAB_URL/api/v4/groups/symphony-demo" | jq -r '.id // empty')
+if [ -z "$GROUP_ID" ]; then
+  RESP=$(gl -X POST "$GITLAB_URL/api/v4/groups" \
+    -d "name=symphony-demo" -d "path=symphony-demo" -d "visibility=private")
+  GROUP_ID=$(echo "$RESP" | jq -r '.id // empty')
+  [ -n "$GROUP_ID" ] || fail "Échec de création du groupe symphony-demo : $RESP"
+  ok "Groupe symphony-demo créé"
+else
+  ok "Groupe symphony-demo déjà présent"
+fi
+
+# Projet infra (avec README — la synchro GitOps de Symphony lit le dernier
+# commit dès le démarrage, un repo vide ferait échouer cette lecture).
+PROJECT_EXISTS=$(gl -o /dev/null -w '%{http_code}' "$GITLAB_URL/api/v4/projects/symphony-demo%2Finfra")
+if [ "$PROJECT_EXISTS" = "200" ]; then
+  ok "Projet symphony-demo/infra déjà présent"
+else
+  RESP=$(gl -X POST "$GITLAB_URL/api/v4/projects" \
+    -d "name=infra" -d "namespace_id=$GROUP_ID" -d "initialize_with_readme=true" -d "visibility=private")
+  echo "$RESP" | jq -e '.id' >/dev/null || fail "Échec de création du projet infra : $RESP"
+  ok "Projet symphony-demo/infra créé"
+fi
+
+# Token SCM (group access token, scope api, rôle Owner) — révoqué et
+# recréé à chaque run : GitLab n'affiche la valeur d'un token qu'à sa
+# création, impossible de le récupérer plus tard pour rester idempotent.
+EXISTING_GAT_ID=$(gl "$GITLAB_URL/api/v4/groups/$GROUP_ID/access_tokens" | jq -r '.[]? | select(.name=="symphony-scm") | .id')
+if [ -n "$EXISTING_GAT_ID" ]; then
+  gl -X DELETE "$GITLAB_URL/api/v4/groups/$GROUP_ID/access_tokens/$EXISTING_GAT_ID" >/dev/null 2>&1 || true
+fi
+RESP=$(gl -X POST "$GITLAB_URL/api/v4/groups/$GROUP_ID/access_tokens" \
+  -d "name=symphony-scm" -d "scopes[]=api" -d "access_level=50" \
+  -d "expires_at=$(date -d '+1 year' +%Y-%m-%d 2>/dev/null || date -v+1y +%Y-%m-%d)")
+SCM_TOKEN=$(echo "$RESP" | jq -r '.token // empty')
+[ -n "$SCM_TOKEN" ] || fail "Échec de création du token SCM : $RESP"
+ok "Token SCM (re)généré"
+
+# Runner — idempotent : ne recrée que si aucun runner en ligne n'existe déjà
+# (le token de runner n'est lisible qu'à la création, donc pas de retry
+# silencieux possible si un run précédent a déjà un runner fonctionnel).
+RUNNER_ONLINE=$(gl "$GITLAB_URL/api/v4/runners/all" | jq -r 'any(.[]?; .online)')
+if [ "$RUNNER_ONLINE" = "true" ]; then
+  ok "Runner déjà enregistré et en ligne"
+else
+  RESP=$(gl -X POST "$GITLAB_URL/api/v4/user/runners" \
+    -d "runner_type=instance_type" -d "tag_list=docker" -d "description=symphony-demo-runner")
+  RUNNER_TOKEN=$(echo "$RESP" | jq -r '.token // empty')
+  [ -n "$RUNNER_TOKEN" ] || fail "Échec de création du runner : $RESP"
+  $COMPOSE exec -T gitlab-runner gitlab-runner register --non-interactive \
+    --url http://gitlab:8929 \
+    --token "$RUNNER_TOKEN" \
+    --executor docker \
+    --docker-image docker:latest \
+    --docker-volumes /var/run/docker.sock:/var/run/docker.sock \
+    --docker-network-mode host \
+    --description symphony-demo-runner >/dev/null 2>&1 \
+    && ok "Runner enregistré" \
+    || fail "Échec d'enregistrement du runner — voir $COMPOSE logs gitlab-runner"
+fi
+
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║              Infra démo prête                         ║${NC}"
 echo -e "${GREEN}╚═══════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo "  Suite : ouvrir DEMO.md et suivre le parcours guidé"
-echo "  (connexion GitLab, tokens, wizard Symphony, premier déploiement)."
+echo "  Groupe GitLab : symphony-demo (repo config : symphony-demo/infra)"
+echo -e "  Token SCM à coller dans le wizard : ${YELLOW}${SCM_TOKEN}${NC}"
+echo ""
+echo "  Suite :"
+echo "   1. cp .env.demo.example .env && make demo-start"
+echo "   2. Ouvrir http://localhost:8090 → wizard providers :"
+echo "        SCM url=$GITLAB_URL, token=(ci-dessus)"
+echo "        CI config_repo=symphony-demo/infra"
+echo "        Registry (laisser vide) · Deploy socket=/var/run/docker.sock"
+echo "   3. make demo-seed  (peuple 4 projets à différents stades — optionnel)"
 echo ""
