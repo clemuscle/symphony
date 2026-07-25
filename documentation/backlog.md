@@ -170,7 +170,7 @@ demande une page à part au clic sur un projet.
   à risque faible, pas d'exécution applicative, rien ne contredit la
   décision n°3.
 
-### B4 🟢 Panneau d'état opérationnel (pas des graphiques) sur la page détail — résolu
+### B4 ✅ Livré (2026-07-25, `08ee13e`) — Panneau d'état opérationnel (pas des graphiques) sur la page détail
 
 **Réponse (2026-07-24)** : ne pas construire de graphiques/métriques
 numériques (CPU, latence, etc.) pour ce cycle. Deux raisons cumulatives : le
@@ -199,6 +199,57 @@ tout appel direct à l'API Prometheus depuis Symphony. Si un besoin réel
 apparaît plus tard, ce serait une décision d'architecture à part entière (un
 nouveau type de provider "Monitoring" ?) à passer devant
 `architecture-guardian`, pas une extension silencieuse de ce panneau.
+
+**Livré** : taux de succès sur les 10 derniers pipelines (calculé côté
+client, aucun nouvel appel API) et référence de l'image déployée par ligne
+d'environnement dans la carte Déploiement (déjà renvoyée par l'API,
+simplement pas affichée jusqu'ici). "État des déploiements par
+environnement" était déjà couvert par D1 — rien à refaire.
+
+**Découverte pendant la vérification, non corrigée ici (hors scope)** : voir
+EPIC G ci-dessous — `triggerPipelineHandler` ("Lancer pipeline") peut
+déclencher un vrai déploiement sans que Symphony n'en garde aucune trace,
+ce qui rend ce panneau honnête vis-à-vis de la base... mais la base
+elle-même peut être fausse sur ce chemin précis.
+
+---
+
+## EPIC G — Bug découvert en testant B4 : déploiement invisible via "Lancer pipeline"
+
+### G1 🟡 `triggerPipelineHandler` peut déployer en prod sans créer de ligne `deployments`
+
+**Constat, vérifié en conditions réelles (2026-07-25) contre le vrai stack de
+démo** : le golden path route tout pipeline déclenché par Symphony (pas
+seulement l'action "Déployer") vers le job `deploy` dès lors qu'aucune
+variable `RECETTE_NAME`/`DESTROY_*` n'est présente (voir la note ajoutée
+dans `DEMO.md` §12 pour A2). Le bouton "▶ Lancer pipeline" de la fiche
+projet appelle `POST /api/v1/pipelines/trigger` →
+`triggerPipelineHandler` (`internal/api/handlers.go`), qui appelle bien
+`pvds.CI.TriggerPipeline` mais **n'appelle jamais `db.CreateDeployment`** —
+contrairement à `deployProject`/`createRecette`, qui eux créent
+systématiquement une ligne dans `deployments`.
+
+Résultat observé : cliquer "Lancer pipeline" sur un projet dont l'image
+`:latest` existe déjà déploie réellement un container (vérifié : le
+container tourne, répond en HTTP 200) — mais la carte "Déploiement" de
+Symphony affiche "Pas de déploiement actif", et il n'existe aucun moyen de
+l'arrêter depuis l'UI Symphony (pas de ligne `deployments`, donc pas d'ID à
+passer à `DELETE /api/v1/deployments/{id}`) tant que la réconciliation
+Docker (`reconcileDeployments`, pass 2) ne le rattache pas à un container
+"disparu" — ce qui ne peut pas arriver puisque Symphony ne sait même pas
+qu'il devrait exister.
+
+**Pourquoi c'est plus grave qu'un simple manque d'affichage** : ce n'est
+pas que B4 (ou toute autre vue) omette une donnée — c'est que la donnée
+elle-même n'est jamais créée. Aucun panneau de statut, aussi honnête
+soit-il envers la base, ne peut réparer ça.
+
+**Action requise avant de corriger** : décider si `triggerPipelineHandler`
+doit (a) toujours créer une ligne `deployments` comme les deux autres
+handlers, (b) refuser de déclencher un pipeline "nu" tant qu'aucune
+variable ne précise l'intention (test/deploy/recette), ou (c) autre chose —
+c'est un choix de contrat API, pas une correction évidente à deviner
+silencieusement. Ne pas implémenter avant clarification avec le fondateur.
 
 ---
 
@@ -384,11 +435,14 @@ aucun item 🟡 en attente de clarification.
 | F1 — templating granulaire (variables) | ✅ livré | M | Q ouverte #3 résiduelle traitée dans le même ticket |
 | C2 — multi-provider (design seul, pas de code) | ✅ livré (doc) | S | A4 reste différé |
 | E1 — méthodologie admin (gitflow/triggers) | 🟢 (pas de dev requis, cf. réponse) | — (documentation seule) | — |
-| B4 — panneau de statut opérationnel (pas de graphiques) | 🟢 | S | — |
+| B4 — panneau de statut opérationnel (pas de graphiques) | ✅ livré | S | — |
+| G1 — deploy invisible via "Lancer pipeline" | 🟡 | dépend clarification | — |
 | A4 — import projet existant | 🔴 | — | dépend d'un futur C2 "implémenter" |
 
 Ordre d'attaque recommandé : **B1 → B2 → B3 → A1 → A2 → C1 → D1 → F1 → B4 →
 C2**, E1 se limitant à une note dans la doc admin (pas de développement).
+G1 découvert pendant la vérification de B4 — nécessite une décision du
+fondateur avant tout code (voir EPIC G).
 A4 reste le seul item différé, dans l'attente d'une future décision
 d'implémenter réellement le multi-provider (C2).
 
