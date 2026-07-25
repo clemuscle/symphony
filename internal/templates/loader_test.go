@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -129,5 +130,99 @@ func TestRenderCI(t *testing.T) {
 	}
 	if !strings.Contains(ci, "image: golang") {
 		t.Errorf("expected 'image: golang' in CI output, got:\n%s", ci)
+	}
+}
+
+// writeGoldenPath crée un golden path minimal avec un ci/pipeline.yml
+// personnalisé — utilisé par les tests de résolution test_tool/build_tool
+// ci-dessous, où le contenu exact du pipeline (référence ou non la
+// variable) est ce qui varie d'un cas à l'autre.
+func writeGoldenPath(t *testing.T, dir, name, specExtra, ciPipeline string) {
+	t.Helper()
+	gpDir := filepath.Join(dir, name)
+	os.MkdirAll(filepath.Join(gpDir, "files"), 0755)
+	os.MkdirAll(filepath.Join(gpDir, "ci"), 0755)
+	os.WriteFile(filepath.Join(gpDir, "golden-path.yaml"), []byte(fmt.Sprintf(`
+apiVersion: symphony/v1
+kind: GoldenPath
+metadata:
+  name: %s
+  description: "Test golden path"
+spec:
+  language: %s
+  type: rest-api
+  default_port: 8080
+%s
+`, name, name, specExtra)), 0644)
+	os.WriteFile(filepath.Join(gpDir, "ci", "pipeline.yml"), []byte(ciPipeline), 0644)
+}
+
+func TestResolveToolDefaults_LanguageDefaultApplied(t *testing.T) {
+	dir := t.TempDir()
+	// "go" a un défaut connu (defaultTestTool) — golden-path.yaml ne définit
+	// ni test_tool ni build_tool, les deux doivent être résolus par défaut.
+	writeGoldenPath(t, dir, "go", "", "test_step: {{.TestTool}}\nbuild_step: {{.BuildTool}}")
+
+	l := NewLoader(dir)
+	if err := l.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	ci, err := l.RenderCI("go", ScaffoldVars{})
+	if err != nil {
+		t.Fatalf("RenderCI: %v", err)
+	}
+	if !strings.Contains(ci, "test_step: go test ./...") {
+		t.Errorf("expected default go test_tool substituted, got:\n%s", ci)
+	}
+	if !strings.Contains(ci, "build_step: docker") {
+		t.Errorf("expected default build_tool 'docker' substituted, got:\n%s", ci)
+	}
+}
+
+func TestResolveToolDefaults_ExplicitValueOverridesDefault(t *testing.T) {
+	dir := t.TempDir()
+	writeGoldenPath(t, dir, "python", "  test_tool: \"tox -e unit\"\n", "test_step: {{.TestTool}}")
+
+	l := NewLoader(dir)
+	if err := l.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	ci, err := l.RenderCI("python", ScaffoldVars{})
+	if err != nil {
+		t.Fatalf("RenderCI: %v", err)
+	}
+	if !strings.Contains(ci, "test_step: tox -e unit") {
+		t.Errorf("expected explicit test_tool to override the language default, got:\n%s", ci)
+	}
+}
+
+func TestLoad_RejectsUnknownLanguageMissingTestTool(t *testing.T) {
+	dir := t.TempDir()
+	// "rust" n'a pas de défaut connu et golden-path.yaml ne définit pas
+	// test_tool — mais le pipeline référence quand même {{.TestTool}} :
+	// doit être rejeté au chargement (log + skip), pas rendu vide plus tard.
+	writeGoldenPath(t, dir, "rust", "", "test_step: {{.TestTool}}")
+
+	l := NewLoader(dir)
+	if err := l.Load(); err != nil {
+		t.Fatalf("expected Load to skip the invalid golden path rather than fail, got: %v", err)
+	}
+	if len(l.GetGoldenPaths()) != 0 {
+		t.Fatalf("expected the golden path referencing an unresolved {{.TestTool}} to be skipped, got %d loaded", len(l.GetGoldenPaths()))
+	}
+}
+
+func TestLoad_UnknownLanguageWithoutTestToolReferenceIsFine(t *testing.T) {
+	dir := t.TempDir()
+	// "rust" sans défaut connu, mais le pipeline ne référence pas
+	// {{.TestTool}} du tout — rien à valider, doit charger normalement.
+	writeGoldenPath(t, dir, "rust", "", "image: rust:1.75")
+
+	l := NewLoader(dir)
+	if err := l.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(l.GetGoldenPaths()) != 1 {
+		t.Fatalf("expected the golden path to load since it never references {{.TestTool}}, got %d loaded", len(l.GetGoldenPaths()))
 	}
 }

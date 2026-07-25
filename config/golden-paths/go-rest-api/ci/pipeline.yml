@@ -15,7 +15,7 @@ variables:
 test:
   stage: test
   script:
-    - go test ./...
+    - {{.TestTool}}
   tags:
     - docker
   rules:

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"gopkg.in/yaml.v3"
@@ -30,7 +31,32 @@ type GPSpec struct {
 	Type          string `yaml:"type"           json:"type"`
 	DefaultPort   int    `yaml:"default_port"   json:"default_port"`
 	MonitoringURL string `yaml:"monitoring_url" json:"monitoring_url,omitempty"`
+	// TestTool / BuildTool sont des variables opaques pour Symphony — le
+	// loader ne sait pas ce qu'est "pytest" ou "buildkit", il se contente de
+	// les substituer dans ci/pipeline.yml. Un admin qui veut un outil
+	// différent édite golden-path.yaml (et au besoin son propre
+	// ci/pipeline.yml), jamais le Go. Voir documentation/backlog.md EPIC F.
+	TestTool  string `yaml:"test_tool"  json:"test_tool,omitempty"`
+	BuildTool string `yaml:"build_tool" json:"build_tool,omitempty"`
 }
+
+// defaultTestTool couvre les 4 golden paths déjà livrés — un golden path
+// pour un langage absent de cette table doit définir spec.test_tool
+// lui-même, sous peine d'être rejeté au chargement si son ci/pipeline.yml
+// référence {{.TestTool}} (voir resolveToolDefaults).
+var defaultTestTool = map[string]string{
+	"go":     "go test ./...",
+	"python": "pip install -r requirements.txt && pytest",
+	"node":   "npm ci && npm test",
+	"java":   "mvn test",
+}
+
+// defaultBuildTool — seul "docker" est réellement câblé dans les templates
+// CI aujourd'hui (déploiement Docker uniquement au MVP, voir CLAUDE.md).
+// La variable existe pour qu'un admin puisse déjà l'utiliser dans son
+// propre ci/pipeline.yml (ex: un bloc conditionnel Go template) sans
+// attendre que Symphony sache lui-même parler buildkit.
+const defaultBuildTool = "docker"
 
 // ScaffoldVars are the variables available in golden path template files.
 type ScaffoldVars struct {
@@ -41,6 +67,8 @@ type ScaffoldVars struct {
 	Type               string
 	GitServerURL       string
 	ConfigRepoPath     string
+	TestTool           string
+	BuildTool          string
 }
 
 // loadedPath holds a descriptor plus its raw file templates.
@@ -120,7 +148,36 @@ func (l *Loader) loadOne(dir string) (loadedPath, error) {
 		lp.ciPipeline = string(ciData)
 	}
 
+	if err := lp.resolveToolDefaults(); err != nil {
+		return lp, err
+	}
+
 	return lp, nil
+}
+
+// resolveToolDefaults applique les valeurs par défaut de test_tool/build_tool
+// quand golden-path.yaml ne les définit pas, pour ne pas casser les golden
+// paths existants. Si aucune valeur (ni golden-path.yaml, ni défaut connu
+// pour le langage) n'est disponible alors que ci/pipeline.yml référence
+// quand même la variable, le golden path est rejeté au chargement avec un
+// message explicite — jamais un rendu silencieusement vide au moment de la
+// création d'un projet (question ouverte n°3 résiduelle de CLAUDE.md).
+func (lp *loadedPath) resolveToolDefaults() error {
+	if lp.Spec.TestTool == "" {
+		lp.Spec.TestTool = defaultTestTool[lp.Spec.Language]
+	}
+	if lp.Spec.TestTool == "" && strings.Contains(lp.ciPipeline, ".TestTool") {
+		return fmt.Errorf("spec.test_tool manquant et aucune valeur par défaut connue pour le langage %q, mais ci/pipeline.yml référence {{.TestTool}}", lp.Spec.Language)
+	}
+
+	if lp.Spec.BuildTool == "" {
+		lp.Spec.BuildTool = defaultBuildTool
+	}
+	if lp.Spec.BuildTool == "" && strings.Contains(lp.ciPipeline, ".BuildTool") {
+		return fmt.Errorf("spec.build_tool manquant, mais ci/pipeline.yml référence {{.BuildTool}}")
+	}
+
+	return nil
 }
 
 func (l *Loader) Reload() error { return l.Load() }
@@ -140,6 +197,7 @@ func (l *Loader) RenderFiles(language string, vars ScaffoldVars) (map[string]str
 	if !ok {
 		return nil, fmt.Errorf("no golden path for language %q", language)
 	}
+	vars.TestTool, vars.BuildTool = lp.Spec.TestTool, lp.Spec.BuildTool
 	result := make(map[string]string, len(lp.files))
 	for path, raw := range lp.files {
 		rendered, err := render(raw, vars)
@@ -160,6 +218,7 @@ func (l *Loader) RenderCI(language string, vars ScaffoldVars) (string, error) {
 	if lp.ciPipeline == "" {
 		return "", nil
 	}
+	vars.TestTool, vars.BuildTool = lp.Spec.TestTool, lp.Spec.BuildTool
 	return render(lp.ciPipeline, vars)
 }
 

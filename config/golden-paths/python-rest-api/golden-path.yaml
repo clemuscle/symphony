@@ -8,3 +8,12 @@ spec:
   language: python
   type: rest-api
   default_port: 8080
+  # test_tool / build_tool sont substitués tels quels dans ci/pipeline.yml
+  # ({{.TestTool}} / {{.BuildTool}}) — Symphony ne les interprète jamais,
+  # un admin peut donc mettre n'importe quelle commande shell ici. Les
+  # golden paths go/node/java de ce dossier ne définissent pas ces clés :
+  # une valeur par défaut par langage s'applique alors (voir
+  # internal/templates/loader.go). Ici la valeur explicite est identique
+  # au défaut — ce commentaire sert d'exemple pour un admin qui voudrait
+  # la changer (ex: "tox -e unit" pour utiliser tox à la place de pytest).
+  test_tool: "pip install -r requirements.txt && pytest"
