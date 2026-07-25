@@ -247,7 +247,7 @@ unique par catégorie (`scm:` n'est pas une liste). Le dispatch actuel
 **Décision du fondateur (2026-07-24)** : taxonomie fixe (`recette` /
 `preprod` / `prod`) + tags libres en plus, pour affiner (équipe, feature...).
 
-### D1 🟢 `environment` comme champ de première classe + tags libres sur les déploiements
+### D1 ✅ Livré (2026-07-25, `b4a7cf9`) — `environment` comme champ de première classe + tags libres sur les déploiements
 
 **Constat code** : `deployments` (`internal/database/schema.go:50-61`) n'a
 aujourd'hui ni colonne `environment`, ni notion de tag — seul un champ texte
@@ -366,7 +366,7 @@ aucun item 🟡 en attente de clarification.
 | A1 — seed démo multi-stades | 🟢 | S | — |
 | A2 — doc démo pipeline complet (inclut A3) | 🟢 | XS (doc) | — |
 | C1 — mode super-admin (bascule UI) | ✅ livré | XS | — |
-| D1 — environment + tags | 🟢 | S (migration additive) | politique rétention (Q ouverte #1, hors scope de ce ticket) |
+| D1 — environment + tags | ✅ livré | S (migration additive) | politique rétention (Q ouverte #1, hors scope de ce ticket) |
 | F1 — templating granulaire (variables) | 🟢 | M | Q ouverte #3 résiduelle traitée dans le même ticket |
 | C2 — multi-provider (design seul, pas de code) | 🟢 (livrable = doc) | S | A4 reste différé |
 | E1 — méthodologie admin (gitflow/triggers) | 🟢 (pas de dev requis, cf. réponse) | — (documentation seule) | — |
