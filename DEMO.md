@@ -210,10 +210,23 @@ registre) et pousse le code de base + pipeline préconfiguré.
 
 ## 11. Observer le pipeline
 
-Le push initial déclenche un pipeline GitLab : stages `test` → `build` →
-`register-service`. Suis-le soit depuis la fiche projet dans Symphony
-(steps + statut pipeline), soit directement dans GitLab
+Le push initial déclenche un pipeline GitLab avec 3 étapes qui se suivent :
+**test** (`go test`/`pytest`/... selon le langage — voir `spec.test_tool` du
+golden path) → **build** (construit l'image Docker **et la pousse** au
+registre — c'est la même étape qui fait les deux, il n'y a pas de job
+"push" séparé) → **register-service** (déclare le projet dans le catalogue
+Symphony via GitOps). Suis-le directement dans GitLab
 (`<groupe>/<projet>` → **CI/CD → Pipelines**).
+
+> ⚠️ **Ce pipeline n'apparaît volontairement pas dans la fiche projet
+> Symphony.** Symphony ne trace dans sa propre table de pipelines que ceux
+> qu'il déclenche lui-même (bouton "Lancer pipeline", déploiement, recette)
+> — jamais les pipelines déclenchés par un push git, y compris celui-ci.
+> C'est pour ça que la fiche projet affiche "aucun pipeline lancé" même
+> juste après un build réussi : c'est le comportement normal, pas un bug
+> ni une fenêtre de course à attendre. La preuve côté Symphony qu'un build
+> a réussi, c'est l'apparition de l'image dans la section **Images** de la
+> fiche projet, pas un badge de pipeline.
 
 Une fois `register-service` passé, le nouveau service apparaît dans le
 catalogue Symphony (synchro GitOps depuis `symphony-demo/infra`, ~15s).
@@ -226,6 +239,21 @@ directement par Symphony — voir le principe d'architecture #3 du projet) ;
 le statut passe `pending` → `running` une fois le pipeline terminé
 (actualisation automatique côté UI, ou attends ~30s de réconciliation).
 
+> ⚠️ **Le bouton "Lancer pipeline" de la fiche projet n'est pas un simple
+> "rejouer les tests".** Le golden path route tout pipeline déclenché par
+> Symphony (bouton "Lancer pipeline", ou l'action "Déployer" elle-même)
+> vers le job `deploy` — il redéploie donc réellement l'environnement prod
+> du projet à chaque clic, à condition qu'une image `:latest` existe déjà.
+> `test`/`build` ne tournent que sur un vrai push git (voir l'encart
+> ci-dessus), jamais sur un déclenchement Symphony. Si tu veux juste
+> vérifier que les tests passent sur une branche, regarde le pipeline
+> automatique de cette branche directement dans GitLab.
+
+Si tu déploies **avant** que le build initial ait eu le temps de pousser
+une image (`:latest` inexistante au registre), le job `deploy` échoue au
+`docker pull` — déploiement affiché `failed`, comportement attendu, pas un
+bug. C'est exactement ce que reproduit `demo-failed` à l'étape suivante.
+
 Vérifie que l'appli répond réellement :
 
 ```
@@ -234,7 +262,29 @@ curl localhost:<port>
 
 (le port est celui affiché sur la fiche du projet, `8080` par défaut).
 
-## 13. Nettoyage
+## 13. (Optionnel) Peupler plusieurs projets à différents stades
+
+Pour voir d'un coup d'œil la diversité des statuts possibles plutôt que de
+répéter les étapes 10-12 à la main plusieurs fois :
+
+```
+make demo-seed
+```
+
+Crée 4 projets via l'API publique de Symphony (aucune insertion directe en
+base — mêmes statuts que ceux traversés à la main) :
+
+| Projet | État |
+|---|---|
+| `demo-fresh` | Juste provisionné, aucun pipeline déclenché depuis Symphony |
+| `demo-built` | Build automatique réussi (image visible dans **Images**), rien déployé |
+| `demo-recette` | Recette de test déployée et active (`running`) |
+| `demo-failed` | Déploiement tenté avant la fin du build — échec réel (`failed`), voir l'encart de l'étape 12 |
+
+Prend plusieurs minutes (le runner de démo traite les jobs séquentiellement)
+— le script affiche sa progression et est sûr à relancer.
+
+## 14. Nettoyage
 
 ```
 make demo-down

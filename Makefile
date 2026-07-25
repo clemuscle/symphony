@@ -1,7 +1,7 @@
 BIN     := symphony
 COMPOSE := docker compose -f docker-compose.demo.yml --project-name symphony
 
-.PHONY: build run dev clean demo-up demo-start demo-down
+.PHONY: build run dev clean demo-up demo-start demo-seed demo-down
 
 ## build : compile le frontend puis le binaire Go (produit un binaire autonome)
 build:
@@ -38,6 +38,11 @@ demo-up:
 demo-start:
 	@[ -f .env ] || { echo "Lancer 'cp .env.demo.example .env' d'abord (voir DEMO.md)"; exit 1; }
 	@go run ./cmd/symphony
+
+## demo-seed : peuple 4 projets à des stades différents (fresh/built/recette/
+##             failed) via l'API Symphony — nécessite le wizard déjà rempli
+demo-seed:
+	@./scripts/demo-seed.sh
 
 ## demo-down : arrête et supprime tous les volumes de démo (destructif)
 demo-down:
