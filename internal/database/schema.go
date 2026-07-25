@@ -60,6 +60,21 @@ func (db *DB) Migrate() error {
 		updated_at    TIMESTAMP DEFAULT NOW()
 	);
 	ALTER TABLE deployments ADD COLUMN IF NOT EXISTS recette_name TEXT;
+
+	-- environment structure ce que recette_name laissait seulement deviner :
+	-- une recette est toujours 'recette', mais rien ne distinguait avant
+	-- ça un déploiement 'preprod' d'un déploiement 'prod'. Le défaut
+	-- 'recette' ne vaut que pour les nouvelles lignes ; les lignes
+	-- existantes sans recette_name sont corrigées juste après (elles
+	-- étaient de facto le déploiement "prod" du projet).
+	ALTER TABLE deployments ADD COLUMN IF NOT EXISTS environment VARCHAR(20) NOT NULL DEFAULT 'recette'
+		CHECK (environment IN ('recette', 'preprod', 'prod'));
+	UPDATE deployments SET environment='prod' WHERE recette_name IS NULL AND environment='recette';
+
+	-- tags libres (équipe, feature...) en complément de la taxonomie fixe
+	-- environment — voir documentation/backlog.md EPIC D.
+	ALTER TABLE deployments ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
+
 	DO $$
 	BEGIN
 		IF EXISTS (SELECT 1 FROM information_schema.columns
