@@ -61,7 +61,10 @@
           </div>
 
           <div class="job-list" v-if="recentPipelines.length">
-            <div class="job-list-title">5 derniers jobs</div>
+            <div class="job-list-title">
+              5 derniers jobs
+              <span class="success-rate" v-if="pipelineSuccessRate">{{ pipelineSuccessRate }}</span>
+            </div>
             <div v-for="p in recentPipelines.slice(0, 5)" :key="p.id" class="job-row">
               <a
                 v-if="project.repo_url"
@@ -145,6 +148,7 @@
                 class="deploy-link"
               >:{{ d.port }} ↗</a>
               <span :class="['status-badge', 'sm', d.status]">{{ d.status }}</span>
+              <span class="deploy-image-ref" v-if="d.image" :title="d.image">🐳 {{ imageLabel(d.image) }}</span>
               <span class="tag-chip" v-for="t in d.tags" :key="t">{{ t }}</span>
               <button
                 v-if="canDeploy && d.status === 'running'"
@@ -260,6 +264,19 @@ let pollInterval = null
 const langIcon = (lang) => ({ go: '🐹', python: '🐍', node: '💚', java: '☕' })[lang] || '📦'
 const statusLabel = (s) => ({ ready: 'Prêt', provisioning: 'En cours', degraded: 'Dégradé', failed: 'Échec' })[s] || s
 const formatDate = (d) => d ? new Date(d).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''
+// Ne garde que le dernier segment du chemin (nom du repo/image) — le champ
+// "image" est en pratique une URL de registre complète, pas juste un tag.
+const imageLabel = (image) => image.split('/').filter(Boolean).pop() || image
+
+// Panneau de statut opérationnel (B4) : taux de succès sur les pipelines
+// déjà chargés pour "5 derniers jobs" — aucune nouvelle donnée, juste un
+// agrégat de ce que Symphony sait déjà (pas une métrique Prometheus).
+const pipelineSuccessRate = computed(() => {
+  const sample = recentPipelines.value.slice(0, 10)
+  if (!sample.length) return ''
+  const successes = sample.filter(p => p.status === 'success').length
+  return `${successes}/${sample.length} succès`
+})
 
 async function loadProject() {
   const { data } = await api.listProjects()
@@ -495,7 +512,10 @@ h2 { font-size: 22px; font-weight: 700; }
 .empty-inline { font-size: 13px; color: #aaa; }
 
 .job-list { display: flex; flex-direction: column; gap: 4px; }
-.job-list-title { font-size: 11px; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+.job-list-title { font-size: 11px; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; display: flex; align-items: center; justify-content: space-between; }
+.success-rate { font-size: 11px; font-weight: 700; color: #276749; text-transform: none; letter-spacing: normal; }
+
+.deploy-image-ref { font-size: 11px; color: #888; font-family: monospace; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .job-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid #f0f0f0; font-size: 12px; }
 .job-row:last-child { border-bottom: none; }
 .job-date { color: #aaa; margin-left: auto; }
