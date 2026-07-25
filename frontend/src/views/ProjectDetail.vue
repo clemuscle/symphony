@@ -37,7 +37,10 @@
       <section class="card">
         <div class="card-title">🔧 Pipeline</div>
         <div class="card-body">
-          <div class="inline-actions" v-if="canDevelop">
+          <!-- canDeploy (lead+), pas canDevelop : sans variable, ce déclenchement
+               route vers le job "deploy" du golden path (voir G1, backlog.md) —
+               même niveau de droit que le bouton "Déployer" ci-dessous. -->
+          <div class="inline-actions" v-if="canDeploy">
             <input
               v-model="pipelineBranch"
               placeholder="main"

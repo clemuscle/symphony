@@ -165,13 +165,17 @@ func NewServer(opts ServerOptions) *Server {
 		r.With(s.requireRole(rbac.RoleDeveloper)).Post("/api/v1/projects/{name}/recettes", s.createRecette)
 		r.With(s.requireRole(rbac.RoleDeveloper)).Delete("/api/v1/projects/{name}/recettes/{recette}", s.destroyRecette)
 
-		// Pipelines (lecture = viewer+, déclenchement = developer+)
-		r.With(s.requireRole(rbac.RoleDeveloper)).Post("/api/v1/pipelines/trigger", s.triggerPipelineHandler)
+		// Pipelines (lecture = viewer+, déclenchement = lead+ — voir G1 dans
+		// backlog.md : sans variable, le golden path route tout pipeline
+		// déclenché par Symphony vers le job "deploy", donc ce endpoint peut
+		// déployer en prod au même titre que POST /deployments et doit être
+		// gardé au même niveau, pas à developer+)
+		r.With(s.requireRole(rbac.RoleLead)).Post("/api/v1/pipelines/trigger", s.triggerPipelineHandler)
 		r.Post("/api/v1/pipelines/status", s.getPipelineStatusHandler)
 		r.Get("/api/v1/pipelines", s.listAllPipelinesHandler)
 		r.Get("/api/v1/pipelines/{project}", s.listPipelinesHandler)
 
-		// Déploiements (lecture = viewer+, création/arrêt = developer+)
+		// Déploiements (lecture = viewer+, création/arrêt = lead+)
 		r.Get("/api/v1/deployments", s.listDeployments)
 		r.With(s.requireRole(rbac.RoleLead)).Post("/api/v1/deployments", s.deployProject)
 		r.With(s.requireRole(rbac.RoleLead)).Delete("/api/v1/deployments/{id}", s.stopDeployment)
