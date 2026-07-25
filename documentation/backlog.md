@@ -316,7 +316,7 @@ précis plutôt que dans l'abstrait.
 
 ## EPIC F — Templating plus granulaire (outils de test/build variables)
 
-### F1 🟢 Granularité des outils dans les pipelines (tests, build d'image) — via variables de golden-path.yaml
+### F1 ✅ Livré (2026-07-25, `4ca589d`) — Granularité des outils dans les pipelines (tests, build d'image) — via variables de golden-path.yaml
 
 **Décision du fondateur (2026-07-24)** : variables dans `golden-path.yaml`
 plutôt que golden paths distincts ou briques composables — reste le plus
@@ -367,7 +367,7 @@ aucun item 🟡 en attente de clarification.
 | A2 — doc démo pipeline complet (inclut A3) | 🟢 | XS (doc) | — |
 | C1 — mode super-admin (bascule UI) | ✅ livré | XS | — |
 | D1 — environment + tags | ✅ livré | S (migration additive) | politique rétention (Q ouverte #1, hors scope de ce ticket) |
-| F1 — templating granulaire (variables) | 🟢 | M | Q ouverte #3 résiduelle traitée dans le même ticket |
+| F1 — templating granulaire (variables) | ✅ livré | M | Q ouverte #3 résiduelle traitée dans le même ticket |
 | C2 — multi-provider (design seul, pas de code) | 🟢 (livrable = doc) | S | A4 reste différé |
 | E1 — méthodologie admin (gitflow/triggers) | 🟢 (pas de dev requis, cf. réponse) | — (documentation seule) | — |
 | B4 — panneau de statut opérationnel (pas de graphiques) | 🟢 | S | — |
