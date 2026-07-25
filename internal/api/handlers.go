@@ -241,7 +241,8 @@ func (s *Server) triggerPipelineHandler(w http.ResponseWriter, r *http.Request) 
 		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
-	if _, err := s.db.GetProjectByRepoPath(req.ProjectPath); err != nil {
+	project, err := s.db.GetProjectByRepoPath(req.ProjectPath)
+	if err != nil {
 		respond(w, http.StatusNotFound, map[string]string{"error": "projet inconnu de Symphony"})
 		return
 	}
@@ -267,6 +268,22 @@ func (s *Server) triggerPipelineHandler(w http.ResponseWriter, r *http.Request) 
 		Status:      "pending",
 		TriggeredBy: actorID(r),
 	})
+
+	// Le golden path route tout pipeline déclenché par Symphony sans
+	// RECETTE_NAME/DESTROY_* vers le job "deploy" (voir reservedPipelineVars
+	// ci-dessus et G1 dans documentation/backlog.md) — ce endpoint déploie
+	// donc réellement en prod au même titre que POST /deployments, et doit
+	// laisser la même trace, sous peine d'un déploiement invisible et
+	// impossible à arrêter depuis l'UI.
+	s.db.CreateDeployment(&database.Deployment{
+		ProjectName: project.Name,
+		PipelineID:  id,
+		Image:       project.RegistryURL,
+		Port:        project.Port,
+		Status:      "pending",
+		Environment: "prod",
+	})
+
 	s.db.Log("trigger_pipeline", req.ProjectPath, "pipeline "+id, actorID(r))
 
 	respond(w, http.StatusOK, map[string]string{"pipeline_id": id})
