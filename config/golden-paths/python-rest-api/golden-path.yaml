@@ -8,6 +8,7 @@ spec:
   language: python
   type: rest-api
   default_port: 8080
+  recette_max_ttl_hours: 72
   # test_tool / build_tool sont substitués tels quels dans ci/pipeline.yml
   # ({{.TestTool}} / {{.BuildTool}}) — Symphony ne les interprète jamais,
   # un admin peut donc mettre n'importe quelle commande shell ici. Les

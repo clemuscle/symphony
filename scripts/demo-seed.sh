@@ -152,7 +152,7 @@ wait_for_image "demo-recette"
 info "Déploiement d'une recette pour « demo-recette »…"
 curl -sf -X POST "$SYMPHONY_URL/api/v1/projects/demo-recette/recettes" \
   -H 'Content-Type: application/json' \
-  -d '{"recette_name":"demo","port":9101}' > /dev/null
+  -d '{"recette_name":"demo","port":9101,"ttl_hours":72}' > /dev/null
 wait_for_recette_status "demo-recette" "demo" "running"
 
 # ── 4. demo-failed — déploiement déclenché avant tout build : échec réel ────

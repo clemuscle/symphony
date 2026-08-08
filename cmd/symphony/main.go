@@ -253,6 +253,29 @@ func reconcileDeployments(db *database.DB, getProviders func() *providers.Provid
 				}
 			}
 		}
+
+		// Pass 3 — recettes expirées (TTL choisi par le dev à la création,
+		// voir documentation/backlog.md EPIC H) : destruction toujours
+		// déléguée au pipeline CI (principe #3), jamais un arrêt direct.
+		// Le statut reste "running" jusqu'à ce que la passe 2 constate la
+		// disparition réelle du container au tour suivant — même logique
+		// que destroyRecette (internal/api/projects.go).
+		if expired, err := db.ListExpiredRunningRecettes(); err == nil {
+			for _, r := range expired {
+				project, err := db.GetProject(r.ProjectName)
+				if err != nil {
+					continue
+				}
+				if _, err := pvds.CI.TriggerPipeline(project.RepoPath, "main", map[string]string{
+					"DESTROY_RECETTE": r.RecetteName,
+				}); err != nil {
+					log.Printf("reconcile: destroy expired recette %s: %v", r.RecetteName, err)
+					continue
+				}
+				db.Log("expire_recette", r.ProjectName, "recette="+r.RecetteName, "system")
+				log.Printf("recette %s → destroy déclenché (TTL expiré)", r.RecetteName)
+			}
+		}
 	}
 }
 

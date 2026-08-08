@@ -296,11 +296,19 @@ Prometheus pour l'observabilité de Symphony lui-même.
 
 ## Questions ouvertes (intentionnellement non tranchées — à clarifier avant d'implémenter ces zones)
 
-1. **Qui décide de la politique de rétention des environnements de
-   recette** (auto-destroy après N heures vs laissé à la main du dev/de
-   l'équipe) ? La vision le laisse à "la politique de l'entreprise" —
-   ça doit devenir un paramètre de config golden path, pas un
-   comportement codé en dur.
+1. ~~**Qui décide de la politique de rétention des environnements de
+   recette**~~ — **Résolu (2026-08-05)** : le dev choisit un TTL
+   obligatoire à la création (`ttl_hours`, pas de valeur par défaut),
+   plafonné par `spec.recette_max_ttl_hours` dans `golden-path.yaml`
+   (requis — un golden path qui ne le définit pas est rejeté au
+   chargement). À l'échéance, destruction immédiate via le pipeline CI
+   (`reconcileDeployments` passe 3, même mécanisme que
+   `DELETE .../recettes/{recette}` — jamais un arrêt direct, principe
+   #3). Pas d'extension : le dev recrée une recette s'il en a encore
+   besoin. Implémenté : `internal/templates/loader.go`,
+   `internal/api/projects.go` (`createRecette`),
+   `cmd/symphony/main.go` (`reconcileDeployments`), colonne
+   `deployments.expires_at`. Voir `documentation/backlog.md` EPIC H.
 2. **Modèle de permissions par groupe** : la vision mentionne "groupe"
    comme unité de visibilité sur un projet, mais ne précise pas la
    granularité des droits (qui peut déployer en prod vs juste voir les

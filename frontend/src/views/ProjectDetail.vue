@@ -187,6 +187,7 @@
             <div v-for="rec in recettes" :key="rec.recette_name" class="recette-row">
               <span class="recette-name">{{ rec.recette_name }}</span>
               <span class="recette-port">:{{ rec.port }}</span>
+              <span v-if="rec.expires_at" class="recette-ttl" :title="formatDate(rec.expires_at)">expire {{ formatDate(rec.expires_at) }}</span>
               <span :class="['status-badge', 'sm', rec.status]">{{ rec.status }}</span>
               <span class="tag-chip" v-for="t in rec.tags" :key="t">{{ t }}</span>
               <a v-if="rec.url" :href="rec.url" target="_blank" class="btn-ghost btn-xs">↗</a>
@@ -206,6 +207,14 @@
           <div class="recette-create" v-else-if="canDevelop">
             <input v-model="newRecetteName" placeholder="nom-recette" class="input-sm" @keyup.enter="submitRecette" />
             <input v-model.number="newRecettePort" type="number" placeholder="port" class="input-sm input-port" @keyup.enter="submitRecette" />
+            <input
+              v-model.number="newRecetteTTL"
+              type="number"
+              :placeholder="recetteMaxTTL ? `TTL h (max ${recetteMaxTTL})` : 'TTL h'"
+              :max="recetteMaxTTL || undefined"
+              class="input-sm input-port"
+              @keyup.enter="submitRecette"
+            />
             <button class="btn-ghost btn-sm" @click="submitRecette" :disabled="recetteSubmitting">
               {{ recetteSubmitting ? '⏳' : 'Déployer' }}
             </button>
@@ -256,11 +265,13 @@ const recettesLoading = ref(false)
 const recetteCreating = ref(false)
 const newRecetteName = ref('')
 const newRecettePort = ref(null)
+const newRecetteTTL = ref(null)
 const recetteError = ref(null)
 const recetteSubmitting = ref(false)
 const recetteDestroying = ref(null)
 
 const monitoringURL = ref(null)
+const recetteMaxTTL = ref(null)
 
 let pollInterval = null
 
@@ -352,6 +363,7 @@ async function loadMonitoring(p) {
     const { data } = await api.getGoldenPaths()
     const gp = (data || []).find(g => g.spec?.language === p.language)
     monitoringURL.value = gp?.spec?.monitoring_url || null
+    recetteMaxTTL.value = gp?.spec?.recette_max_ttl_hours || null
   } catch { /* non bloquant */ }
 }
 
@@ -439,18 +451,23 @@ async function toggleSteps() {
 }
 
 async function submitRecette() {
-  if (!newRecetteName.value || !newRecettePort.value) {
-    recetteError.value = 'Nom et port requis'
+  if (!newRecetteName.value || !newRecettePort.value || !newRecetteTTL.value) {
+    recetteError.value = 'Nom, port et durée de vie (h) requis'
     return
   }
   recetteSubmitting.value = true
   recetteError.value = null
   try {
-    await api.createRecette(project.value.name, { recette_name: newRecetteName.value, port: newRecettePort.value })
+    await api.createRecette(project.value.name, {
+      recette_name: newRecetteName.value,
+      port: newRecettePort.value,
+      ttl_hours: newRecetteTTL.value,
+    })
     await loadRecettes(project.value)
     recetteCreating.value = false
     newRecetteName.value = ''
     newRecettePort.value = null
+    newRecetteTTL.value = null
   } catch (e) {
     recetteError.value = e.response?.data?.error || e.message
   } finally {
@@ -567,6 +584,7 @@ h2 { font-size: 22px; font-weight: 700; }
 .recette-row:last-child { border-bottom: none; }
 .recette-name { font-weight: 600; color: #444; flex: 1; }
 .recette-port { color: #888; font-size: 12px; font-family: monospace; }
+.recette-ttl { color: #a16207; font-size: 11px; }
 .recette-error { color: #c53030; font-size: 11px; }
 .recette-form { display: flex; gap: 6px; }
 .recette-create { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

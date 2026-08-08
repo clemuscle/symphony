@@ -491,6 +491,61 @@ d'implémenter réellement le multi-provider (C2).
 
 ---
 
+## EPIC H — Rétention des recettes (question ouverte n°1 de CLAUDE.md)
+
+### H1 ✅ Livré (2026-08-05) — TTL choisi par le dev à la création, plafonné par golden path
+
+**Décisions du fondateur (2026-08-05)** :
+1. Le dev choisit un TTL à la création d'une recette — **obligatoire**,
+   pas de valeur par défaut silencieuse.
+2. Ce TTL est plafonné par un paramètre de golden path
+   (`spec.recette_max_ttl_hours`).
+3. À l'échéance : **destruction immédiate**, pas de délai de grâce ni de
+   canal d'avertissement.
+4. **Pas d'extension** : une recette expirée est détruite, le dev en
+   recrée une nouvelle s'il en a encore besoin.
+
+**Spec / implémentation** :
+- `internal/templates/loader.go` — `GPSpec.RecetteMaxTTLHours` (requis).
+  `loadOne` rejette au chargement un golden path qui ne le définit pas
+  (`> 0`), même pattern que `resolveToolDefaults` pour `test_tool` —
+  referme au passage le reliquat de la question ouverte n°3. Nouvelle
+  méthode publique `Loader.Spec(language)` pour que les handlers
+  résolvent le plafond sans exposer le contenu des fichiers.
+- Les 4 golden paths existants (`config/golden-paths/*/golden-path.yaml`)
+  déclarent `recette_max_ttl_hours: 72`.
+- `internal/database/schema.go` — `ALTER TABLE deployments ADD COLUMN IF
+  NOT EXISTS expires_at TIMESTAMP` (nullable — seules les recettes
+  l'utilisent, migration additive, même style que `environment`/`tags`
+  de l'EPIC D).
+- `internal/api/projects.go` (`createRecette`) — nouveau champ requis
+  `ttl_hours` dans le body. Rejette `ttl_hours <= 0` et `ttl_hours >
+  recette_max_ttl_hours` du golden path du projet (résolu via
+  `project.Language`, comme `RenderFiles`/`RenderCI`). `expires_at = now
+  + ttl_hours` posé sur la ligne `deployments` à la création.
+- `cmd/symphony/main.go` (`reconcileDeployments`) — passe 3 : recettes
+  `running` dont `expires_at` est dépassé (`ListExpiredRunningRecettes`)
+  → `CI.TriggerPipeline` avec `DESTROY_RECETTE`, exactement le chemin de
+  `destroyRecette`. Le statut ne change pas ici — il reste `running`
+  jusqu'à ce que la passe 2 constate la disparition réelle du container
+  au tour suivant, jamais affirmé au moment du déclenchement (principe
+  #3, cohérent avec le commentaire déjà présent sur la state machine
+  `Deployment`). Audit loggé avec l'acteur `"system"`.
+- Frontend (`ProjectDetail.vue`) — champ `ttl_hours` dans le formulaire
+  de création de recette (placeholder affichant le plafond du golden
+  path, résolu via `GET /api/v1/golden-paths` comme le fait déjà
+  `loadMonitoring` pour `monitoring_url`) ; date d'expiration affichée
+  sur chaque ligne de recette active.
+- `scripts/demo-seed.sh` mis à jour (`ttl_hours: 72` sur la recette de
+  démo `demo-recette/demo`), sinon la création échouerait en 400.
+
+**Hors scope, explicitement** : pas d'endpoint d'extension, pas de délai
+de grâce, pas de canal de notification avant destruction — conformes aux
+décisions du fondateur ci-dessus, à rouvrir seulement si un besoin réel
+apparaît.
+
+---
+
 ## Décisions prises le 2026-07-24 (log)
 
 Pour traçabilité — ces réponses ont été proposées par Claude en rôle de CTO
