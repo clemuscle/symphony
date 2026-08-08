@@ -88,6 +88,16 @@
               </select>
             </div>
 
+            <div class="field" v-if="groups.length">
+              <label>Groupe propriétaire <span class="req">*</span></label>
+              <select v-model="form.group" :disabled="loadingGroups" class="ns-select">
+                <option value="" disabled>{{ loadingGroups ? 'Chargement…' : 'Choisir un groupe' }}</option>
+                <option v-for="g in groups" :key="g.name" :value="g.name">
+                  👥 {{ g.name }}{{ g.description ? ' — ' + g.description : '' }}
+                </option>
+              </select>
+            </div>
+
             <div class="field">
               <label>Port applicatif</label>
               <input v-model.number="form.port" type="number" placeholder="8080" />
@@ -98,13 +108,14 @@
               <div class="summary-item">📁 Repo <code>{{ form.namespace || 'root' }}/{{ form.name || '…' }}</code></div>
               <div class="summary-item">⚙️ Pipeline CI/CD (test + build)</div>
               <div class="summary-item">📦 Entrée registre</div>
+              <div class="summary-item" v-if="form.group">👥 Groupe <code>{{ form.group }}</code></div>
             </div>
 
             <div v-if="createError" class="create-error">❌ {{ createError }}</div>
 
             <button
               class="btn-submit"
-              :disabled="creating || !form.name || !!nameError || !form.namespace"
+              :disabled="creating || !form.name || !!nameError || !form.namespace || (groups.length && !form.group)"
               @click="createProject"
             >
               {{ creating ? '⏳ Création en cours…' : '🚀 Créer le projet' }}
@@ -167,8 +178,10 @@ const createError = ref(null)
 const nameError = ref('')
 const namespaces = ref([])
 const loadingNS = ref(false)
+const groups = ref([])
+const loadingGroups = ref(false)
 
-const form = ref({ name: '', description: '', namespace: '', port: 8080 })
+const form = ref({ name: '', description: '', namespace: '', group: '', port: 8080 })
 
 const langIcon = (lang) => ({ go: '🐹', python: '🐍', node: '💚', java: '☕' })[lang] || '📦'
 const typeLabel = (type) => ({ rest_api: 'REST API', cli: 'CLI', worker: 'Worker', webapp: 'Web App' })[type] || type || ''
@@ -189,7 +202,7 @@ async function openDrawer(gp) {
   drawerOpen.value = true
   createResult.value = null
   createError.value = null
-  form.value = { name: '', description: '', namespace: '', port: gp.spec?.default_port || 8080 }
+  form.value = { name: '', description: '', namespace: '', group: '', port: gp.spec?.default_port || 8080 }
   loadingNS.value = true
   try {
     const { data } = await api.listNamespaces()
@@ -197,6 +210,14 @@ async function openDrawer(gp) {
     if (namespaces.value.length === 1) form.value.namespace = namespaces.value[0].path
   } catch { /* non bloquant */ } finally {
     loadingNS.value = false
+  }
+  loadingGroups.value = true
+  try {
+    const { data } = await api.listGroups()
+    groups.value = data || []
+    if (groups.value.length === 1) form.value.group = groups.value[0].name
+  } catch { /* non bloquant — scoping par groupe désactivé ou route absente */ } finally {
+    loadingGroups.value = false
   }
 }
 
@@ -234,7 +255,7 @@ function goToProjects() {
 
 function resetForm() {
   createResult.value = null
-  form.value = { name: '', description: '', namespace: '', port: 8080 }
+  form.value = { name: '', description: '', namespace: '', group: '', port: 8080 }
 }
 </script>
 

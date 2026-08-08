@@ -111,8 +111,12 @@ func main() {
 	// Coûts — chargé depuis config/costs.yaml ; tarifs à zéro si absent (tracking usage seulement)
 	costCfg := loadCosts(getEnv("COSTS_CONFIG_PATH", "config/costs.yaml"))
 
-	// RBAC — chargé depuis config/rbac.yaml ; permissif si absent (small teams)
-	rbacMgr := loadRBAC(getEnv("RBAC_CONFIG_PATH", "config/rbac.yaml"))
+	// RBAC — chargé depuis config/rbac.yaml ; permissif si absent (small teams).
+	// Enveloppé dans un Store rechargeable à chaud (POST /api/v1/rbac/reload) :
+	// un seul exemplaire canonique partagé entre le middleware d'auth OIDC et
+	// les handlers API, pour que rôle et groupes projet ne divergent jamais.
+	rbacPath := getEnv("RBAC_CONFIG_PATH", "config/rbac.yaml")
+	rbacStore := rbac.NewStore(loadRBAC(rbacPath))
 
 	// Auth OIDC — fail-closed par défaut.
 	// Sans OIDC_ISSUER, Symphony refuse de démarrer sauf si SYMPHONY_DEV_MODE=1
@@ -125,7 +129,7 @@ func main() {
 			ClientID:     os.Getenv("OIDC_CLIENT_ID"),
 			ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
 			RedirectURL:  getEnv("OIDC_REDIRECT_URL", "http://localhost:8090/auth/callback"),
-		}, rbacMgr)
+		}, rbacStore)
 		if err != nil {
 			log.Fatalf("auth OIDC: %v", err)
 		}
@@ -153,6 +157,8 @@ func main() {
 		TestProvider:   drivers.TestProvider,
 		AvailableTypes: drivers.AvailableTypes(),
 		CfgPath:        cfgPath,
+		RBAC:           rbacStore,
+		RBACPath:       rbacPath,
 		CostCfg:        costCfg,
 	})
 	go reconcileDeployments(db, srv.GetProviders)

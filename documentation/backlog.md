@@ -546,6 +546,104 @@ apparaît.
 
 ---
 
+## EPIC I — RBAC par groupe projet (question ouverte n°2 de CLAUDE.md)
+
+### I1 ✅ Livré (2026-08-08) — scoping par projet en plus du rôle global
+
+**Décisions du fondateur (2026-08-08)** :
+1. Le RBAC doit être scopé par projet, pas seulement global : le rôle
+   détermine QUOI, le groupe propriétaire du projet détermine SUR QUOI.
+2. Seul un admin peut faire connaître à Symphony un nouveau groupe
+   utilisable comme propriétaire de projet — un dev ne choisit qu'un
+   groupe déjà connu, parmi ceux dont il est membre.
+3. Le groupe propriétaire d'un projet est modifiable après coup,
+   uniquement par un admin.
+
+**Revue `architecture-guardian` avant implémentation** — a corrigé un
+défaut structurel de la proposition initiale (un check basé sur le path
+des routes `/projects/{name}/...` aurait raté `/deployments` et
+`/pipelines/trigger`, qui résolvent le projet depuis le body — exactement
+le raisonnement qui a produit G1) et tranché les points restés ouverts :
+stockage du catalogue de groupes en YAML (pas une table DB — c'est de la
+config plateforme admin-managed, pas de l'état métier, et une table
+dériverait vers une table de permissions parallèle, interdite par la
+section Sécurité de CLAUDE.md) ; vérification d'appartenance obligatoire
+à la création d'un projet ; `RoleLead` scopé par projet sans exception
+(un lead global aurait rouvert G1 avec une étape de plus) ; opt-in tout
+ou rien (`project_groups` vide = comportement identique à avant).
+
+**Spec / implémentation** :
+- `config/rbac.yaml` — nouveau bloc `project_groups` (`name`,
+  `description`, `oidc_groups`) : indirection nom Symphony ↔ claims OIDC
+  nécessaire (Azure AD émet des object IDs illisibles dans la claim
+  `groups`), et permet de rattacher plusieurs claims (devs + leads) à un
+  seul groupe.
+- `internal/rbac/rbac.go` — `ProjectGroup`, `Manager.GroupsEnabled()` /
+  `ProjectGroups(oidcGroups)` / `KnownGroup(name)`. Nouveau `rbac.Store`
+  (swap atomique protégé par `sync.RWMutex`) : un seul exemplaire
+  canonique partagé entre `auth.Provider.Middleware` et les handlers API,
+  pour que rôle et groupes projet ne divergent jamais après un reload.
+  `POST /api/v1/rbac/reload` (admin-only), même pattern que
+  `/templates/reload`.
+- `internal/auth/auth.go` — `User.ProjectGroups` résolu au même endroit
+  et au même instant que `Role`, jamais mis en cache au-delà de la
+  requête (le membership vient du token à chaque fois).
+- `internal/database/schema.go` — `ALTER TABLE projects ADD COLUMN IF
+  NOT EXISTS owner_group VARCHAR(255)` + index. Nullable, sans backfill :
+  un projet antérieur à cette fonctionnalité reste invisible aux
+  non-admins tant qu'un admin ne l'adopte pas explicitement.
+- `internal/api/server.go` — `authorizeProject(w, r, project)`, appelée
+  juste après CHAQUE `GetProject`/`GetProjectByRepoPath` dans un handler
+  qui agit sur un projet précis (jamais un middleware de route). Non-membre
+  → 404 (ne jamais révéler l'existence d'un projet d'une autre équipe) ;
+  rôle insuffisant reste géré par `requireRole` (403). Suppression du
+  court-circuit `s.devMode` dans `requireRole` — `devModeUserMiddleware`
+  injecte déjà un admin, le bypass séparé faisait que le chemin
+  d'autorisation n'était jamais exercé en dev/démo (même classe de bug que
+  celle documentée pour `setupStatus`).
+- `internal/api/projects.go` (`createProject`) — `group` requis si
+  `GroupsEnabled()`, validé contre le catalogue et contre l'appartenance
+  OIDC du créateur (sauf admin) ; message d'erreur actionnable si
+  l'utilisateur n'est membre d'aucun groupe.
+- `GET /api/v1/groups` (catalogue accessible à l'appelant) et
+  `PUT /api/v1/projects/{name}/group` (transfert, admin-only — ne modifie
+  que la ligne DB, ne déplace jamais le repo ni le namespace GitLab,
+  principe #3).
+- Filtrage en lecture par groupe (SQL, jamais un post-filtrage Go sur une
+  liste complète) : `listProjects`, `listDeployments`,
+  `listAllPipelinesHandler`, `getInventory`, `getCosts` (`ByTeam` bascule
+  de `namespace` vers `owner_group` — ce sont deux notions d'équipe
+  différentes). `GET /audit` passé à `RoleAdmin` uniquement pour le MVP —
+  `audit_log.resource` est du texte libre, un filtrage par groupe ne
+  serait pas fiable.
+- Bug préexistant corrigé au passage : `triggerPipelineHandler`
+  (`internal/api/handlers.go`) stockait `req.ProjectPath` (repo_path) au
+  lieu de `project.Name` dans `pipelines.project_name`, rendant ces lignes
+  inatteignables par un filtrage par groupe basé sur `projects.name`.
+  Frontend (`ProjectDetail.vue`) corrigé en conséquence
+  (`listPipelines(p.name)` au lieu de `listPipelines(p.repo_path)`).
+- Garde-fou : `internal/api/authz_test.go` — table-test des 3 profils
+  (admin / membre / non-membre) sur `authorizeProject`, plus un test
+  statique qui scanne `projects.go`/`handlers.go` et échoue si un appel à
+  `GetProject`/`GetProjectByRepoPath` n'est suivi d'aucun appel à
+  `authorizeProject` (sauf marqueur explicite `authz:no-group-check`) —
+  c'est la classe de bug qui a produit G1, pas attrapable par une revue
+  de code seule sur un repo qui grossit.
+- Frontend — sélecteur de groupe à la création de projet
+  (`Catalogue.vue`, alimenté par `GET /api/v1/groups`, masqué si le
+  scoping est désactivé), affichage du groupe propriétaire
+  (`Projects.vue`, `ProjectDetail.vue`), bouton de rechargement RBAC
+  dans `Admin.vue`.
+
+**Hors scope, explicitement** : pas d'UI dédiée au transfert de groupe
+(`PUT .../group` reste API-only pour le MVP — action de migration rare,
+pas une action du golden path) ; pas de filtrage par groupe sur
+`GET /audit`, `GET /repos`, `GET /namespaces` au-delà du passage à
+`RoleDeveloper` minimum ; pas de notion de "plusieurs groupes par
+projet" — un projet appartient à exactement un groupe.
+
+---
+
 ## Décisions prises le 2026-07-24 (log)
 
 Pour traçabilité — ces réponses ont été proposées par Claude en rôle de CTO

@@ -4,23 +4,30 @@ import (
 	"net/http"
 	"sort"
 	"time"
+
+	"github.com/yourorg/symphony/internal/database"
 )
 
 type projectCost struct {
-	Project         string  `json:"project"`
-	Namespace       string  `json:"namespace"`
-	ContainerHours  float64 `json:"container_hours"`
-	ContainerCost   float64 `json:"container_cost"`
-	CIMinutes       float64 `json:"ci_minutes"`
-	CICost          float64 `json:"ci_cost"`
-	Total           float64 `json:"total"`
-}
-
-type teamCost struct {
+	Project        string  `json:"project"`
 	Namespace      string  `json:"namespace"`
+	OwnerGroup     string  `json:"owner_group,omitempty"`
+	ContainerHours float64 `json:"container_hours"`
 	ContainerCost  float64 `json:"container_cost"`
+	CIMinutes      float64 `json:"ci_minutes"`
 	CICost         float64 `json:"ci_cost"`
 	Total          float64 `json:"total"`
+}
+
+// teamCost agrège par owner_group (le "groupe" au sens produit — voir
+// question ouverte n°2 de CLAUDE.md), pas par namespace Kubernetes/Docker :
+// ce sont deux notions d'équipe différentes, namespace resterait ambigu dès
+// qu'un groupe possède plusieurs projets dans des namespaces distincts.
+type teamCost struct {
+	Group         string  `json:"group"`
+	ContainerCost float64 `json:"container_cost"`
+	CICost        float64 `json:"ci_cost"`
+	Total         float64 `json:"total"`
 }
 
 type costsResponse struct {
@@ -50,22 +57,41 @@ func (s *Server) getCosts(w http.ResponseWriter, r *http.Request) {
 		periodLabel = now.Format("2006-01")
 	}
 
-	deployments, err := s.db.ListAllDeploymentsSince(since)
+	groups, unrestricted := s.scopeGroups(r)
+
+	var deployments []database.Deployment
+	var pipelines []database.Pipeline
+	var err error
+	if unrestricted {
+		deployments, err = s.db.ListAllDeploymentsSince(since)
+	} else {
+		deployments, err = s.db.ListAllDeploymentsSinceForGroups(since, groups)
+	}
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	pipelines, err := s.db.ListAllPipelinesSince(since)
+	if unrestricted {
+		pipelines, err = s.db.ListAllPipelinesSince(since)
+	} else {
+		pipelines, err = s.db.ListAllPipelinesSinceForGroups(since, groups)
+	}
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
-	// Récupérer les namespaces des projets pour le regroupement par équipe
-	projects, _ := s.db.ListProjects()
-	nsOf := map[string]string{} // project name → namespace
+	// Récupérer namespace + owner_group des projets pour le regroupement par équipe
+	projects, err := s.listProjectsScoped(r)
+	if err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	nsOf := map[string]string{}    // project name → namespace
+	groupOf := map[string]string{} // project name → owner_group
 	for _, p := range projects {
 		nsOf[p.Name] = p.Namespace
+		groupOf[p.Name] = p.OwnerGroup
 	}
 
 	rates := s.costCfg.Rates
@@ -75,7 +101,7 @@ func (s *Server) getCosts(w http.ResponseWriter, r *http.Request) {
 
 	getPC := func(name string) *projectCost {
 		if _, ok := pc[name]; !ok {
-			pc[name] = &projectCost{Project: name, Namespace: nsOf[name]}
+			pc[name] = &projectCost{Project: name, Namespace: nsOf[name], OwnerGroup: groupOf[name]}
 		}
 		return pc[name]
 	}
@@ -126,19 +152,19 @@ func (s *Server) getCosts(w http.ResponseWriter, r *http.Request) {
 		return byProject[i].Total > byProject[j].Total
 	})
 
-	// Agrégat par équipe (namespace)
+	// Agrégat par équipe (owner_group — voir teamCost)
 	teamMap := map[string]*teamCost{}
 	for _, c := range byProject {
-		ns := c.Namespace
-		if ns == "" {
-			ns = "(sans équipe)"
+		g := c.OwnerGroup
+		if g == "" {
+			g = "(sans groupe)"
 		}
-		if _, ok := teamMap[ns]; !ok {
-			teamMap[ns] = &teamCost{Namespace: ns}
+		if _, ok := teamMap[g]; !ok {
+			teamMap[g] = &teamCost{Group: g}
 		}
-		teamMap[ns].ContainerCost += c.ContainerCost
-		teamMap[ns].CICost += c.CICost
-		teamMap[ns].Total += c.Total
+		teamMap[g].ContainerCost += c.ContainerCost
+		teamMap[g].CICost += c.CICost
+		teamMap[g].Total += c.Total
 	}
 	byTeam := make([]teamCost, 0, len(teamMap))
 	for _, t := range teamMap {

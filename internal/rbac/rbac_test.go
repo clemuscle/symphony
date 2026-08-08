@@ -49,6 +49,69 @@ func TestResolveRole_NoAdminGroups_NobodyIsAdmin(t *testing.T) {
 	}
 }
 
+func TestGroupsEnabled_EmptyByDefault(t *testing.T) {
+	if Default().GroupsEnabled() {
+		t.Error("no project_groups configured → scoping should stay disabled")
+	}
+	m := New(Config{Roles: map[string]RoleConfig{}})
+	if m.GroupsEnabled() {
+		t.Error("empty project_groups → scoping should stay disabled")
+	}
+}
+
+func TestGroupsEnabled_NonEmpty(t *testing.T) {
+	m := New(Config{ProjectGroups: []ProjectGroup{
+		{Name: "team-paiements", OIDCGroups: []string{"paiements-devs"}},
+	}})
+	if !m.GroupsEnabled() {
+		t.Error("non-empty project_groups → scoping should be enabled")
+	}
+}
+
+func TestProjectGroups_MapsOIDCClaimsToSymphonyNames(t *testing.T) {
+	m := New(Config{ProjectGroups: []ProjectGroup{
+		{Name: "team-paiements", OIDCGroups: []string{"paiements-devs", "paiements-leads"}},
+		{Name: "team-plateforme", OIDCGroups: []string{"devops-team"}},
+	}})
+	got := m.ProjectGroups([]string{"paiements-devs", "someone-else"})
+	if len(got) != 1 || got[0] != "team-paiements" {
+		t.Errorf("got %v, want [team-paiements]", got)
+	}
+}
+
+func TestProjectGroups_DedupesMultipleClaimsSameGroup(t *testing.T) {
+	m := New(Config{ProjectGroups: []ProjectGroup{
+		{Name: "team-paiements", OIDCGroups: []string{"paiements-devs", "paiements-leads"}},
+	}})
+	got := m.ProjectGroups([]string{"paiements-devs", "paiements-leads"})
+	if len(got) != 1 || got[0] != "team-paiements" {
+		t.Errorf("got %v, want [team-paiements] deduped", got)
+	}
+}
+
+func TestKnownGroup(t *testing.T) {
+	m := New(Config{ProjectGroups: []ProjectGroup{
+		{Name: "team-paiements", OIDCGroups: []string{"paiements-devs"}},
+	}})
+	if !m.KnownGroup("team-paiements") {
+		t.Error("team-paiements should be known")
+	}
+	if m.KnownGroup("team-inexistante") {
+		t.Error("team-inexistante should not be known")
+	}
+}
+
+func TestStore_GetSet(t *testing.T) {
+	s := NewStore(Default())
+	if s.Get().GroupsEnabled() {
+		t.Fatal("expected disabled by default")
+	}
+	s.Set(New(Config{ProjectGroups: []ProjectGroup{{Name: "team-a", OIDCGroups: []string{"a"}}}}))
+	if !s.Get().GroupsEnabled() {
+		t.Error("expected enabled after Set")
+	}
+}
+
 func TestAtLeast(t *testing.T) {
 	if !RoleAdmin.AtLeast(RoleAdmin) {
 		t.Error("admin >= admin")

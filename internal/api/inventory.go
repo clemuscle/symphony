@@ -16,31 +16,51 @@ type inventorySummary struct {
 }
 
 type inventoryResponse struct {
-	Summary    inventorySummary        `json:"summary"`
-	Projects   []database.Project      `json:"projects"`
-	Containers []database.Deployment   `json:"containers"`
-	Recettes   []database.Deployment   `json:"recettes"`
-	Pipelines  []database.Pipeline     `json:"pipelines"`
+	Summary    inventorySummary          `json:"summary"`
+	Projects   []database.Project        `json:"projects"`
+	Containers []database.Deployment     `json:"containers"`
+	Recettes   []database.Deployment     `json:"recettes"`
+	Pipelines  []database.Pipeline       `json:"pipelines"`
 	Live       []providers.ContainerInfo `json:"live_containers,omitempty"`
 }
 
 func (s *Server) getInventory(w http.ResponseWriter, r *http.Request) {
-	projects, err := s.db.ListProjects()
+	projects, err := s.listProjectsScoped(r)
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	containers, err := s.db.ListAllActiveDeployments()
+
+	groups, unrestricted := s.scopeGroups(r)
+
+	var containers []database.Deployment
+	if unrestricted {
+		containers, err = s.db.ListAllActiveDeployments()
+	} else {
+		containers, err = s.db.ListAllActiveDeploymentsForGroups(groups)
+	}
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	recettes, err := s.db.ListAllActiveRecettes()
+
+	var recettes []database.Deployment
+	if unrestricted {
+		recettes, err = s.db.ListAllActiveRecettes()
+	} else {
+		recettes, err = s.db.ListAllActiveRecettesForGroups(groups)
+	}
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	pipelines, err := s.db.ListActivePipelines()
+
+	var pipelines []database.Pipeline
+	if unrestricted {
+		pipelines, err = s.db.ListActivePipelines()
+	} else {
+		pipelines, err = s.db.ListActivePipelinesForGroups(groups)
+	}
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

@@ -17,6 +17,7 @@ import (
 	"github.com/yourorg/symphony/internal/auth"
 	"github.com/yourorg/symphony/internal/catalog"
 	"github.com/yourorg/symphony/internal/database"
+	"github.com/yourorg/symphony/internal/rbac"
 )
 
 // webhookClient a un timeout explicite — http.DefaultClient (utilisé par
@@ -174,7 +175,7 @@ func (s *Server) triggerAction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
-	projects, err := s.db.ListProjects()
+	projects, err := s.listProjectsScoped(r)
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -183,6 +184,47 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 		projects = []database.Project{}
 	}
 	respond(w, http.StatusOK, projects)
+}
+
+// listProjectsScoped centralise la règle de visibilité par groupe pour tous
+// les endpoints de lecture qui listent des projets/déploiements/pipelines :
+// scoping désactivé ou appelant admin → tout ; sinon → uniquement les
+// projets dont owner_group est un groupe de l'appelant (filtrage en SQL,
+// voir ListProjectsForGroups, pas un post-filtrage Go sur une liste
+// complète).
+func (s *Server) listProjectsScoped(r *http.Request) ([]database.Project, error) {
+	mgr := s.getRBAC()
+	if !mgr.GroupsEnabled() {
+		return s.db.ListProjects()
+	}
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		return nil, nil
+	}
+	if user.Role.AtLeast(rbac.RoleAdmin) {
+		return s.db.ListProjects()
+	}
+	return s.db.ListProjectsForGroups(user.ProjectGroups)
+}
+
+// scopeGroups indique comment un endpoint de lecture agrégée (déploiements,
+// pipelines, inventaire, coûts) doit filtrer ses résultats : unrestricted=true
+// signifie "tout" (scoping désactivé ou appelant admin) ; sinon groups est la
+// liste — possiblement vide — des groupes projet de l'appelant, à passer aux
+// variantes *ForGroups des requêtes DB.
+func (s *Server) scopeGroups(r *http.Request) (groups []string, unrestricted bool) {
+	mgr := s.getRBAC()
+	if !mgr.GroupsEnabled() {
+		return nil, true
+	}
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		return nil, false
+	}
+	if user.Role.AtLeast(rbac.RoleAdmin) {
+		return nil, true
+	}
+	return user.ProjectGroups, false
 }
 
 func (s *Server) listRepos(w http.ResponseWriter, r *http.Request) {
@@ -246,6 +288,9 @@ func (s *Server) triggerPipelineHandler(w http.ResponseWriter, r *http.Request) 
 		respond(w, http.StatusNotFound, map[string]string{"error": "projet inconnu de Symphony"})
 		return
 	}
+	if !s.authorizeProject(w, r, project) {
+		return
+	}
 	for k := range req.Vars {
 		if reservedPipelineVars[k] {
 			respond(w, http.StatusBadRequest, map[string]string{"error": k + " ne peut pas être positionnée ici — utiliser l'endpoint dédié"})
@@ -261,8 +306,13 @@ func (s *Server) triggerPipelineHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// ProjectName = project.Name (le nom court Symphony), pas req.ProjectPath
+	// (le repo_path "groupe/repo") — même convention que deployments et
+	// nécessaire pour que le filtrage par groupe (JOIN sur projects.name)
+	// retrouve ces lignes. Bug préexistant à cette fonctionnalité, corrigé
+	// au passage (voir revue architecture-guardian de l'EPIC I).
 	s.db.CreatePipeline(&database.Pipeline{
-		ProjectName: req.ProjectPath,
+		ProjectName: project.Name,
 		PipelineID:  id,
 		Type:        "manual",
 		Status:      "pending",
@@ -313,8 +363,12 @@ func (s *Server) getPipelineStatusHandler(w http.ResponseWriter, r *http.Request
 		respond(w, http.StatusBadRequest, map[string]string{"error": "project et id requis"})
 		return
 	}
-	if _, err := s.db.GetProjectByRepoPath(projectPath); err != nil {
+	project, err := s.db.GetProjectByRepoPath(projectPath)
+	if err != nil {
 		respond(w, http.StatusNotFound, map[string]string{"error": "projet inconnu de Symphony"})
+		return
+	}
+	if !s.authorizeProject(w, r, project) {
 		return
 	}
 	status, err := pvds.CI.GetPipelineStatus(projectPath, pipelineID)
@@ -336,15 +390,22 @@ func (s *Server) getPipelineStatusHandler(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) listPipelinesHandler(w http.ResponseWriter, r *http.Request) {
-	// chi conserve %2F tel quel dans un segment de route plutôt que de le
-	// décoder en "/" — nécessaire ici puisque project_path (ex:
-	// "namespace/repo") contient lui-même un "/".
-	project, err := url.PathUnescape(chi.URLParam(r, "project"))
+	// %2F encodé défensif : le nom de projet (validateSlug) ne contient
+	// jamais de "/", mais PathUnescape reste inoffensif s'il en contenait un.
+	name, err := url.PathUnescape(chi.URLParam(r, "project"))
 	if err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "project invalide"})
 		return
 	}
-	pipelines, err := s.db.ListPipelines(project)
+	project, err := s.db.GetProject(name)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+		return
+	}
+	if !s.authorizeProject(w, r, project) {
+		return
+	}
+	pipelines, err := s.db.ListPipelines(project.Name)
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -356,7 +417,14 @@ func (s *Server) listPipelinesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listAllPipelinesHandler(w http.ResponseWriter, r *http.Request) {
-	pipelines, err := s.db.ListAllRecentPipelines()
+	groups, unrestricted := s.scopeGroups(r)
+	var pipelines []database.Pipeline
+	var err error
+	if unrestricted {
+		pipelines, err = s.db.ListAllRecentPipelines()
+	} else {
+		pipelines, err = s.db.ListAllRecentPipelinesForGroups(groups)
+	}
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -368,7 +436,14 @@ func (s *Server) listAllPipelinesHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) {
-	deployments, err := s.db.ListDeployments()
+	groups, unrestricted := s.scopeGroups(r)
+	var deployments []database.Deployment
+	var err error
+	if unrestricted {
+		deployments, err = s.db.ListDeployments()
+	} else {
+		deployments, err = s.db.ListDeploymentsForGroups(groups)
+	}
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -394,6 +469,9 @@ func (s *Server) stopDeployment(w http.ResponseWriter, r *http.Request) {
 	project, err := s.db.GetProject(d.ProjectName)
 	if err != nil {
 		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+		return
+	}
+	if !s.authorizeProject(w, r, project) {
 		return
 	}
 
@@ -512,4 +590,90 @@ func (s *Server) reloadTemplates(w http.ResponseWriter, r *http.Request) {
 		"golden_paths": len(s.tmpl.GetGoldenPaths()),
 		"message":      "templates rechargés",
 	})
+}
+
+// reloadRBAC recharge config/rbac.yaml à chaud (ajout d'un groupe projet,
+// changement de mapping groupes OIDC → rôle) sans redémarrer le process —
+// même besoin que /templates/reload : un admin qui rattache une nouvelle
+// équipe ne doit pas avoir à redémarrer le binaire en prod.
+func (s *Server) reloadRBAC(w http.ResponseWriter, r *http.Request) {
+	cfg, err := rbac.LoadConfig(s.rbacPath)
+	if err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	s.rbac.Set(rbac.New(cfg))
+	respond(w, http.StatusOK, map[string]any{
+		"project_groups": len(cfg.ProjectGroups),
+		"message":        "rbac rechargé",
+	})
+}
+
+// listGroups retourne les groupes projet utilisables par l'appelant pour
+// créer/filtrer un projet — tout le catalogue pour un admin, uniquement ses
+// propres groupes pour les autres (alimente le sélecteur de l'étape 4 du
+// golden path). Liste vide si le scoping par groupe est désactivé.
+func (s *Server) listGroups(w http.ResponseWriter, r *http.Request) {
+	mgr := s.getRBAC()
+	if !mgr.GroupsEnabled() {
+		respond(w, http.StatusOK, []rbac.ProjectGroup{})
+		return
+	}
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		respond(w, http.StatusOK, []rbac.ProjectGroup{})
+		return
+	}
+	if user.Role.AtLeast(rbac.RoleAdmin) {
+		respond(w, http.StatusOK, mgr.AllProjectGroups())
+		return
+	}
+	names := map[string]bool{}
+	for _, g := range user.ProjectGroups {
+		names[g] = true
+	}
+	var out []rbac.ProjectGroup
+	for _, pg := range mgr.AllProjectGroups() {
+		if names[pg.Name] {
+			out = append(out, pg)
+		}
+	}
+	if out == nil {
+		out = []rbac.ProjectGroup{}
+	}
+	respond(w, http.StatusOK, out)
+}
+
+// transferProjectGroup change le groupe propriétaire d'un projet — admin
+// uniquement (voir question ouverte n°2 de CLAUDE.md). Ne modifie que la
+// ligne en base : ne déplace ni le repo ni le namespace GitLab (principe #3
+// — déplacer un repo serait de l'exécution sur un système vivant, jamais
+// fait directement par Symphony).
+func (s *Server) transferProjectGroup(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	// authz:no-group-check — route déjà réservée RoleAdmin par server.go, et
+	// doit fonctionner même sur un projet legacy sans owner_group (c'est
+	// justement l'endpoint qui lui en assigne un).
+	if _, err := s.db.GetProject(name); err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+		return
+	}
+	var req struct {
+		Group string `json:"group"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	mgr := s.getRBAC()
+	if req.Group != "" && mgr.GroupsEnabled() && !mgr.KnownGroup(req.Group) {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "groupe inconnu de Symphony — voir config/rbac.yaml"})
+		return
+	}
+	if err := s.db.UpdateProjectOwnerGroup(name, req.Group); err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	s.db.Log("transfer_project_group", name, "group="+req.Group, actorID(r))
+	respond(w, http.StatusOK, map[string]string{"owner_group": req.Group})
 }
