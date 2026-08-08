@@ -28,6 +28,10 @@ type User struct {
 	Groups  []string  `json:"groups"`
 	Role    rbac.Role `json:"role"`
 	IsAdmin bool      `json:"is_admin"` // derived from Role for backward compat
+	// ProjectGroups — noms de groupes projet Symphony (projects.owner_group)
+	// dont l'utilisateur est membre, résolus depuis Groups au même endroit et
+	// au même instant que Role, pour que les deux ne divergent jamais.
+	ProjectGroups []string `json:"project_groups"`
 }
 
 type ctxKey struct{}
@@ -44,16 +48,19 @@ func WithUser(ctx context.Context, u *User) context.Context {
 type Provider struct {
 	verifier *oidc.IDTokenVerifier
 	oauth2   oauth2.Config
-	rbac     *rbac.Manager
+	rbac     *rbac.Store
 }
 
-func New(ctx context.Context, cfg Config, rbacMgr *rbac.Manager) (*Provider, error) {
+// New prend un *rbac.Store (pas un *rbac.Manager) pour que le rôle et les
+// groupes projet résolus ici restent en phase avec ceux lus côté handlers
+// API après un POST /api/v1/rbac/reload — les deux lisent le même Store.
+func New(ctx context.Context, cfg Config, rbacStore *rbac.Store) (*Provider, error) {
 	p, err := oidc.NewProvider(ctx, cfg.Issuer)
 	if err != nil {
 		return nil, err
 	}
-	if rbacMgr == nil {
-		rbacMgr = rbac.Default()
+	if rbacStore == nil {
+		rbacStore = rbac.NewStore(rbac.Default())
 	}
 	return &Provider{
 		verifier: p.Verifier(&oidc.Config{ClientID: cfg.ClientID}),
@@ -64,7 +71,7 @@ func New(ctx context.Context, cfg Config, rbacMgr *rbac.Manager) (*Provider, err
 			Endpoint:     p.Endpoint(),
 			Scopes:       oidcScopes(),
 		},
-		rbac: rbacMgr,
+		rbac: rbacStore,
 	}, nil
 }
 
@@ -145,14 +152,16 @@ func (p *Provider) Middleware(next http.Handler) http.Handler {
 		if name == "" {
 			name = claims.Email
 		}
-		role := p.rbac.ResolveRole(claims.Groups)
+		mgr := p.rbac.Get()
+		role := mgr.ResolveRole(claims.Groups)
 		user := &User{
-			Sub:     claims.Sub,
-			Email:   claims.Email,
-			Name:    name,
-			Groups:  claims.Groups,
-			Role:    role,
-			IsAdmin: role == rbac.RoleAdmin,
+			Sub:           claims.Sub,
+			Email:         claims.Email,
+			Name:          name,
+			Groups:        claims.Groups,
+			Role:          role,
+			IsAdmin:       role == rbac.RoleAdmin,
+			ProjectGroups: mgr.ProjectGroups(claims.Groups),
 		}
 		ctx := context.WithValue(r.Context(), ctxKey{}, user)
 		next.ServeHTTP(w, r.WithContext(ctx))

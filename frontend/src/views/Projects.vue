@@ -37,6 +37,7 @@
           <span class="meta-item">📁 {{ p.repo_path || '—' }}</span>
           <span class="meta-item">🔌 :{{ p.port }}</span>
           <span class="meta-item" v-if="p.namespace">📂 {{ p.namespace }}</span>
+          <span class="meta-item" v-if="p.owner_group">👥 {{ p.owner_group }}</span>
         </div>
 
         <span class="detail-hint">Voir les détails →</span>

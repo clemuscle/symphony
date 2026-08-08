@@ -99,6 +99,56 @@ func (db *DB) ListAllRecentPipelines() ([]Pipeline, error) {
 	return out, nil
 }
 
+// ListAllRecentPipelinesForGroups / ListActivePipelinesForGroups sont les
+// variantes scopées de ListAllRecentPipelines / ListActivePipelines, utilisées
+// quand le scoping par groupe est actif — voir ListProjectsForGroups.
+func (db *DB) ListAllRecentPipelinesForGroups(groups []string) ([]Pipeline, error) {
+	if len(groups) == 0 {
+		return nil, nil
+	}
+	rows, err := db.Query(`
+		SELECT id, project_name, pipeline_id, type, status, triggered_by, created_at
+		FROM pipelines
+		WHERE project_name IN (SELECT name FROM projects WHERE owner_group = ANY($1))
+		ORDER BY created_at DESC LIMIT 50`, groups)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Pipeline
+	for rows.Next() {
+		var p Pipeline
+		rows.Scan(&p.ID, &p.ProjectName, &p.PipelineID, &p.Type,
+			&p.Status, &p.TriggeredBy, &p.CreatedAt)
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+func (db *DB) ListActivePipelinesForGroups(groups []string) ([]Pipeline, error) {
+	if len(groups) == 0 {
+		return nil, nil
+	}
+	rows, err := db.Query(`
+		SELECT id, project_name, pipeline_id, type, status, triggered_by, created_at
+		FROM pipelines
+		WHERE status NOT IN ('success', 'failed', 'canceled')
+		  AND project_name IN (SELECT name FROM projects WHERE owner_group = ANY($1))
+		ORDER BY created_at DESC LIMIT 50`, groups)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Pipeline
+	for rows.Next() {
+		var p Pipeline
+		rows.Scan(&p.ID, &p.ProjectName, &p.PipelineID, &p.Type,
+			&p.Status, &p.TriggeredBy, &p.CreatedAt)
+		out = append(out, p)
+	}
+	return out, nil
+}
+
 func (db *DB) ListPipelines(projectName string) ([]Pipeline, error) {
 	rows, err := db.Query(`
 		SELECT id, project_name, pipeline_id, type, status, triggered_by, created_at

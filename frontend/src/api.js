@@ -34,6 +34,11 @@ export const api = {
   listRepos: () => http.get('/api/v1/repos'),
   listNamespaces: () => http.get('/api/v1/namespaces'),
 
+  // Groupes projet (voir config/rbac.yaml project_groups — question ouverte n°2)
+  listGroups: () => http.get('/api/v1/groups'),
+  transferProjectGroup: (name, group) =>
+    http.put(`/api/v1/projects/${encodeURIComponent(name)}/group`, { group }),
+
   // Pipelines
   triggerPipeline: (projectPath, ref, vars) =>
     http.post('/api/v1/pipelines/trigger', { project_path: projectPath, ref, vars }),
@@ -71,4 +76,5 @@ export const api = {
   testProvider: (category, type, config) => http.post('/api/v1/setup/test', { category, type, config }),
   saveSetup: (data) => http.post('/api/v1/setup/save', data),
   reloadConfig: () => http.post('/api/v1/config/reload'),
+  reloadRBAC: () => http.post('/api/v1/rbac/reload'),
 }

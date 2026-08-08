@@ -133,6 +133,36 @@ func (db *DB) ListDeployments() ([]Deployment, error) {
 	return deployments, nil
 }
 
+// ListDeploymentsForGroups est la variante scopée de ListDeployments — ne
+// retourne que les déploiements des projets dont owner_group figure dans
+// groups (filtrage en SQL, voir ListProjectsForGroups). groups vide retourne
+// une liste vide.
+func (db *DB) ListDeploymentsForGroups(groups []string) ([]Deployment, error) {
+	if len(groups) == 0 {
+		return nil, nil
+	}
+	rows, err := db.Query(`
+		SELECT id, project_name, pipeline_id, image, port, status, url, recette_name, environment, tags, created_at
+		FROM deployments
+		WHERE recette_name IS NULL
+		  AND project_name IN (SELECT name FROM projects WHERE owner_group = ANY($1))
+		ORDER BY created_at DESC`, groups)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var deployments []Deployment
+	for rows.Next() {
+		var d Deployment
+		var recetteName *string
+		rows.Scan(&d.ID, &d.ProjectName, &d.PipelineID, &d.Image,
+			&d.Port, &d.Status, &d.URL, &recetteName, &d.Environment, pgArrayScan(&d.Tags), &d.CreatedAt)
+		deployments = append(deployments, d)
+	}
+	return deployments, nil
+}
+
 func (db *DB) ListRecettes(projectName string) ([]Deployment, error) {
 	rows, err := db.Query(`
 		SELECT id, project_name, pipeline_id, image, port, status, url, recette_name, environment, tags, expires_at, created_at
@@ -216,6 +246,62 @@ func (db *DB) ListAllActiveRecettes() ([]Deployment, error) {
 		FROM deployments
 		WHERE recette_name IS NOT NULL AND status NOT IN ('stopped', 'failed')
 		ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Deployment
+	for rows.Next() {
+		var d Deployment
+		var rn *string
+		rows.Scan(&d.ID, &d.ProjectName, &d.PipelineID, &d.Image,
+			&d.Port, &d.Status, &d.URL, &rn, &d.Environment, pgArrayScan(&d.Tags), &d.CreatedAt)
+		if rn != nil {
+			d.RecetteName = *rn
+		}
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+// ListAllActiveDeploymentsForGroups / ListAllActiveRecettesForGroups sont les
+// variantes scopées utilisées par getInventory quand le scoping par groupe
+// est actif — voir ListProjectsForGroups.
+func (db *DB) ListAllActiveDeploymentsForGroups(groups []string) ([]Deployment, error) {
+	if len(groups) == 0 {
+		return nil, nil
+	}
+	rows, err := db.Query(`
+		SELECT id, project_name, pipeline_id, image, port, status, url, recette_name, environment, tags, created_at
+		FROM deployments
+		WHERE recette_name IS NULL AND status NOT IN ('stopped', 'failed')
+		  AND project_name IN (SELECT name FROM projects WHERE owner_group = ANY($1))
+		ORDER BY created_at DESC`, groups)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Deployment
+	for rows.Next() {
+		var d Deployment
+		var rn *string
+		rows.Scan(&d.ID, &d.ProjectName, &d.PipelineID, &d.Image,
+			&d.Port, &d.Status, &d.URL, &rn, &d.Environment, pgArrayScan(&d.Tags), &d.CreatedAt)
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+func (db *DB) ListAllActiveRecettesForGroups(groups []string) ([]Deployment, error) {
+	if len(groups) == 0 {
+		return nil, nil
+	}
+	rows, err := db.Query(`
+		SELECT id, project_name, pipeline_id, image, port, status, url, recette_name, environment, tags, created_at
+		FROM deployments
+		WHERE recette_name IS NOT NULL AND status NOT IN ('stopped', 'failed')
+		  AND project_name IN (SELECT name FROM projects WHERE owner_group = ANY($1))
+		ORDER BY created_at DESC`, groups)
 	if err != nil {
 		return nil, err
 	}

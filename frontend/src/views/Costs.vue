@@ -67,19 +67,19 @@
 
       <!-- Par équipe -->
       <section class="section" v-if="data.by_team.length > 1">
-        <h3 class="section-title">👥 Par équipe (namespace)</h3>
+        <h3 class="section-title">👥 Par groupe</h3>
         <table class="cost-table">
           <thead>
             <tr>
-              <th>Équipe</th>
+              <th>Groupe</th>
               <th class="num">Coût containers</th>
               <th class="num">Coût CI</th>
               <th class="num total-col">Total</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="t in data.by_team" :key="t.namespace">
-              <td class="name-cell">{{ t.namespace }}</td>
+            <tr v-for="t in data.by_team" :key="t.group">
+              <td class="name-cell">{{ t.group }}</td>
               <td class="num">{{ fmt(t.container_cost) }}</td>
               <td class="num">{{ fmt(t.ci_cost) }}</td>
               <td class="num total-col">
@@ -92,16 +92,16 @@
         <div class="bar-chart" v-if="data.total > 0">
           <div
             v-for="t in data.by_team"
-            :key="t.namespace"
+            :key="t.group"
             class="bar-segment"
-            :style="{ width: pct(t.total) + '%', background: teamColor(t.namespace) }"
-            :title="t.namespace + ' — ' + fmt(t.total) + ' ' + data.currency"
+            :style="{ width: pct(t.total) + '%', background: teamColor(t.group) }"
+            :title="t.group + ' — ' + fmt(t.total) + ' ' + data.currency"
           ></div>
         </div>
         <div class="bar-legend" v-if="data.total > 0">
-          <div v-for="t in data.by_team" :key="t.namespace" class="legend-item">
-            <span class="legend-dot" :style="{ background: teamColor(t.namespace) }"></span>
-            {{ t.namespace }} ({{ pct(t.total) }}%)
+          <div v-for="t in data.by_team" :key="t.group" class="legend-item">
+            <span class="legend-dot" :style="{ background: teamColor(t.group) }"></span>
+            {{ t.group }} ({{ pct(t.total) }}%)
           </div>
         </div>
       </section>

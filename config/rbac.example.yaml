@@ -30,3 +30,32 @@ roles:
 
   # viewer is the implicit default for any authenticated user not matched above.
   # Viewers have read-only access to all resources.
+
+# project_groups scopes WHICH projects a role can act on / see, on top of the
+# roles above which already decide WHAT a role can do. A project belongs to
+# exactly one group (projects.owner_group), assigned by an admin at creation
+# and transferable later (PUT /api/v1/projects/{name}/group, admin-only).
+#
+# Opt-in, all-or-nothing: leave this list empty (or omit it) and project
+# scoping stays fully disabled — every developer/lead can act on every
+# project, exactly like Symphony behaved before this feature existed. A
+# non-empty list activates scoping everywhere at once; there is no per-project
+# opt-in, so the model stays auditable. admin always bypasses this dimension —
+# it only ever gates lead/developer/viewer.
+#
+# name is what gets stored on a project and shown in the UI — it must stay
+# stable even if the underlying OIDC claim is an unreadable object ID (Azure
+# AD emits GUIDs in the "groups" claim, not names). oidc_groups lists every
+# claim that should map to this Symphony group; list both a team's dev and
+# lead OIDC groups here if they should share one project group.
+#
+# project_groups:
+#   - name: team-paiements
+#     description: "Équipe paiements"
+#     oidc_groups:
+#       - paiements-devs
+#       - paiements-leads
+#   - name: team-plateforme
+#     description: "Équipe plateforme / DevOps"
+#     oidc_groups:
+#       - devops-team

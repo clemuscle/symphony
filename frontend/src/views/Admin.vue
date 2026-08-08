@@ -42,6 +42,23 @@
         </div>
       </div>
 
+      <!-- RBAC / groupes -->
+      <div class="admin-card">
+        <div class="card-title">👥 RBAC &amp; groupes projet</div>
+        <p class="card-desc">
+          Recharge <code>config/rbac.yaml</code> sans redémarrer.
+          À utiliser après avoir rattaché une nouvelle équipe (<code>project_groups</code>)
+          ou changé le mapping groupes OIDC → rôle.
+        </p>
+        <div class="card-footer">
+          <button class="btn-action" :disabled="rbac.loading" @click="reloadRBAC">
+            {{ rbac.loading ? '⏳ Rechargement…' : '↻ Recharger le RBAC' }}
+          </button>
+          <span v-if="rbac.ok" class="feedback ok">✓ {{ rbac.ok }}</span>
+          <span v-if="rbac.err" class="feedback err">✗ {{ rbac.err }}</span>
+        </div>
+      </div>
+
       <!-- Webhook info -->
       <div class="admin-card">
         <div class="card-title">🔗 Webhook GitLab</div>
@@ -77,6 +94,7 @@ const origin = window.location.origin.replace('5173', '8090') // dev shim
 
 const cfg = ref({ loading: false, ok: null, err: null })
 const tpl = ref({ loading: false, ok: null, err: null })
+const rbac = ref({ loading: false, ok: null, err: null })
 
 async function reloadConfig() {
   cfg.value = { loading: true, ok: null, err: null }
@@ -95,6 +113,16 @@ async function reloadTemplates() {
     tpl.value = { loading: false, ok: data?.message || 'Templates rechargés', err: null }
   } catch (e) {
     tpl.value = { loading: false, ok: null, err: e.response?.data?.error || e.message }
+  }
+}
+
+async function reloadRBAC() {
+  rbac.value = { loading: true, ok: null, err: null }
+  try {
+    const { data } = await api.reloadRBAC()
+    rbac.value = { loading: false, ok: data?.message || 'RBAC rechargé', err: null }
+  } catch (e) {
+    rbac.value = { loading: false, ok: null, err: e.response?.data?.error || e.message }
   }
 }
 </script>

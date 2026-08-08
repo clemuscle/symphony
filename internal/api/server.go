@@ -19,14 +19,16 @@ import (
 )
 
 type Server struct {
-	store   *catalog.Store
-	db      *database.DB
-	auth    *auth.Provider
-	devMode bool // true = SYMPHONY_DEV_MODE=1, jamais en production
-	tmpl    *templates.Loader
-	cfgPath string
-	costCfg costs.Config
-	router  *chi.Mux
+	store    *catalog.Store
+	db       *database.DB
+	auth     *auth.Provider
+	devMode  bool // true = SYMPHONY_DEV_MODE=1, jamais en production
+	tmpl     *templates.Loader
+	cfgPath  string
+	rbac     *rbac.Store
+	rbacPath string
+	costCfg  costs.Config
+	router   *chi.Mux
 	// providers protégés par mutex — nil = setup requis
 	mu     sync.RWMutex
 	pvds   *providers.ProviderSet
@@ -70,10 +72,16 @@ type ServerOptions struct {
 	TestProvider   func(category, providerType string, cfg map[string]string) (string, error)
 	AvailableTypes map[string][]string
 	CfgPath        string
+	RBAC           *rbac.Store
+	RBACPath       string
 	CostCfg        costs.Config
 }
 
 func NewServer(opts ServerOptions) *Server {
+	rbacStore := opts.RBAC
+	if rbacStore == nil {
+		rbacStore = rbac.NewStore(rbac.Default())
+	}
 	s := &Server{
 		store:          opts.Store,
 		db:             opts.DB,
@@ -85,6 +93,8 @@ func NewServer(opts ServerOptions) *Server {
 		testProvider:   opts.TestProvider,
 		availableTypes: opts.AvailableTypes,
 		cfgPath:        opts.CfgPath,
+		rbac:           rbacStore,
+		rbacPath:       opts.RBACPath,
 		costCfg:        opts.CostCfg,
 	}
 	r := chi.NewRouter()
@@ -130,7 +140,7 @@ func NewServer(opts ServerOptions) *Server {
 		if s.auth != nil {
 			r.Use(s.auth.Middleware)
 		} else if s.devMode {
-			r.Use(devModeUserMiddleware)
+			r.Use(s.devModeUserMiddleware)
 		}
 
 		r.Get("/api/v1/auth/me", s.me)
@@ -141,6 +151,7 @@ func NewServer(opts ServerOptions) *Server {
 		r.With(s.requireRole(rbac.RoleAdmin)).Post("/api/v1/setup/test", s.setupTest)
 		r.With(s.requireRole(rbac.RoleAdmin)).Post("/api/v1/setup/save", s.setupSave)
 		r.With(s.requireRole(rbac.RoleAdmin)).Post("/api/v1/config/reload", s.reloadConfig)
+		r.With(s.requireRole(rbac.RoleAdmin)).Post("/api/v1/rbac/reload", s.reloadRBAC)
 
 		// Catalogue (lecture = viewer+)
 		r.Get("/api/v1/services", s.listServices)
@@ -157,8 +168,14 @@ func NewServer(opts ServerOptions) *Server {
 		r.Get("/api/v1/projects/{name}/steps", s.listProjectSteps)
 		r.Get("/api/v1/projects/{name}/branches", s.listProjectBranches)
 		r.Get("/api/v1/projects/{name}/images", s.listProjectImages)
-		r.Get("/api/v1/repos", s.listRepos)
-		r.Get("/api/v1/namespaces", s.listNamespaces)
+		r.With(s.requireRole(rbac.RoleDeveloper)).Get("/api/v1/repos", s.listRepos)
+		r.With(s.requireRole(rbac.RoleDeveloper)).Get("/api/v1/namespaces", s.listNamespaces)
+
+		// Groupes projet (voir config/rbac.yaml project_groups — question
+		// ouverte n°2 de CLAUDE.md). Lecture = developer+ (alimente le
+		// sélecteur de création de projet) ; transfert de propriété = admin.
+		r.With(s.requireRole(rbac.RoleDeveloper)).Get("/api/v1/groups", s.listGroups)
+		r.With(s.requireRole(rbac.RoleAdmin)).Put("/api/v1/projects/{name}/group", s.transferProjectGroup)
 
 		// Recettes (lecture = viewer+, création/destruction = developer+)
 		r.Get("/api/v1/projects/{name}/recettes", s.listRecettes)
@@ -186,23 +203,32 @@ func NewServer(opts ServerOptions) *Server {
 		// Coûts par projet / équipe (lecture = viewer+)
 		r.Get("/api/v1/costs", s.getCosts)
 
-		// Audit (lecture = viewer+)
-		r.Get("/api/v1/audit", s.listAudit)
+		// Audit (admin uniquement pour le MVP — audit_log.resource est du
+		// texte libre, un filtrage par groupe ne serait pas fiable ; à revoir
+		// si la table gagne une vraie colonne project_name)
+		r.With(s.requireRole(rbac.RoleAdmin)).Get("/api/v1/audit", s.listAudit)
 	})
 
 	return s
 }
 
-func devModeUserMiddleware(next http.Handler) http.Handler {
-	devUser := &auth.User{
-		Sub:     "dev",
-		Email:   "dev@localhost",
-		Name:    "Dev Mode",
-		Groups:  []string{"admin"},
-		Role:    rbac.RoleAdmin,
-		IsAdmin: true,
-	}
+// devModeUserMiddleware injecte un admin de confort pour SYMPHONY_DEV_MODE=1
+// (dev local uniquement, jamais en production). Méthode sur Server (pas une
+// fonction libre) pour résoudre ProjectGroups depuis le même *rbac.Store que
+// le chemin OIDC — un flag de dev ne doit jamais dispenser d'exercer le
+// wizard RBAC/groupes, voir CLAUDE.md section Sécurité (bug setupStatus).
+func (s *Server) devModeUserMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		groups := []string{"admin"}
+		devUser := &auth.User{
+			Sub:           "dev",
+			Email:         "dev@localhost",
+			Name:          "Dev Mode",
+			Groups:        groups,
+			Role:          rbac.RoleAdmin,
+			IsAdmin:       true,
+			ProjectGroups: s.getRBAC().ProjectGroups(groups),
+		}
 		next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), devUser)))
 	})
 }
@@ -210,10 +236,6 @@ func devModeUserMiddleware(next http.Handler) http.Handler {
 func (s *Server) requireRole(min rbac.Role) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if s.devMode {
-				next.ServeHTTP(w, r)
-				return
-			}
 			user, ok := auth.UserFromContext(r.Context())
 			if !ok || !user.Role.AtLeast(min) {
 				respond(w, http.StatusForbidden, map[string]string{
@@ -225,4 +247,39 @@ func (s *Server) requireRole(min rbac.Role) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func (s *Server) getRBAC() *rbac.Manager {
+	return s.rbac.Get()
+}
+
+// authorizeProject écrit la réponse et retourne false si l'appelant n'a pas
+// accès au projet p — à appeler juste après CHAQUE GetProject/
+// GetProjectByRepoPath dans un handler qui agit sur un projet précis (jamais
+// un middleware de route : les endpoints les plus sensibles — /deployments,
+// /pipelines/trigger — ne portent pas le nom du projet dans l'URL, voir G1
+// dans documentation/backlog.md pour la classe de bug que ça a produite une
+// fois). Un non-membre reçoit 404 (ne jamais révéler l'existence d'un projet
+// d'une autre équipe) ; un rôle insuffisant reste géré par requireRole (403).
+func (s *Server) authorizeProject(w http.ResponseWriter, r *http.Request, p *database.Project) bool {
+	if !s.getRBAC().GroupsEnabled() {
+		return true
+	}
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+		return false
+	}
+	if user.Role.AtLeast(rbac.RoleAdmin) {
+		return true
+	}
+	if p.OwnerGroup != "" {
+		for _, g := range user.ProjectGroups {
+			if g == p.OwnerGroup {
+				return true
+			}
+		}
+	}
+	respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+	return false
 }

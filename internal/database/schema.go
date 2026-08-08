@@ -19,6 +19,14 @@ func (db *DB) Migrate() error {
 	);
 	ALTER TABLE projects ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'provisioning';
 
+	-- Groupe propriétaire du projet (nom Symphony, voir config/rbac.yaml
+	-- project_groups) — nullable, sans valeur par défaut ni backfill : un
+	-- projet existant avant cette fonctionnalité reste sans groupe tant
+	-- qu'un admin ne l'adopte pas explicitement via
+	-- PUT /api/v1/projects/{name}/group. Question ouverte n°2 de CLAUDE.md.
+	ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_group VARCHAR(255);
+	CREATE INDEX IF NOT EXISTS idx_projects_owner_group ON projects (owner_group);
+
 	CREATE TABLE IF NOT EXISTS provisioning_steps (
 		id           SERIAL PRIMARY KEY,
 		project_name VARCHAR(255) NOT NULL,

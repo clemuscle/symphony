@@ -23,6 +23,7 @@
           <span class="meta-item" v-if="project.repo_path">📁 {{ project.repo_path }}</span>
           <span class="meta-item">🔌 :{{ project.port }}</span>
           <span class="meta-item" v-if="project.namespace">📂 {{ project.namespace }}</span>
+          <span class="meta-item" v-if="project.owner_group">👥 {{ project.owner_group }}</span>
         </div>
         <div class="project-links">
           <a v-if="project.repo_url" :href="project.repo_url" target="_blank" class="btn-ghost">Repo ↗</a>
@@ -304,9 +305,9 @@ async function loadProject() {
 }
 
 async function loadPipeline(p) {
-  if (!p.repo_path) return
+  if (!p.name) return
   try {
-    const { data } = await api.listPipelines(p.repo_path)
+    const { data } = await api.listPipelines(p.name)
     recentPipelines.value = data || []
   } catch { /* non bloquant */ }
 }

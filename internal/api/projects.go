@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/yourorg/symphony/internal/auth"
 	"github.com/yourorg/symphony/internal/database"
 	"github.com/yourorg/symphony/internal/providers"
+	"github.com/yourorg/symphony/internal/rbac"
 	"github.com/yourorg/symphony/internal/templates"
 )
 
@@ -50,6 +52,11 @@ type CreateProjectRequest struct {
 	Language    string `json:"language"`
 	Type        string `json:"type"`
 	Port        int    `json:"port"`
+	// Group — groupe Symphony propriétaire du projet (config/rbac.yaml
+	// project_groups). Requis si le scoping par groupe est actif ; ignoré
+	// sinon. Un developer ne peut choisir qu'un groupe dont il est membre ;
+	// un admin peut choisir n'importe quel groupe connu.
+	Group string `json:"group"`
 }
 
 type stepResult struct {
@@ -102,6 +109,45 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		req.Port = 8080
 	}
 
+	// Groupe propriétaire — requis dès que le scoping est actif (voir
+	// question ouverte n°2 de CLAUDE.md). Un developer ne peut choisir que
+	// parmi ses propres groupes ; le message d'erreur reste actionnable
+	// plutôt qu'un "forbidden" générique (voir revue architecture-guardian
+	// de l'EPIC I).
+	mgr := s.getRBAC()
+	if mgr.GroupsEnabled() {
+		if req.Group == "" {
+			respond(w, http.StatusBadRequest, map[string]string{"error": "group requis"})
+			return
+		}
+		if !mgr.KnownGroup(req.Group) {
+			respond(w, http.StatusBadRequest, map[string]string{"error": "groupe inconnu de Symphony — voir config/rbac.yaml"})
+			return
+		}
+		user, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			respond(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
+		if !user.Role.AtLeast(rbac.RoleAdmin) {
+			member := false
+			for _, g := range user.ProjectGroups {
+				if g == req.Group {
+					member = true
+					break
+				}
+			}
+			if !member {
+				respond(w, http.StatusForbidden, map[string]string{
+					"error": "vous n'êtes membre d'aucun groupe projet correspondant — contactez un admin pour être rattaché à une équipe",
+				})
+				return
+			}
+		}
+	} else {
+		req.Group = ""
+	}
+
 	// 1. Créer le repo — seule étape qui bloque tout le reste si elle échoue.
 	repo, err := pvds.SCM.CreateRepo(providers.RepoRequest{
 		Name:        req.Name,
@@ -126,6 +172,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		Namespace:   req.Namespace,
 		RepoURL:     repo.HTTPCloneURL,
 		RepoPath:    repo.Path,
+		OwnerGroup:  req.Group,
 	}
 	if err := s.db.CreateProject(project); err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": "db: " + err.Error()})
@@ -242,6 +289,9 @@ func (s *Server) deployProject(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
 		return
 	}
+	if !s.authorizeProject(w, r, project) {
+		return
+	}
 
 	pipelineID, err := pvds.CI.TriggerPipeline(project.RepoPath, "main", nil)
 	if err != nil {
@@ -269,6 +319,14 @@ func (s *Server) deployProject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listProjectSteps(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
+	project, err := s.db.GetProject(name)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+		return
+	}
+	if !s.authorizeProject(w, r, project) {
+		return
+	}
 	steps, err := s.db.ListProvisioningSteps(name)
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -294,6 +352,9 @@ func (s *Server) listProjectBranches(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
 		return
 	}
+	if !s.authorizeProject(w, r, project) {
+		return
+	}
 	branches, err := pvds.SCM.ListBranches(project.RepoPath)
 	if err != nil {
 		respond(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
@@ -317,6 +378,9 @@ func (s *Server) listProjectImages(w http.ResponseWriter, r *http.Request) {
 	project, err := s.db.GetProject(name)
 	if err != nil {
 		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+		return
+	}
+	if !s.authorizeProject(w, r, project) {
 		return
 	}
 	images, err := pvds.Registry.ListImages(project.RepoPath)
@@ -363,6 +427,9 @@ func (s *Server) createRecette(w http.ResponseWriter, r *http.Request) {
 	project, err := s.db.GetProject(projectName)
 	if err != nil {
 		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+		return
+	}
+	if !s.authorizeProject(w, r, project) {
 		return
 	}
 
@@ -419,6 +486,14 @@ func (s *Server) createRecette(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listRecettes(w http.ResponseWriter, r *http.Request) {
 	projectName := chi.URLParam(r, "name")
+	project, err := s.db.GetProject(projectName)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+		return
+	}
+	if !s.authorizeProject(w, r, project) {
+		return
+	}
 	recettes, err := s.db.ListRecettes(projectName)
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -447,6 +522,9 @@ func (s *Server) destroyRecette(w http.ResponseWriter, r *http.Request) {
 	project, err := s.db.GetProject(projectName)
 	if err != nil {
 		respond(w, http.StatusNotFound, map[string]string{"error": "projet introuvable"})
+		return
+	}
+	if !s.authorizeProject(w, r, project) {
 		return
 	}
 

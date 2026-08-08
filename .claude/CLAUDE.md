@@ -31,9 +31,9 @@ d'implémentation doivent s'y référer avant de proposer des features.
 | Déploiement d'environnements (recette) | Docker via golden path CI | ✅ Implémenté (Docker) |
 | GitOps — sync config infra dans repo | `internal/gitops/sync.go` | ✅ Implémenté |
 | Auth fédérée (OIDC) | `internal/auth/` + Dex/Keycloak/Azure AD | ✅ Implémenté |
-| Audit trail (qui fait quoi) | `db.Log()` — user hardcodé "system" pour l'instant | ⚠️ Partiel |
+| Audit trail (qui fait quoi) | `db.Log()` — `actorID(r)` remonte l'email de l'utilisateur authentifié (`"system"` seulement en fallback dev/webhook) | ✅ Implémenté |
 | Vue état déploiements par env | `GET /api/v1/projects/:name/deployments` | ⚠️ Partiel |
-| RBAC (rôles par groupe/projet) | Non implémenté — groupes OIDC présents, mapping à faire | ❌ Non implémenté |
+| RBAC (rôles par groupe/projet) | `internal/rbac/` — rôle global (admin/lead/developer/viewer) **et** scoping par groupe projet (`config/rbac.yaml` `project_groups`, `projects.owner_group`) | ✅ Implémenté |
 | Inventaire des ressources actives | Non implémenté | ❌ Non implémenté |
 | Multi-cloud / Kubernetes | Docker seulement en MVP, interface prête pour K8s | ❌ Post-MVP |
 | Gestion des coûts par env/équipe | Non implémenté | ❌ Post-MVP |
@@ -309,12 +309,29 @@ Prometheus pour l'observabilité de Symphony lui-même.
    `internal/api/projects.go` (`createRecette`),
    `cmd/symphony/main.go` (`reconcileDeployments`), colonne
    `deployments.expires_at`. Voir `documentation/backlog.md` EPIC H.
-2. **Modèle de permissions par groupe** : la vision mentionne "groupe"
-   comme unité de visibilité sur un projet, mais ne précise pas la
-   granularité des droits (qui peut déployer en prod vs juste voir les
-   métriques). À clarifier avant de concevoir le RBAC — sera porté par
-   les groupes/claims OIDC (voir section Sécurité), mais le mapping
-   exact groupe → permission reste à définir.
+2. ~~**Modèle de permissions par groupe**~~ — **Résolu (2026-08-08)** :
+   deux dimensions orthogonales. Le **rôle global** (admin/lead/developer/
+   viewer, `config/rbac.yaml` `roles.*.groups`, inchangé) détermine QUOI
+   un utilisateur peut faire. Le **groupe propriétaire du projet**
+   (`config/rbac.yaml` `project_groups`, colonne `projects.owner_group`)
+   détermine SUR QUELS projets — un projet appartient à exactement un
+   groupe, assigné par un admin à la création (`POST /api/v1/projects`
+   avec `group`, validé contre l'appartenance OIDC du créateur) et
+   transférable ensuite (`PUT /api/v1/projects/{name}/group`, admin
+   uniquement). `RoleAdmin` bypasse uniquement la dimension groupe, jamais
+   la dimension rôle. `RoleLead` reste scopé par projet comme les autres
+   rôles — un lead global sur tous les projets aurait rouvert la classe de
+   bug corrigée par G1. Opt-in tout ou rien : `project_groups` vide ou
+   absent désactive entièrement le scoping (comportement identique à avant
+   cette fonctionnalité). Non-membre → 404 sur les endpoints scopés,
+   jamais un 403 qui révélerait l'existence du projet. Implémenté :
+   `internal/rbac/rbac.go` (`ProjectGroup`, `Store` rechargeable à chaud
+   via `POST /api/v1/rbac/reload`), `internal/api/server.go`
+   (`authorizeProject`, appelé après chaque résolution de projet dans un
+   handler — jamais un middleware de route, les endpoints les plus
+   sensibles comme `/deployments` ne portent pas le nom du projet dans
+   l'URL), colonne `projects.owner_group`. Voir `documentation/backlog.md`
+   EPIC I.
 3. ~~**Design concret du templating de golden path**~~ — **Résolu** :
    `internal/templates/loader.go` + `config/golden-paths/` + rechargement
    à chaud `POST /api/v1/templates/reload`. Ce qui reste à préciser :
