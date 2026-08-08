@@ -8,3 +8,4 @@ spec:
   language: node
   type: rest-api
   default_port: 8080
+  recette_max_ttl_hours: 72

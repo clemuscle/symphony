@@ -11,18 +11,19 @@ import "time"
 //	running → stopped  (container disparu, constaté par reconcileDeployments — jamais
 //	                     affirmé au moment où le destroy est déclenché) [terminal]
 type Deployment struct {
-	ID          int       `json:"id"`
-	ProjectName string    `json:"project_name"`
-	PipelineID  string    `json:"pipeline_id"`
-	Image       string    `json:"image"`
-	Port        int       `json:"port"`
-	Status      string    `json:"status"`
-	URL         string    `json:"url"`
-	RecetteName string    `json:"recette_name,omitempty"`
-	Environment string    `json:"environment"`
-	Tags        []string  `json:"tags"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          int        `json:"id"`
+	ProjectName string     `json:"project_name"`
+	PipelineID  string     `json:"pipeline_id"`
+	Image       string     `json:"image"`
+	Port        int        `json:"port"`
+	Status      string     `json:"status"`
+	URL         string     `json:"url"`
+	RecetteName string     `json:"recette_name,omitempty"`
+	Environment string     `json:"environment"`
+	Tags        []string   `json:"tags"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 func (db *DB) CreateDeployment(d *Deployment) error {
@@ -33,10 +34,10 @@ func (db *DB) CreateDeployment(d *Deployment) error {
 		d.Tags = []string{}
 	}
 	return db.QueryRow(`
-		INSERT INTO deployments (project_name, pipeline_id, image, port, status, url, recette_name, environment, tags)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		INSERT INTO deployments (project_name, pipeline_id, image, port, status, url, recette_name, environment, tags, expires_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 		RETURNING id, created_at`,
-		d.ProjectName, d.PipelineID, d.Image, d.Port, d.Status, d.URL, nilIfEmpty(d.RecetteName), d.Environment, d.Tags,
+		d.ProjectName, d.PipelineID, d.Image, d.Port, d.Status, d.URL, nilIfEmpty(d.RecetteName), d.Environment, d.Tags, d.ExpiresAt,
 	).Scan(&d.ID, &d.CreatedAt)
 }
 
@@ -61,11 +62,11 @@ func (db *DB) GetRecette(projectName, recetteName string) (*Deployment, error) {
 	var d Deployment
 	var rn *string
 	err := db.QueryRow(`
-		SELECT id, project_name, pipeline_id, image, port, status, url, recette_name, environment, tags, created_at
+		SELECT id, project_name, pipeline_id, image, port, status, url, recette_name, environment, tags, expires_at, created_at
 		FROM deployments WHERE project_name=$1 AND recette_name=$2
 		ORDER BY created_at DESC LIMIT 1`, projectName, recetteName).
 		Scan(&d.ID, &d.ProjectName, &d.PipelineID, &d.Image,
-			&d.Port, &d.Status, &d.URL, &rn, &d.Environment, pgArrayScan(&d.Tags), &d.CreatedAt)
+			&d.Port, &d.Status, &d.URL, &rn, &d.Environment, pgArrayScan(&d.Tags), &d.ExpiresAt, &d.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +135,7 @@ func (db *DB) ListDeployments() ([]Deployment, error) {
 
 func (db *DB) ListRecettes(projectName string) ([]Deployment, error) {
 	rows, err := db.Query(`
-		SELECT id, project_name, pipeline_id, image, port, status, url, recette_name, environment, tags, created_at
+		SELECT id, project_name, pipeline_id, image, port, status, url, recette_name, environment, tags, expires_at, created_at
 		FROM deployments WHERE project_name=$1 AND recette_name IS NOT NULL
 		ORDER BY created_at DESC`, projectName)
 	if err != nil {
@@ -147,13 +148,43 @@ func (db *DB) ListRecettes(projectName string) ([]Deployment, error) {
 		var d Deployment
 		var recetteName *string
 		rows.Scan(&d.ID, &d.ProjectName, &d.PipelineID, &d.Image,
-			&d.Port, &d.Status, &d.URL, &recetteName, &d.Environment, pgArrayScan(&d.Tags), &d.CreatedAt)
+			&d.Port, &d.Status, &d.URL, &recetteName, &d.Environment, pgArrayScan(&d.Tags), &d.ExpiresAt, &d.CreatedAt)
 		if recetteName != nil {
 			d.RecetteName = *recetteName
 		}
 		recettes = append(recettes, d)
 	}
 	return recettes, nil
+}
+
+// ListExpiredRunningRecettes retourne les recettes running dont le TTL choisi
+// à la création (expires_at) est dépassé — utilisé par reconcileDeployments
+// (passe 3) pour déclencher leur destruction via le pipeline CI, jamais un
+// arrêt direct (principe #3 de CLAUDE.md).
+func (db *DB) ListExpiredRunningRecettes() ([]Deployment, error) {
+	rows, err := db.Query(`
+		SELECT id, project_name, pipeline_id, recette_name, created_at
+		FROM deployments
+		WHERE recette_name IS NOT NULL AND status = 'running'
+		  AND expires_at IS NOT NULL AND expires_at <= NOW()
+		ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Deployment
+	for rows.Next() {
+		var d Deployment
+		var rn *string
+		if err := rows.Scan(&d.ID, &d.ProjectName, &d.PipelineID, &rn, &d.CreatedAt); err != nil {
+			return nil, err
+		}
+		if rn != nil {
+			d.RecetteName = *rn
+		}
+		out = append(out, d)
+	}
+	return out, nil
 }
 
 // ListAllActiveDeployments retourne les déploiements prod en cours (pas stopped/failed).

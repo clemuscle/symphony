@@ -75,6 +75,12 @@ func (db *DB) Migrate() error {
 	-- environment — voir documentation/backlog.md EPIC D.
 	ALTER TABLE deployments ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
 
+	-- TTL choisi par le dev à la création d'une recette (plafonné par
+	-- spec.recette_max_ttl_hours du golden path), NULL pour les
+	-- déploiements preprod/prod qui n'expirent jamais automatiquement —
+	-- voir documentation/backlog.md EPIC H.
+	ALTER TABLE deployments ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;
+
 	DO $$
 	BEGIN
 		IF EXISTS (SELECT 1 FROM information_schema.columns

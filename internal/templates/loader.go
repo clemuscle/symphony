@@ -38,6 +38,12 @@ type GPSpec struct {
 	// ci/pipeline.yml), jamais le Go. Voir documentation/backlog.md EPIC F.
 	TestTool  string `yaml:"test_tool"  json:"test_tool,omitempty"`
 	BuildTool string `yaml:"build_tool" json:"build_tool,omitempty"`
+	// RecetteMaxTTLHours plafonne la durée de vie qu'un dev peut choisir à
+	// la création d'une recette (voir createRecette) — requis, pas de
+	// valeur par défaut silencieuse : un golden path sans cette clé est
+	// rejeté au chargement (voir loadOne). Décision produit du 2026-08-05,
+	// documentation/backlog.md EPIC H.
+	RecetteMaxTTLHours int `yaml:"recette_max_ttl_hours" json:"recette_max_ttl_hours"`
 }
 
 // defaultTestTool couvre les 4 golden paths déjà livrés — un golden path
@@ -151,6 +157,9 @@ func (l *Loader) loadOne(dir string) (loadedPath, error) {
 	if err := lp.resolveToolDefaults(); err != nil {
 		return lp, err
 	}
+	if lp.Spec.RecetteMaxTTLHours <= 0 {
+		return lp, fmt.Errorf("spec.recette_max_ttl_hours manquant ou nul — obligatoire, aucune valeur par défaut (voir documentation/backlog.md EPIC H)")
+	}
 
 	return lp, nil
 }
@@ -220,6 +229,14 @@ func (l *Loader) RenderCI(language string, vars ScaffoldVars) (string, error) {
 	}
 	vars.TestTool, vars.BuildTool = lp.Spec.TestTool, lp.Spec.BuildTool
 	return render(lp.ciPipeline, vars)
+}
+
+// Spec returns the parsed spec for a given language — used by handlers that
+// need to validate against golden path config (ex: ttl_hours vs
+// recette_max_ttl_hours) without exposing file content.
+func (l *Loader) Spec(language string) (GPSpec, bool) {
+	lp, ok := l.getByLanguage(language)
+	return lp.Spec, ok
 }
 
 func (l *Loader) getByLanguage(language string) (loadedPath, bool) {

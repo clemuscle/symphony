@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/yourorg/symphony/internal/database"
@@ -340,6 +341,7 @@ func (s *Server) createRecette(w http.ResponseWriter, r *http.Request) {
 		RecetteName string   `json:"recette_name"`
 		Port        int      `json:"port"`
 		Tags        []string `json:"tags"`
+		TTLHours    int      `json:"ttl_hours"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
@@ -364,6 +366,24 @@ func (s *Server) createRecette(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ttl_hours est obligatoire, sans valeur par défaut silencieuse — voir
+	// documentation/backlog.md EPIC H. Plafonné par le golden path du
+	// projet (spec.recette_max_ttl_hours), requis au chargement.
+	spec, ok := s.tmpl.Spec(project.Language)
+	if !ok {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": "golden path introuvable pour ce projet"})
+		return
+	}
+	if req.TTLHours <= 0 {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "ttl_hours requis (> 0)"})
+		return
+	}
+	if req.TTLHours > spec.RecetteMaxTTLHours {
+		respond(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("ttl_hours dépasse le plafond du golden path (%d h max)", spec.RecetteMaxTTLHours)})
+		return
+	}
+	expiresAt := time.Now().Add(time.Duration(req.TTLHours) * time.Hour)
+
 	pipelineID, err := pvds.CI.TriggerPipeline(project.RepoPath, "main", map[string]string{
 		"RECETTE_NAME": req.RecetteName,
 		"RECETTE_PORT": fmt.Sprintf("%d", req.Port),
@@ -386,12 +406,13 @@ func (s *Server) createRecette(w http.ResponseWriter, r *http.Request) {
 		// nom de la recette (voir documentation/backlog.md EPIC D).
 		Environment: "recette",
 		Tags:        req.Tags,
+		ExpiresAt:   &expiresAt,
 	}
 	if err := s.db.CreateDeployment(d); err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": "db: " + err.Error()})
 		return
 	}
-	s.db.Log("create_recette", projectName, "recette="+req.RecetteName+" port="+fmt.Sprintf("%d", req.Port), actorID(r))
+	s.db.Log("create_recette", projectName, fmt.Sprintf("recette=%s port=%d ttl_hours=%d", req.RecetteName, req.Port, req.TTLHours), actorID(r))
 
 	respond(w, http.StatusCreated, d)
 }

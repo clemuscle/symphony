@@ -8,3 +8,7 @@ spec:
   language: go
   type: rest-api
   default_port: 8080
+  # Plafond de durée de vie qu'un dev peut choisir à la création d'une
+  # recette (ttl_hours du body POST .../recettes) — requis, voir
+  # documentation/backlog.md EPIC H.
+  recette_max_ttl_hours: 72

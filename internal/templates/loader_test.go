@@ -27,6 +27,7 @@ spec:
   language: go
   type: rest-api
   default_port: 9090
+  recette_max_ttl_hours: 72
 `), 0644)
 
 	os.WriteFile(filepath.Join(gpDir, "files", "main.go"), []byte(`package {{.ServiceName}}`), 0644)
@@ -152,6 +153,7 @@ spec:
   language: %s
   type: rest-api
   default_port: 8080
+  recette_max_ttl_hours: 72
 %s
 `, name, name, specExtra)), 0644)
 	os.WriteFile(filepath.Join(gpDir, "ci", "pipeline.yml"), []byte(ciPipeline), 0644)
