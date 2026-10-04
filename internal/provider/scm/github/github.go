@@ -155,9 +155,12 @@ func (p *Provider) ListRepos() ([]provider.Repo, error) {
 		apiPath = "/user/repos?per_page=100&type=all"
 	}
 
-	data, _, err := p.api("GET", apiPath, nil)
+	data, status, err := p.api("GET", apiPath, nil)
 	if err != nil {
 		return nil, err
+	}
+	if status != 200 {
+		return nil, fmt.Errorf("listRepos: status %d — %s", status, string(data))
 	}
 
 	var repos []struct {

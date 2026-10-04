@@ -165,9 +165,12 @@ func (p *Provider) PushFiles(repoPath, branch string, files map[string]string, c
 }
 
 func (p *Provider) ListRepos() ([]provider.Repo, error) {
-	data, _, err := p.api("GET", "/projects?membership=true&per_page=100&order_by=last_activity_at", nil)
+	data, status, err := p.api("GET", "/projects?membership=true&per_page=100&order_by=last_activity_at", nil)
 	if err != nil {
 		return nil, err
+	}
+	if status != 200 {
+		return nil, fmt.Errorf("listRepos: status %d — %s", status, string(data))
 	}
 	var projects []struct {
 		ID                int    `json:"id"`
@@ -213,9 +216,12 @@ func (p *Provider) ListFiles(repoPath, branch, dirPath string) ([]string, error)
 	apiPath := fmt.Sprintf("/projects/%s/repository/tree?path=%s&ref=%s&per_page=100&recursive=false",
 		encoded, url.QueryEscape(dirPath), branch)
 
-	data, _, err := p.api("GET", apiPath, nil)
+	data, status, err := p.api("GET", apiPath, nil)
 	if err != nil {
 		return nil, err
+	}
+	if status != 200 {
+		return nil, fmt.Errorf("listFiles %s: status %d — %s", dirPath, status, string(data))
 	}
 
 	var items []struct {
