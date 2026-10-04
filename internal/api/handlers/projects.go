@@ -192,6 +192,13 @@ func serviceFromProject(proj *database.Project, gp *config.GoldenPath, repo *pro
 				{Title: "Repository", URL: repo.WebURL, Icon: "code"},
 				{Title: "Pipelines", URL: repo.WebURL + "/-/pipelines", Icon: "ci"},
 			},
+			Actions: []catalogue.Action{
+				{
+					Name:        "Relancer la pipeline",
+					Description: "Relance la pipeline CI sur main",
+					CIProvider:  gp.CIProvider,
+				},
+			},
 		},
 	}
 }

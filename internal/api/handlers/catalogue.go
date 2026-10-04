@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,9 +72,14 @@ func TriggerAction(store *catalogue.Store, providers *provider.Registry, db *dat
 		}
 
 		// Body vide autorisé (action sans inputs)
-		inputs := map[string]any{}
-		if err := json.NewDecoder(r.Body).Decode(&inputs); err != nil && !errors.Is(err, io.EOF) {
+		raw := map[string]any{}
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil && !errors.Is(err, io.EOF) {
 			respondError(w, http.StatusBadRequest, "body invalide")
+			return
+		}
+		inputs, err := resolveInputs(action.Inputs, raw)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
@@ -113,9 +120,7 @@ func TriggerAction(store *catalogue.Store, providers *provider.Registry, db *dat
 
 			vars := make(map[string]string, len(inputs)+3)
 			for k, v := range inputs {
-				if v != nil {
-					vars[k] = fmt.Sprint(v)
-				}
+				vars[k] = v
 			}
 			vars["SYMPHONY_SERVICE"] = svcName
 			vars["SYMPHONY_ACTION"] = actionName
@@ -145,6 +150,57 @@ func TriggerAction(store *catalogue.Store, providers *provider.Registry, db *dat
 			respondError(w, http.StatusBadRequest, "action non configurée : définir webhook_url ou ci_provider")
 		}
 	}
+}
+
+// resolveInputs valide les valeurs reçues contre les inputs déclarés par l'action :
+// défauts, champs requis, entiers et bornes, options. Les clés non déclarées sont
+// refusées : en mode pipeline, elles deviendraient des variables CI arbitraires
+// (et pourraient écraser CI_REGISTRY_IMAGE, etc.).
+func resolveInputs(declared []catalogue.Input, raw map[string]any) (map[string]string, error) {
+	known := make(map[string]bool, len(declared))
+	for _, in := range declared {
+		known[in.ID] = true
+	}
+	for k := range raw {
+		if !known[k] {
+			return nil, fmt.Errorf("input inconnu: %s", k)
+		}
+	}
+
+	out := make(map[string]string, len(declared))
+	for _, in := range declared {
+		val := ""
+		if v, ok := raw[in.ID]; ok && v != nil {
+			val = strings.TrimSpace(fmt.Sprint(v))
+		}
+		if val == "" {
+			val = in.Default
+		}
+		if val == "" {
+			if in.Required {
+				return nil, fmt.Errorf("input requis: %s", in.ID)
+			}
+			continue
+		}
+
+		if in.Type == "integer" {
+			n, err := strconv.Atoi(val)
+			if err != nil {
+				return nil, fmt.Errorf("input %s: entier attendu, reçu %q", in.ID, val)
+			}
+			if in.Min != nil && n < *in.Min {
+				return nil, fmt.Errorf("input %s: minimum %d", in.ID, *in.Min)
+			}
+			if in.Max != nil && n > *in.Max {
+				return nil, fmt.Errorf("input %s: maximum %d", in.ID, *in.Max)
+			}
+		}
+		if len(in.Options) > 0 && !slices.Contains(in.Options, val) {
+			return nil, fmt.Errorf("input %s: valeur %q hors options %v", in.ID, val, in.Options)
+		}
+		out[in.ID] = val
+	}
+	return out, nil
 }
 
 // callWebhook envoie le payload en POST et renvoie le code HTTP ; erreur si >= 400

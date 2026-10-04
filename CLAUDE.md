@@ -17,7 +17,10 @@ go run ./cmd/symphony          # run the server from the repo root (see "Runtime
 cd frontend && npm run dev     # Vue 3 + Vite dev server (npm install first)
 ```
 
-There are no `_test.go` files yet. Once there are, run a single test with `go test ./internal/<pkg> -run TestName`.
+```bash
+go test ./...                                   # tests unitaires (seul handlers/catalogue_test.go pour l'instant)
+go test ./internal/api/handlers -run TestResolveInputs
+```
 
 ## Runtime dependencies
 
@@ -88,6 +91,10 @@ The CI provider is resolved but not used yet (`_ = ci`).
 
 **API ↔ frontend JSON shapes**: every struct the API serializes or decodes has explicit snake_case `json` tags (`catalogue.*`, `config.GoldenPath`, `provider.Repo/Pipeline/Deployment`, `database.*`, request bodies). The frontend reads exactly those keys. Any new API struct needs json tags, otherwise it would serialize with Go field names.
 
-Every call in `frontend/src/api.js` has a matching route in `server.go`. `POST /services/{name}/actions/{action}` (`handlers.TriggerAction`) is still a stub returning 501. Golden paths come from `symphony.yaml` and are only loaded at startup; there is no hot reload.
+Every call in `frontend/src/api.js` has a matching route in `server.go`. `POST /services/{name}/actions/{action}` (`handlers.TriggerAction`) runs a catalogue action: a POST to `webhook_url`, or a pipeline on the service's `spec.repo` through `ci_provider` (inputs become CI variables, plus `SYMPHONY_SERVICE` / `SYMPHONY_ACTION` / `SYMPHONY_PIPELINE`). An action with neither returns 400. `resolveInputs` validates the body against the declared inputs (defaults, required, integer bounds, options) and **rejects undeclared keys**, so callers can't inject arbitrary CI variables. Services created by Symphony get a default "Relancer la pipeline" action.
+
+**Project deletion** (`DELETE /projects/{name}`) runs in the background and returns 202, because GitLab refuses to delete a project until its container registry purge (asynchronous, often 2–3 min) completes. Order: `DeleteRepo` (purges the registry, then retries), `syncer.Unregister`, then the DB rows (project and its pipelines; the audit log is kept). While it runs, `GET /projects` returns `deleting: true` (an in-memory flag, lost on restart), and a second DELETE returns 409.
+
+Golden paths come from `symphony.yaml` and are only loaded at startup; there is no hot reload.
 
 The frontend base URL is hardcoded to `http://localhost:8080` in `frontend/src/api.js`.
