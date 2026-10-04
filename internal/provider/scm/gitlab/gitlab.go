@@ -213,7 +213,7 @@ func (p *Provider) GetFileContent(repoPath, branch, filePath string) (string, er
 
 func (p *Provider) ListFiles(repoPath, branch, dirPath string) ([]string, error) {
 	encoded := url.PathEscape(repoPath)
-	apiPath := fmt.Sprintf("/projects/%s/repository/tree?path=%s&ref=%s&per_page=100&recursive=false",
+	apiPath := fmt.Sprintf("/projects/%s/repository/tree?path=%s&ref=%s&per_page=100&recursive=true",
 		encoded, url.QueryEscape(dirPath), branch)
 
 	data, status, err := p.api("GET", apiPath, nil)

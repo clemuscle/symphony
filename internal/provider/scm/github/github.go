@@ -230,10 +230,18 @@ func (p *Provider) ListFiles(repoPath, branch, dirPath string) ([]string, error)
 	}
 	json.Unmarshal(data, &items)
 
+	// L'API contents n'est pas récursive : on descend dans les sous-dossiers
 	var paths []string
 	for _, item := range items {
-		if item.Type == "file" {
+		switch item.Type {
+		case "file":
 			paths = append(paths, item.Path)
+		case "dir":
+			sub, err := p.ListFiles(repoPath, branch, item.Path)
+			if err != nil {
+				return nil, err
+			}
+			paths = append(paths, sub...)
 		}
 	}
 	return paths, nil

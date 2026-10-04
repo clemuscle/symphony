@@ -66,7 +66,7 @@ func NewServer(
 		// Pipelines
 		r.Post("/pipelines/trigger", handlers.TriggerPipeline(providers, db))
 		r.Get("/pipelines/status", handlers.GetPipelineStatus(providers, db))
-		r.Get("/pipelines/{project}", handlers.ListPipelines(db))
+		r.Get("/pipelines/*", handlers.ListPipelines(db))
 
 		// Déploiements
 		r.Get("/deployments", handlers.ListDeployments(providers, db))
