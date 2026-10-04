@@ -1,6 +1,12 @@
 package provider
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+// ErrNotFound : la ressource n'existe pas (ou plus) chez le provider
+var ErrNotFound = errors.New("introuvable")
 
 // ─── SCM ──────────────────────────────────────────────────────────────────────
 
@@ -12,6 +18,8 @@ type SCMProvider interface {
 	ListRepos() ([]Repo, error)
 	GetFileContent(repoPath, branch, filePath string) (string, error)
 	ListFiles(repoPath, branch, dirPath string) ([]string, error)
+	DeleteFile(repoPath, branch, filePath, commitMsg string) error // ErrNotFound si absent
+	DeleteRepo(repoPath string) error                              // ErrNotFound si absent
 }
 
 type CreateRepoRequest struct {

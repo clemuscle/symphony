@@ -59,6 +59,7 @@ func NewServer(
 		// Projets
 		r.Get("/projects", handlers.ListProjects(db))
 		r.Post("/projects", handlers.CreateProject(providers, db, templates, syncer))
+		r.Delete("/projects/{name}", handlers.DeleteProject(providers, db, syncer))
 
 		// Repos (liste depuis les SCM providers)
 		r.Get("/repos", handlers.ListRepos(providers))

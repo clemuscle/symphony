@@ -14,6 +14,7 @@ export const api = {
   // Projets
   createProject: (data) => http.post('/api/v1/projects', data),
   listProjects: () => http.get('/api/v1/projects'),
+  deleteProject: (name) => http.delete(`/api/v1/projects/${name}`),
   listRepos: () => http.get('/api/v1/repos'),
 
   // Pipelines

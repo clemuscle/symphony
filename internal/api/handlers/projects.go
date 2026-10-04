@@ -1,13 +1,17 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/yourorg/symphony/internal/catalogue"
 	"github.com/yourorg/symphony/internal/config"
 	"github.com/yourorg/symphony/internal/database"
@@ -192,6 +196,79 @@ func serviceFromProject(proj *database.Project, gp *config.GoldenPath, repo *pro
 	}
 }
 
+// deletingProjects : projets dont la suppression tourne en arrière-plan
+var deletingProjects sync.Map
+
+// DeleteProject lance la suppression en arrière-plan et répond 202 : GitLab
+// purge le container registry de façon asynchrone, ce qui peut prendre
+// plusieurs minutes. Pendant ce temps, ListProjects marque le projet "deleting".
+func DeleteProject(providers *provider.Registry, db *database.DB, syncer *gitops.Syncer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name := chi.URLParam(r, "name")
+		proj, err := db.GetProjectByName(name)
+		if errors.Is(err, sql.ErrNoRows) {
+			respondError(w, http.StatusNotFound, "projet introuvable: "+name)
+			return
+		}
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "db: "+err.Error())
+			return
+		}
+
+		// Les projets antérieurs à la migration 002 n'ont pas de scm_provider : provider par défaut
+		scm, err := providers.SCM(proj.SCMProvider)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		if _, running := deletingProjects.LoadOrStore(name, true); running {
+			respondError(w, http.StatusConflict, "suppression déjà en cours: "+name)
+			return
+		}
+
+		go func() {
+			defer deletingProjects.Delete(name)
+			if err := deleteProject(proj, scm, db, syncer); err != nil {
+				slog.Error("suppression projet", "project", name, "error", err)
+				db.LogAudit("delete_project_failed", name, map[string]any{
+					"repo":  proj.RepoPath,
+					"error": err.Error(),
+				}, "system", "")
+				return
+			}
+			slog.Info("projet supprimé", "project", name)
+			db.LogAudit("delete_project", name, map[string]any{
+				"scm":  scm.ID(),
+				"repo": proj.RepoPath,
+			}, "system", "")
+		}()
+
+		respond(w, http.StatusAccepted, map[string]string{
+			"message": fmt.Sprintf("Suppression de %s en cours", name),
+		})
+	}
+}
+
+// deleteProject supprime le repo (et ses images de registry), la fiche
+// catalogue, puis le projet en base. Le repo passe en premier : s'il échoue,
+// rien d'autre n'est touché et la suppression peut être relancée. Une
+// ressource déjà absente n'est pas une erreur.
+func deleteProject(proj *database.Project, scm provider.SCMProvider, db *database.DB, syncer *gitops.Syncer) error {
+	if proj.RepoPath != "" {
+		if err := scm.DeleteRepo(proj.RepoPath); err != nil && !errors.Is(err, provider.ErrNotFound) {
+			return fmt.Errorf("suppression repo: %w", err)
+		}
+	}
+	if err := syncer.Unregister(proj.Name); err != nil {
+		return fmt.Errorf("suppression catalogue: %w", err)
+	}
+	if err := db.DeleteProject(proj.Name, proj.RepoPath); err != nil {
+		return fmt.Errorf("db: %w", err)
+	}
+	return nil
+}
+
 func ListProjects(db *database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		projects, err := db.ListProjects()
@@ -201,6 +278,9 @@ func ListProjects(db *database.DB) http.HandlerFunc {
 		}
 		if projects == nil {
 			projects = []database.Project{}
+		}
+		for i := range projects {
+			_, projects[i].Deleting = deletingProjects.Load(projects[i].Name)
 		}
 		respond(w, http.StatusOK, projects)
 	}

@@ -20,6 +20,8 @@ type Project struct {
 	GoldenPath  string    `json:"golden_path"`
 	CreatedBy   string    `json:"created_by"`
 	CreatedAt   time.Time `json:"created_at"`
+	// Deleting n'est pas en base : renseigné par l'API pendant une suppression en cours
+	Deleting bool `json:"deleting,omitempty"`
 }
 
 func (db *DB) CreateProject(p *Project) error {
@@ -78,4 +80,22 @@ func (db *DB) GetProjectByName(name string) (*Project, error) {
 		return nil, err
 	}
 	return &p, nil
+}
+
+// DeleteProject supprime le projet et l'historique de ses pipelines
+// (pipelines.project_name contient le chemin du repo). L'audit est conservé.
+func (db *DB) DeleteProject(name, repoPath string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM pipelines WHERE project_name=$1`, repoPath); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM projects WHERE name=$1`, name); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

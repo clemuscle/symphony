@@ -246,3 +246,48 @@ func (p *Provider) ListFiles(repoPath, branch, dirPath string) ([]string, error)
 	}
 	return paths, nil
 }
+
+func (p *Provider) DeleteFile(repoPath, branch, filePath, commitMsg string) error {
+	// L'API contents exige le SHA du fichier à supprimer
+	existing, status, err := p.api("GET",
+		fmt.Sprintf("/repos/%s/contents/%s?ref=%s", repoPath, filePath, branch), nil)
+	if err != nil {
+		return err
+	}
+	if status == 404 {
+		return provider.ErrNotFound
+	}
+	if status != 200 {
+		return fmt.Errorf("github deleteFile %s: status %d", filePath, status)
+	}
+	var f struct {
+		SHA string `json:"sha"`
+	}
+	json.Unmarshal(existing, &f)
+
+	_, status, err = p.api("DELETE", fmt.Sprintf("/repos/%s/contents/%s", repoPath, filePath),
+		map[string]any{"message": commitMsg, "sha": f.SHA, "branch": branch})
+	if err != nil {
+		return err
+	}
+	if status != 200 {
+		return fmt.Errorf("github deleteFile %s: status %d", filePath, status)
+	}
+	return nil
+}
+
+// DeleteRepo nécessite un token avec le scope delete_repo
+func (p *Provider) DeleteRepo(repoPath string) error {
+	data, status, err := p.api("DELETE", "/repos/"+repoPath, nil)
+	if err != nil {
+		return err
+	}
+	switch status {
+	case 204:
+		return nil
+	case 404:
+		return provider.ErrNotFound
+	default:
+		return fmt.Errorf("github deleteRepo %s: status %d — %s", repoPath, status, string(data))
+	}
+}
