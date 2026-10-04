@@ -103,6 +103,14 @@ func (r *Registry) ListSCM() []string {
 	return ids
 }
 
+func (r *Registry) ListCI() []string {
+	ids := make([]string, 0, len(r.ci))
+	for id := range r.ci {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 func (r *Registry) ListRuntimes() []string {
 	ids := make([]string, 0, len(r.runtime))
 	for id := range r.runtime {

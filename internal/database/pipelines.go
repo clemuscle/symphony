@@ -34,7 +34,8 @@ func (db *DB) UpdatePipelineStatus(pipelineID, status string) error {
 
 func (db *DB) ListPipelines(projectName string, limit int) ([]Pipeline, error) {
 	rows, err := db.Query(`
-		SELECT id, project_name, pipeline_id, ci_provider, type, status, web_url, ref, triggered_by, created_at, updated_at
+		SELECT id, project_name, pipeline_id, COALESCE(ci_provider,''), COALESCE(type,''), COALESCE(status,''),
+		       COALESCE(web_url,''), COALESCE(ref,''), COALESCE(triggered_by,''), created_at, COALESCE(updated_at, created_at)
 		FROM pipelines WHERE project_name=$1
 		ORDER BY created_at DESC LIMIT $2`, projectName, limit)
 	if err != nil {
@@ -45,9 +46,11 @@ func (db *DB) ListPipelines(projectName string, limit int) ([]Pipeline, error) {
 	var pipelines []Pipeline
 	for rows.Next() {
 		var p Pipeline
-		rows.Scan(&p.ID, &p.ProjectName, &p.PipelineID, &p.CIProvider, &p.Type,
-			&p.Status, &p.WebURL, &p.Ref, &p.TriggeredBy, &p.CreatedAt, &p.UpdatedAt)
+		if err := rows.Scan(&p.ID, &p.ProjectName, &p.PipelineID, &p.CIProvider, &p.Type,
+			&p.Status, &p.WebURL, &p.Ref, &p.TriggeredBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			return nil, err
+		}
 		pipelines = append(pipelines, p)
 	}
-	return pipelines, nil
+	return pipelines, rows.Err()
 }

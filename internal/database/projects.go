@@ -38,9 +38,11 @@ func (db *DB) CreateProject(p *Project) error {
 
 func (db *DB) ListProjects() ([]Project, error) {
 	rows, err := db.Query(`
-		SELECT id, name, description, language, type, port, namespace,
-		       scm_provider, ci_provider, reg_provider, rt_provider,
-		       repo_path, repo_url, registry_url, golden_path, created_by, created_at
+		SELECT id, name, COALESCE(description,''), COALESCE(language,''), COALESCE(type,''),
+		       COALESCE(port,0), COALESCE(namespace,''),
+		       COALESCE(scm_provider,''), COALESCE(ci_provider,''), COALESCE(reg_provider,''), COALESCE(rt_provider,''),
+		       COALESCE(repo_path,''), COALESCE(repo_url,''), COALESCE(registry_url,''),
+		       COALESCE(golden_path,''), COALESCE(created_by,''), created_at
 		FROM projects ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -50,20 +52,24 @@ func (db *DB) ListProjects() ([]Project, error) {
 	var projects []Project
 	for rows.Next() {
 		var p Project
-		rows.Scan(&p.ID, &p.Name, &p.Description, &p.Language, &p.Type, &p.Port,
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Language, &p.Type, &p.Port,
 			&p.Namespace, &p.SCMProvider, &p.CIProvider, &p.RegProvider, &p.RTProvider,
-			&p.RepoPath, &p.RepoURL, &p.RegistryURL, &p.GoldenPath, &p.CreatedBy, &p.CreatedAt)
+			&p.RepoPath, &p.RepoURL, &p.RegistryURL, &p.GoldenPath, &p.CreatedBy, &p.CreatedAt); err != nil {
+			return nil, err
+		}
 		projects = append(projects, p)
 	}
-	return projects, nil
+	return projects, rows.Err()
 }
 
 func (db *DB) GetProjectByName(name string) (*Project, error) {
 	var p Project
 	err := db.QueryRow(`
-		SELECT id, name, description, language, type, port, namespace,
-		       scm_provider, ci_provider, reg_provider, rt_provider,
-		       repo_path, repo_url, registry_url, golden_path, created_by, created_at
+		SELECT id, name, COALESCE(description,''), COALESCE(language,''), COALESCE(type,''),
+		       COALESCE(port,0), COALESCE(namespace,''),
+		       COALESCE(scm_provider,''), COALESCE(ci_provider,''), COALESCE(reg_provider,''), COALESCE(rt_provider,''),
+		       COALESCE(repo_path,''), COALESCE(repo_url,''), COALESCE(registry_url,''),
+		       COALESCE(golden_path,''), COALESCE(created_by,''), created_at
 		FROM projects WHERE name=$1`, name).
 		Scan(&p.ID, &p.Name, &p.Description, &p.Language, &p.Type, &p.Port,
 			&p.Namespace, &p.SCMProvider, &p.CIProvider, &p.RegProvider, &p.RTProvider,

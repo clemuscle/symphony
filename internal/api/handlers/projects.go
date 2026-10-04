@@ -94,29 +94,28 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			processedFiles[path] = content
 		}
 
-		// 3. Pousser le scaffold en un seul commit
-		if len(processedFiles) > 0 {
-			if err := scm.PushFiles(repo.Path, repo.DefaultBranch, processedFiles,
-				"chore: scaffold initial [symphony]"); err != nil {
-				respondError(w, http.StatusInternalServerError, "push scaffold: "+err.Error())
-				return
-			}
-		}
-
-		// 4. Pousser le template CI
+		// 3. Ajouter le template CI au scaffold
 		ciContent, err := templates.GetCITemplate(*gp)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "ci template: "+err.Error())
 			return
 		}
-		ciContent = replacePlaceholders(ciContent, req.Name, req.Description, gp, req.Port)
-		if err := scm.PushFile(repo.Path, repo.DefaultBranch, ".gitlab-ci.yml", ciContent,
-			"ci: add pipeline [symphony]"); err != nil {
-			respondError(w, http.StatusInternalServerError, "push ci template: "+err.Error())
+		processedFiles[".gitlab-ci.yml"] = replacePlaceholders(ciContent, req.Name, req.Description, gp, req.Port)
+
+		// 4. Pousser scaffold + CI en un seul commit : un premier commit sans
+		// .gitlab-ci.yml déclencherait l'Auto DevOps de GitLab
+		if err := scm.PushFiles(repo.Path, repo.DefaultBranch, processedFiles,
+			"chore: scaffold initial [symphony]"); err != nil {
+			respondError(w, http.StatusInternalServerError, "push scaffold: "+err.Error())
 			return
 		}
 
 		// 5. Sauvegarder en DB
+		rtProvider := req.RuntimeProvider
+		if rtProvider == "" {
+			rtProvider = gp.RTProvider
+		}
+
 		proj := &database.Project{
 			Name:        req.Name,
 			Description: req.Description,
@@ -127,7 +126,7 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			SCMProvider: scm.ID(),
 			CIProvider:  gp.CIProvider,
 			RegProvider: gp.RegProvider,
-			RTProvider:  req.RuntimeProvider,
+			RTProvider:  rtProvider,
 			RepoPath:    repo.Path,
 			RepoURL:     repo.HTTPCloneURL,
 			GoldenPath:  req.GoldenPathID,

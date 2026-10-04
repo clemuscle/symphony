@@ -35,7 +35,8 @@ func (db *DB) UpdateDeploymentStatus(deploymentID, status string) error {
 
 func (db *DB) ListDeployments() ([]Deployment, error) {
 	rows, err := db.Query(`
-		SELECT id, project_name, deployment_id, rt_provider, image, tag, port, status, url, deployed_by, created_at
+		SELECT id, project_name, deployment_id, COALESCE(rt_provider,''), COALESCE(image,''), COALESCE(tag,''),
+		       COALESCE(port,0), COALESCE(status,''), COALESCE(url,''), COALESCE(deployed_by,''), created_at
 		FROM deployments ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -45,9 +46,11 @@ func (db *DB) ListDeployments() ([]Deployment, error) {
 	var deployments []Deployment
 	for rows.Next() {
 		var d Deployment
-		rows.Scan(&d.ID, &d.ProjectName, &d.DeploymentID, &d.RTProvider, &d.Image,
-			&d.Tag, &d.Port, &d.Status, &d.URL, &d.DeployedBy, &d.CreatedAt)
+		if err := rows.Scan(&d.ID, &d.ProjectName, &d.DeploymentID, &d.RTProvider, &d.Image,
+			&d.Tag, &d.Port, &d.Status, &d.URL, &d.DeployedBy, &d.CreatedAt); err != nil {
+			return nil, err
+		}
 		deployments = append(deployments, d)
 	}
-	return deployments, nil
+	return deployments, rows.Err()
 }

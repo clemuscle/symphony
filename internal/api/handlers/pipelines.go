@@ -83,7 +83,8 @@ func GetPipelineStatus(providers *provider.Registry, db *database.DB) http.Handl
 
 func ListPipelines(db *database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		project := chi.URLParam(r, "project")
+		// wildcard : le nom de projet contient un "/" (ex. root/mon-projet)
+		project := chi.URLParam(r, "*")
 		pipelines, err := db.ListPipelines(project, 20)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, err.Error())

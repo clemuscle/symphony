@@ -13,6 +13,9 @@ import (
 //go:embed migrations/001_init.sql
 var migration001 []byte
 
+//go:embed migrations/002_upgrade_legacy_schema.sql
+var migration002 []byte
+
 type DB struct {
 	*sql.DB
 }
@@ -45,6 +48,7 @@ func (db *DB) Migrate() error {
 		sql     []byte
 	}{
 		{"001", migration001},
+		{"002", migration002},
 	}
 
 	for _, m := range migrations {
