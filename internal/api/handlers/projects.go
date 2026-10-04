@@ -3,10 +3,12 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/yourorg/symphony/internal/catalogue"
 	"github.com/yourorg/symphony/internal/config"
 	"github.com/yourorg/symphony/internal/database"
 	"github.com/yourorg/symphony/internal/gitops"
@@ -24,7 +26,7 @@ type CreateProjectRequest struct {
 	EnvVars       map[string]string `json:"env_vars"`
 }
 
-func CreateProject(providers *provider.Registry, db *database.DB, templates *gitops.TemplateLoader) http.HandlerFunc {
+func CreateProject(providers *provider.Registry, db *database.DB, templates *gitops.TemplateLoader, syncer *gitops.Syncer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req CreateProjectRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -137,6 +139,14 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			return
 		}
 
+		// 6. Enregistrer le service dans le catalogue. Le projet existe déjà :
+		// un échec ici est signalé sans annuler la création.
+		catalogueErr := ""
+		if err := syncer.Register(serviceFromProject(proj, gp, repo)); err != nil {
+			slog.Warn("enregistrement catalogue", "project", req.Name, "error", err)
+			catalogueErr = err.Error()
+		}
+
 		db.LogAudit("create_project", req.Name, map[string]any{
 			"golden_path": req.GoldenPathID,
 			"language":    gp.Language,
@@ -144,12 +154,41 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			"repo":        repo.Path,
 		}, "system", "")
 
-		respond(w, http.StatusCreated, map[string]any{
+		resp := map[string]any{
 			"project":  proj,
 			"repo":     repo,
 			"message":  fmt.Sprintf("Projet %s créé avec succès", req.Name),
 			"pipeline": repo.WebURL + "/-/pipelines",
-		})
+		}
+		if catalogueErr != "" {
+			resp["catalogue_error"] = catalogueErr
+		}
+		respond(w, http.StatusCreated, resp)
+	}
+}
+
+// serviceFromProject construit la fiche catalogue d'un projet nouvellement créé
+func serviceFromProject(proj *database.Project, gp *config.GoldenPath, repo *provider.Repo) catalogue.Service {
+	return catalogue.Service{
+		APIVersion: "symphony/v1",
+		Kind:       "Service",
+		Metadata: catalogue.Metadata{
+			Name:      proj.Name,
+			Owner:     proj.CreatedBy,
+			Tags:      []string{gp.Language, "symphony"},
+			Tier:      "standard",
+			Lifecycle: "staging",
+			Labels:    map[string]string{"golden_path": gp.ID},
+		},
+		Spec: catalogue.ServiceSpec{
+			Type:     gp.Type,
+			Language: gp.Language,
+			Repo:     repo.WebURL,
+			Links: []catalogue.Link{
+				{Title: "Repository", URL: repo.WebURL, Icon: "code"},
+				{Title: "Pipelines", URL: repo.WebURL + "/-/pipelines", Icon: "ci"},
+			},
+		},
 	}
 }
 

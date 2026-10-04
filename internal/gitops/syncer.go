@@ -1,7 +1,10 @@
 package gitops
 
 import (
+	"bytes"
+	"fmt"
 	"log/slog"
+	"path"
 	"strings"
 	"time"
 
@@ -43,6 +46,26 @@ func (s *Syncer) Start() {
 func (s *Syncer) ForceSync() {
 	s.lastCommit = "" // force le rechargement
 	s.sync()
+}
+
+// Register écrit la fiche d'un service dans le repo de config (services/<nom>.yaml)
+// puis recharge le catalogue. Remplace le job CI register-service, qui
+// demandait un token d'écriture dans chaque pipeline.
+func (s *Syncer) Register(svc catalogue.Service) error {
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2) // même indentation que les fiches écrites à la main
+	if err := enc.Encode(svc); err != nil {
+		return fmt.Errorf("sérialisation service %s: %w", svc.Metadata.Name, err)
+	}
+	content := buf.Bytes()
+	filePath := path.Join(s.servicesDir, svc.Metadata.Name+".yaml")
+	if err := s.scm.PushFile(s.configRepo, s.branch, filePath, string(content),
+		fmt.Sprintf("feat: register %s [symphony]", svc.Metadata.Name)); err != nil {
+		return fmt.Errorf("push %s: %w", filePath, err)
+	}
+	s.ForceSync()
+	return nil
 }
 
 func (s *Syncer) sync() {
