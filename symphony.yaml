@@ -1,0 +1,123 @@
+providers:
+  scm:
+    - id: gitlab-local
+      type: gitlab
+      default: true
+      config:
+        url: http://gitlab.local:8929
+        token_env: GITLAB_TOKEN
+
+    - id: github
+      type: github
+      default: false
+      config:
+        token_env: GITHUB_TOKEN
+        org: ""  # laisser vide pour les repos personnels
+
+  ci:
+    - id: gitlab-ci
+      type: gitlab_ci
+      default: true
+      config:
+        url: http://gitlab.local:8929
+        scm_ref: gitlab-local
+
+    - id: github-actions
+      type: github_actions
+      default: false
+      config:
+        token_env: GITHUB_TOKEN
+
+  runtime:
+    - id: docker-local
+      type: docker
+      default: true
+      config:
+        socket: /var/run/docker.sock
+
+    - id: kubernetes
+      type: kubernetes
+      default: false
+      config: {}
+
+catalogue:
+  repo: root/symphony-config
+  branch: main
+  path: services
+
+golden_paths:
+  - id: api-rest-go
+    name: "API REST Go"
+    description: "API REST performante avec Go, logging structuré, healthcheck et métriques"
+    icon: go
+    language: go
+    type: api
+    scm_provider: gitlab-local
+    ci_provider: gitlab-ci
+    registry_provider: ""
+    runtime_provider: docker-local
+    scaffold:
+      source: git
+      repo: root/symphony-templates
+      path: scaffold/go
+    ci_template:
+      source: git
+      repo: root/symphony-templates
+      path: ci/go.gitlab-ci.yml
+
+  - id: api-rest-python
+    name: "API REST Python"
+    description: "API REST avec FastAPI, pytest, logging structuré et métriques Prometheus"
+    icon: python
+    language: python
+    type: api
+    scm_provider: gitlab-local
+    ci_provider: gitlab-ci
+    registry_provider: ""
+    runtime_provider: docker-local
+    scaffold:
+      source: git
+      repo: root/symphony-templates
+      path: scaffold/python
+    ci_template:
+      source: git
+      repo: root/symphony-templates
+      path: ci/python.gitlab-ci.yml
+
+  - id: api-rest-node
+    name: "API REST Node.js"
+    description: "API REST avec Express, Winston, Jest et métriques Prometheus"
+    icon: node
+    language: node
+    type: api
+    scm_provider: gitlab-local
+    ci_provider: gitlab-ci
+    registry_provider: ""
+    runtime_provider: docker-local
+    scaffold:
+      source: git
+      repo: root/symphony-templates
+      path: scaffold/node
+    ci_template:
+      source: git
+      repo: root/symphony-templates
+      path: ci/node.gitlab-ci.yml
+
+  - id: worker-python
+    name: "Worker Python"
+    description: "Worker background Python avec gestion des erreurs et logging"
+    icon: python
+    language: python
+    type: worker
+    scm_provider: gitlab-local
+    ci_provider: gitlab-ci
+    registry_provider: ""
+    runtime_provider: docker-local
+    scaffold:
+      source: git
+      repo: root/symphony-templates
+      path: scaffold/python
+    ci_template:
+      source: git
+      repo: root/symphony-templates
+      path: ci/python.gitlab-ci.yml

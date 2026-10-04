@@ -1,0 +1,6 @@
+.env
+go1.22.5.linux-amd64.tar.gz
+*.tar.gz
+.claude/settings.local.json
+frontend/node_modules/
+frontend/dist/

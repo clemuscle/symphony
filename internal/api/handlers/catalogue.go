@@ -1,0 +1,175 @@
+package handlers
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/yourorg/symphony/internal/catalogue"
+	"github.com/yourorg/symphony/internal/database"
+	"github.com/yourorg/symphony/internal/provider"
+)
+
+func ListServices(store *catalogue.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		services := store.Search(
+			q.Get("q"),
+			q.Get("tier"),
+			q.Get("lifecycle"),
+		)
+		if services == nil {
+			services = []catalogue.Service{}
+		}
+		respond(w, http.StatusOK, services)
+	}
+}
+
+func GetService(store *catalogue.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name := chi.URLParam(r, "name")
+		svc, ok := store.Get(name)
+		if !ok {
+			respondError(w, http.StatusNotFound, "service introuvable: "+name)
+			return
+		}
+		respond(w, http.StatusOK, svc)
+	}
+}
+
+var webhookClient = &http.Client{Timeout: 10 * time.Second}
+
+func TriggerAction(store *catalogue.Store, providers *provider.Registry, db *database.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		svcName := chi.URLParam(r, "name")
+		actionName := chi.URLParam(r, "action")
+
+		svc, ok := store.Get(svcName)
+		if !ok {
+			respondError(w, http.StatusNotFound, "service introuvable: "+svcName)
+			return
+		}
+
+		var action *catalogue.Action
+		for i := range svc.Spec.Actions {
+			if svc.Spec.Actions[i].Name == actionName {
+				action = &svc.Spec.Actions[i]
+				break
+			}
+		}
+		if action == nil {
+			respondError(w, http.StatusNotFound, "action introuvable: "+actionName)
+			return
+		}
+
+		// Body vide autorisé (action sans inputs)
+		inputs := map[string]any{}
+		if err := json.NewDecoder(r.Body).Decode(&inputs); err != nil && !errors.Is(err, io.EOF) {
+			respondError(w, http.StatusBadRequest, "body invalide")
+			return
+		}
+
+		switch {
+		case action.WebhookURL != "":
+			status, err := callWebhook(action.WebhookURL, map[string]any{
+				"service":      svcName,
+				"action":       actionName,
+				"inputs":       inputs,
+				"triggered_at": time.Now().UTC().Format(time.RFC3339),
+			})
+			if err != nil {
+				respondError(w, http.StatusBadGateway, "webhook: "+err.Error())
+				return
+			}
+			db.LogAudit("trigger_action", svcName+"/"+actionName, map[string]any{
+				"mode":        "webhook",
+				"inputs":      inputs,
+				"http_status": status,
+			}, "system", "")
+			respond(w, http.StatusOK, map[string]any{
+				"status":      "dispatched",
+				"mode":        "webhook",
+				"http_status": status,
+			})
+
+		case action.CIProvider != "":
+			repoPath := repoPathFromSpec(svc.Spec.Repo)
+			if repoPath == "" {
+				respondError(w, http.StatusBadRequest, "spec.repo requis pour une action pipeline")
+				return
+			}
+			ci, err := providers.CI(action.CIProvider)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "ci provider: "+err.Error())
+				return
+			}
+
+			vars := make(map[string]string, len(inputs)+3)
+			for k, v := range inputs {
+				if v != nil {
+					vars[k] = fmt.Sprint(v)
+				}
+			}
+			vars["SYMPHONY_SERVICE"] = svcName
+			vars["SYMPHONY_ACTION"] = actionName
+			if action.Pipeline != "" {
+				vars["SYMPHONY_PIPELINE"] = action.Pipeline
+			}
+
+			pipeline, err := ci.TriggerPipeline(repoPath, "main", vars)
+			if err != nil {
+				respondError(w, http.StatusBadGateway, "pipeline: "+err.Error())
+				return
+			}
+			db.LogAudit("trigger_action", svcName+"/"+actionName, map[string]any{
+				"mode":        "pipeline",
+				"ci_provider": ci.ID(),
+				"repo":        repoPath,
+				"pipeline_id": pipeline.ID,
+				"inputs":      inputs,
+			}, "system", "")
+			respond(w, http.StatusOK, map[string]any{
+				"status":   "dispatched",
+				"mode":     "pipeline",
+				"pipeline": pipeline,
+			})
+
+		default:
+			respondError(w, http.StatusBadRequest, "action non configurée : définir webhook_url ou ci_provider")
+		}
+	}
+}
+
+// callWebhook envoie le payload en POST et renvoie le code HTTP ; erreur si >= 400
+func callWebhook(url string, payload map[string]any) (int, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := webhookClient.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return resp.StatusCode, fmt.Errorf("status %d — %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+	}
+	return resp.StatusCode, nil
+}
+
+// repoPathFromSpec accepte "groupe/projet" ou une URL complète (http(s)://host/groupe/projet[.git])
+func repoPathFromSpec(repo string) string {
+	repo = strings.TrimSpace(repo)
+	if u, err := url.Parse(repo); err == nil && u.Host != "" {
+		repo = u.Path
+	}
+	return strings.TrimSuffix(strings.Trim(repo, "/"), ".git")
+}

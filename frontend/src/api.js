@@ -10,7 +10,6 @@ export const api = {
 
   // Golden Paths
   getGoldenPaths: () => http.get('/api/v1/golden-paths'),
-  reloadTemplates: () => http.post('/api/v1/templates/reload'),
 
   // Projets
   createProject: (data) => http.post('/api/v1/projects', data),
@@ -19,9 +18,9 @@ export const api = {
 
   // Pipelines
   triggerPipeline: (projectPath, ref, vars) =>
-    http.post('/api/v1/pipelines/trigger', { project_path: projectPath, ref, vars }),
+    http.post('/api/v1/pipelines/trigger', { repo_path: projectPath, ref, vars }),
   getPipelineStatus: (projectPath, pipelineID) =>
-    http.get(`/api/v1/pipelines/status?project=${projectPath}&id=${pipelineID}`),
+    http.get(`/api/v1/pipelines/status?repo=${projectPath}&id=${pipelineID}`),
   listPipelines: (project) => http.get(`/api/v1/pipelines/${project}`),
 
   // Déploiements

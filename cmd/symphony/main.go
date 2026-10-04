@@ -1,67 +1,152 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 
 	"github.com/joho/godotenv"
 	"github.com/yourorg/symphony/internal/api"
-	"github.com/yourorg/symphony/internal/catalog"
+	"github.com/yourorg/symphony/internal/catalogue"
+	"github.com/yourorg/symphony/internal/config"
 	"github.com/yourorg/symphony/internal/database"
 	"github.com/yourorg/symphony/internal/gitops"
-	"github.com/yourorg/symphony/internal/templates"
-	gitlabregistry "github.com/yourorg/symphony/internal/providers/artifacts/gitlabregistry"
-	gitlabci "github.com/yourorg/symphony/internal/providers/ci/gitlabci"
-	dockerdeploy "github.com/yourorg/symphony/internal/providers/deploy/docker"
-	gitlabscm "github.com/yourorg/symphony/internal/providers/scm/gitlab"
+	"github.com/yourorg/symphony/internal/provider"
+	gitlabscm "github.com/yourorg/symphony/internal/provider/scm/gitlab"
+	githubscm "github.com/yourorg/symphony/internal/provider/scm/github"
+	gitlabci "github.com/yourorg/symphony/internal/provider/ci/gitlabci"
+	githubci "github.com/yourorg/symphony/internal/provider/ci/githubactions"
+	dockerrt "github.com/yourorg/symphony/internal/provider/runtime/docker"
+	k8srt "github.com/yourorg/symphony/internal/provider/runtime/kubernetes"
 )
 
 func main() {
-	godotenv.Load()
+	// Logger structuré JSON
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
+
+	// Charger .env
+	if err := godotenv.Load(); err != nil {
+		slog.Warn("pas de .env trouvé, utilisation des variables d'environnement")
+	}
+
+	// Charger la config
+	cfg, err := config.Load(getEnv("SYMPHONY_CONFIG", "symphony.yaml"))
+	if err != nil {
+		slog.Error("chargement config", "error", err)
+		os.Exit(1)
+	}
 
 	// Base de données
 	db, err := database.Connect()
 	if err != nil {
-		log.Fatalf("DB: %v", err)
+		slog.Error("connexion DB", "error", err)
+		os.Exit(1)
 	}
 	if err := db.Migrate(); err != nil {
-		log.Fatalf("migration: %v", err)
-	}
-	log.Println("✅ PostgreSQL connecté")
-
-	// Providers
-	gitlabURL := getEnv("GITLAB_URL", "http://gitlab.local:8929")
-	gitlabToken := os.Getenv("GITLAB_TOKEN")
-	if gitlabToken == "" {
-		log.Fatal("GITLAB_TOKEN manquant")
+		slog.Error("migration DB", "error", err)
+		os.Exit(1)
 	}
 
-	scm := gitlabscm.New(gitlabURL, gitlabToken)
-	ci := gitlabci.New(gitlabURL, gitlabToken)
-	registry := gitlabregistry.New(gitlabURL, getEnv("REGISTRY_URL", "gitlab.local:5050"), gitlabToken)
-	deploy := dockerdeploy.New(getEnv("DOCKER_SOCKET", "/var/run/docker.sock"))
+	// Provider registry
+	providers := provider.NewRegistry()
 
-	// Catalogue + GitOps sync
-	store := catalog.NewStore()
-	configRepo := getEnv("CONFIG_REPO_PATH", "root/symphony-config")
-	syncer := gitops.NewSyncer(gitlabURL, gitlabToken, configRepo, store)
+	// Enregistrer les providers depuis la config
+	for _, def := range cfg.Providers.SCM {
+		switch def.Type {
+		case "gitlab":
+			url := def.Config["url"]
+			token := os.Getenv(def.Config["token_env"])
+			if token == "" {
+				token = def.Config["token"]
+			}
+			p := gitlabscm.New(def.ID, url, token)
+			providers.RegisterSCM(p, def.Default)
+			slog.Info("provider SCM enregistré", "id", def.ID, "type", def.Type)
 
-	// Chargement initial + sync en arrière-plan
+		case "github":
+			token := os.Getenv(def.Config["token_env"])
+			org := def.Config["org"]
+			p := githubscm.New(def.ID, token, org)
+			providers.RegisterSCM(p, def.Default)
+			slog.Info("provider SCM enregistré", "id", def.ID, "type", def.Type)
+		}
+	}
+
+	for _, def := range cfg.Providers.CI {
+		switch def.Type {
+		case "gitlab_ci":
+			url := def.Config["url"]
+			token := os.Getenv(def.Config["token_env"])
+			if token == "" {
+				// Réutiliser le token du SCM GitLab référencé
+				scmRef := def.Config["scm_ref"]
+				token = os.Getenv(scmRef + "_TOKEN")
+				if token == "" {
+					token = os.Getenv("GITLAB_TOKEN")
+				}
+			}
+			p := gitlabci.New(def.ID, url, token)
+			providers.RegisterCI(p, def.Default)
+			slog.Info("provider CI enregistré", "id", def.ID, "type", def.Type)
+
+		case "github_actions":
+			token := os.Getenv(def.Config["token_env"])
+			p := githubci.New(def.ID, token)
+			providers.RegisterCI(p, def.Default)
+			slog.Info("provider CI enregistré", "id", def.ID, "type", def.Type)
+		}
+	}
+
+	for _, def := range cfg.Providers.Runtime {
+		switch def.Type {
+		case "docker":
+			socket := def.Config["socket"]
+			if socket == "" {
+				socket = "/var/run/docker.sock"
+			}
+			p := dockerrt.New(def.ID, socket)
+			providers.RegisterRuntime(p, def.Default)
+			slog.Info("provider runtime enregistré", "id", def.ID, "type", def.Type)
+
+		case "kubernetes":
+			p := k8srt.New(def.ID)
+			providers.RegisterRuntime(p, def.Default)
+			slog.Info("provider runtime enregistré (stub)", "id", def.ID, "type", def.Type)
+		}
+	}
+
+	// Catalogue + GitOps syncer
+	store := catalogue.NewStore()
+	defaultSCM, err := providers.SCM("")
+	if err != nil {
+		slog.Error("pas de provider SCM par défaut", "error", err)
+		os.Exit(1)
+	}
+
+	syncer := gitops.NewSyncer(
+		defaultSCM,
+		store,
+		cfg.Catalogue.Repo,
+		getEnv("CATALOGUE_BRANCH", "main"),
+		cfg.Catalogue.Path,
+	)
 	go syncer.Start()
 
 	// Template loader
-	tmplRepo := getEnv("TEMPLATES_REPO_PATH", "root/symphony-templates")
-	tmplLoader := templates.NewLoader(gitlabURL, gitlabToken, tmplRepo)
-	if err := tmplLoader.Load(); err != nil {
-		log.Printf("⚠️  templates: %v", err)
-	} else {
-		log.Printf("✅ %d golden path(s) chargé(s)", len(tmplLoader.GetGoldenPaths()))
-	}
+	templateRepo := getEnv("TEMPLATES_REPO", cfg.Catalogue.Repo)
+	tmplLoader := gitops.NewTemplateLoader(defaultSCM, templateRepo, "main")
+	tmplLoader.Load(cfg.GoldenPaths)
 
+	// Démarrer le serveur
 	addr := ":" + getEnv("PORT", "8080")
-	log.Printf("🎼 Symphony démarré sur %s", addr)
-	log.Fatal(http.ListenAndServe(addr, api.NewServer(store, db, scm, ci, registry, deploy, tmplLoader)))
+	slog.Info("Symphony démarré", "addr", addr)
+
+	if err := http.ListenAndServe(addr, api.NewServer(providers, store, db, syncer, tmplLoader)); err != nil {
+		slog.Error("serveur HTTP", "error", err)
+		os.Exit(1)
+	}
 }
 
 func getEnv(key, fallback string) string {
