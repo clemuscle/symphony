@@ -3,36 +3,39 @@ package database
 import "time"
 
 type Deployment struct {
-	ID          int
-	ProjectName string
-	ContainerID string
-	Image       string
-	Port        int
-	Status      string
-	URL         string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID           int       `json:"id"`
+	ProjectName  string    `json:"project_name"`
+	DeploymentID string    `json:"deployment_id"`
+	RTProvider   string    `json:"runtime_provider"`
+	Image        string    `json:"image"`
+	Tag          string    `json:"tag"`
+	Port         int       `json:"port"`
+	Status       string    `json:"status"`
+	URL          string    `json:"url"`
+	DeployedBy   string    `json:"deployed_by"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 func (db *DB) CreateDeployment(d *Deployment) error {
 	return db.QueryRow(`
-		INSERT INTO deployments (project_name, container_id, image, port, status, url)
-		VALUES ($1,$2,$3,$4,$5,$6)
+		INSERT INTO deployments (project_name, deployment_id, rt_provider, image, tag, port, status, url, deployed_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		RETURNING id, created_at`,
-		d.ProjectName, d.ContainerID, d.Image, d.Port, d.Status, d.URL,
+		d.ProjectName, d.DeploymentID, d.RTProvider, d.Image, d.Tag,
+		d.Port, d.Status, d.URL, d.DeployedBy,
 	).Scan(&d.ID, &d.CreatedAt)
 }
 
-func (db *DB) UpdateDeploymentStatus(containerID, status string) error {
-	_, err := db.Exec(`
-		UPDATE deployments SET status=$1, updated_at=NOW()
-		WHERE container_id=$2`, status, containerID)
+func (db *DB) UpdateDeploymentStatus(deploymentID, status string) error {
+	_, err := db.Exec(`UPDATE deployments SET status=$1, updated_at=NOW() WHERE deployment_id=$2`,
+		status, deploymentID)
 	return err
 }
 
 func (db *DB) ListDeployments() ([]Deployment, error) {
 	rows, err := db.Query(`
-		SELECT id, project_name, container_id, image, port, status, url, created_at
+		SELECT id, project_name, deployment_id, rt_provider, image, tag, port, status, url, deployed_by, created_at
 		FROM deployments ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -42,8 +45,8 @@ func (db *DB) ListDeployments() ([]Deployment, error) {
 	var deployments []Deployment
 	for rows.Next() {
 		var d Deployment
-		rows.Scan(&d.ID, &d.ProjectName, &d.ContainerID, &d.Image,
-			&d.Port, &d.Status, &d.URL, &d.CreatedAt)
+		rows.Scan(&d.ID, &d.ProjectName, &d.DeploymentID, &d.RTProvider, &d.Image,
+			&d.Tag, &d.Port, &d.Status, &d.URL, &d.DeployedBy, &d.CreatedAt)
 		deployments = append(deployments, d)
 	}
 	return deployments, nil

@@ -1,67 +1,92 @@
 package api
 
 import (
+	"log/slog"
+	"net/http"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/yourorg/symphony/internal/catalog"
+	"github.com/yourorg/symphony/internal/api/handlers"
+	"github.com/yourorg/symphony/internal/catalogue"
 	"github.com/yourorg/symphony/internal/database"
-	"github.com/yourorg/symphony/internal/providers"
-	"github.com/yourorg/symphony/internal/templates"
+	"github.com/yourorg/symphony/internal/gitops"
+	"github.com/yourorg/symphony/internal/provider"
 )
 
 type Server struct {
-	store    *catalog.Store
-	db       *database.DB
-	scm      providers.SCMProvider
-	ci       providers.CIProvider
-	registry providers.RegistryProvider
-	deploy   providers.DeployProvider
-	tmpl     *templates.Loader
+	providers *provider.Registry
+	store     *catalogue.Store
+	db        *database.DB
+	syncer    *gitops.Syncer
+	templates *gitops.TemplateLoader
 }
 
 func NewServer(
-	store *catalog.Store,
+	providers *provider.Registry,
+	store *catalogue.Store,
 	db *database.DB,
-	scm providers.SCMProvider,
-	ci providers.CIProvider,
-	registry providers.RegistryProvider,
-	deploy providers.DeployProvider,
-	tmpl *templates.Loader,
-) *chi.Mux {
-	s := &Server{store: store, db: db, scm: scm, ci: ci, registry: registry, deploy: deploy, tmpl: tmpl}
+	syncer *gitops.Syncer,
+	templates *gitops.TemplateLoader,
+) http.Handler {
+	s := &Server{
+		providers: providers,
+		store:     store,
+		db:        db,
+		syncer:    syncer,
+		templates: templates,
+	}
+
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(requestLogger)
 	r.Use(middleware.Recoverer)
 	r.Use(corsMiddleware)
 
+	// Health
 	r.Get("/healthz", s.healthz)
 
-	// Catalogue
-	r.Get("/api/v1/services", s.listServices)
-	r.Get("/api/v1/services/{name}", s.getService)
-	r.Post("/api/v1/services/{name}/actions/{action}", s.triggerAction)
+	// API v1
+	r.Route("/api/v1", func(r chi.Router) {
+		// Catalogue
+		r.Get("/services", handlers.ListServices(store))
+		r.Get("/services/{name}", handlers.GetService(store))
+		r.Post("/services/{name}/actions/{action}", handlers.TriggerAction(store, providers, db))
 
-	// Golden Paths
-	r.Get("/api/v1/golden-paths", s.listGoldenPaths)
-	r.Post("/api/v1/templates/reload", s.reloadTemplates)
+		// Golden Paths
+		r.Get("/golden-paths", handlers.ListGoldenPaths(templates))
 
-	// Projets
-	r.Post("/api/v1/projects", s.createProject)
-	r.Get("/api/v1/projects", s.listProjects)
-	r.Get("/api/v1/repos", s.listRepos)
+		// Projets
+		r.Get("/projects", handlers.ListProjects(db))
+		r.Post("/projects", handlers.CreateProject(providers, db, templates))
 
-	// Pipelines
-	r.Post("/api/v1/pipelines/trigger", s.triggerPipelineHandler)
-	r.Get("/api/v1/pipelines/status", s.getPipelineStatusHandler)
-	r.Get("/api/v1/pipelines/{project}", s.listPipelinesHandler)
+		// Repos (liste depuis les SCM providers)
+		r.Get("/repos", handlers.ListRepos(providers))
 
-	// Déploiements
-	r.Get("/api/v1/deployments", s.listDeployments)
-	r.Post("/api/v1/deployments", s.deployProject)
-	r.Delete("/api/v1/deployments/{id}", s.stopDeployment)
+		// Pipelines
+		r.Post("/pipelines/trigger", handlers.TriggerPipeline(providers, db))
+		r.Get("/pipelines/status", handlers.GetPipelineStatus(providers, db))
+		r.Get("/pipelines/{project}", handlers.ListPipelines(db))
 
-	// Audit
-	r.Get("/api/v1/audit", s.listAudit)
+		// Déploiements
+		r.Get("/deployments", handlers.ListDeployments(providers, db))
+		r.Post("/deployments", handlers.Deploy(providers, db))
+		r.Delete("/deployments/{id}", handlers.StopDeployment(providers, db))
+		r.Get("/deployments/{id}/logs", handlers.GetLogs(providers))
+		r.Post("/deployments/{id}/restart", handlers.RestartDeployment(providers, db))
 
+		// Admin
+		r.Get("/providers", handlers.ListProviders(providers))
+		r.Post("/sync", handlers.ForceSync(syncer))
+		r.Get("/audit", handlers.ListAudit(db))
+	})
+
+	slog.Info("API server configuré")
 	return r
+}
+
+func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
+	respond(w, http.StatusOK, map[string]string{
+		"status": "ok",
+	})
 }

@@ -28,35 +28,35 @@
     </div>
 
     <div class="grid" v-else>
-      <div v-for="svc in filtered" :key="svc.Metadata.Name"
-        class="card" :class="{ active: selected?.Metadata.Name === svc.Metadata.Name }"
+      <div v-for="svc in filtered" :key="svc.metadata.name"
+        class="card" :class="{ active: selected?.metadata.name === svc.metadata.name }"
         @click="select(svc)">
 
         <div class="card-top">
           <div class="card-name-row">
-            <span class="svc-name">{{ svc.Metadata.Name }}</span>
-            <span :class="['tier-badge', svc.Metadata.Tier]">
-              {{ tierIcon(svc.Metadata.Tier) }} {{ svc.Metadata.Tier || 'standard' }}
+            <span class="svc-name">{{ svc.metadata.name }}</span>
+            <span :class="['tier-badge', svc.metadata.tier]">
+              {{ tierIcon(svc.metadata.tier) }} {{ svc.metadata.tier || 'standard' }}
             </span>
           </div>
-          <span :class="['lifecycle-badge', svc.Metadata.Lifecycle]">
-            {{ svc.Metadata.Lifecycle || 'production' }}
+          <span :class="['lifecycle-badge', svc.metadata.lifecycle]">
+            {{ svc.metadata.lifecycle || 'production' }}
           </span>
         </div>
 
         <div class="svc-meta">
-          <span>👤 {{ svc.Metadata.Owner }}</span>
-          <span v-if="svc.Spec.Language">{{ langIcon(svc.Spec.Language) }} {{ svc.Spec.Language }}</span>
-          <span v-if="svc.Spec.Version">v{{ svc.Spec.Version }}</span>
+          <span>👤 {{ svc.metadata.owner }}</span>
+          <span v-if="svc.spec.language">{{ langIcon(svc.spec.language) }} {{ svc.spec.language }}</span>
+          <span v-if="svc.spec.version">v{{ svc.spec.version }}</span>
         </div>
 
-        <div class="slo-row" v-if="svc.Spec.SLO?.Availability">
-          <span class="slo-item">🟢 {{ svc.Spec.SLO.Availability }}</span>
-          <span class="slo-item" v-if="svc.Spec.SLO.LatencyP99">⚡ {{ svc.Spec.SLO.LatencyP99 }}</span>
+        <div class="slo-row" v-if="svc.spec.slo?.availability">
+          <span class="slo-item">🟢 {{ svc.spec.slo.availability }}</span>
+          <span class="slo-item" v-if="svc.spec.slo.latency_p99">⚡ {{ svc.spec.slo.latency_p99 }}</span>
         </div>
 
         <div class="tags">
-          <span class="tag" v-for="t in svc.Metadata.Tags?.slice(0,3)" :key="t">{{ t }}</span>
+          <span class="tag" v-for="t in svc.metadata.tags?.slice(0,3)" :key="t">{{ t }}</span>
         </div>
       </div>
     </div>
@@ -66,13 +66,13 @@
       <aside class="panel" v-if="selected">
         <div class="panel-header">
           <div>
-            <h3>{{ selected.Metadata.Name }}</h3>
+            <h3>{{ selected.metadata.name }}</h3>
             <div class="panel-badges">
-              <span :class="['tier-badge', selected.Metadata.Tier]">
-                {{ tierIcon(selected.Metadata.Tier) }} {{ selected.Metadata.Tier || 'standard' }}
+              <span :class="['tier-badge', selected.metadata.tier]">
+                {{ tierIcon(selected.metadata.tier) }} {{ selected.metadata.tier || 'standard' }}
               </span>
-              <span :class="['lifecycle-badge', selected.Metadata.Lifecycle]">
-                {{ selected.Metadata.Lifecycle || 'production' }}
+              <span :class="['lifecycle-badge', selected.metadata.lifecycle]">
+                {{ selected.metadata.lifecycle || 'production' }}
               </span>
             </div>
           </div>
@@ -84,93 +84,93 @@
           <h4>Équipe</h4>
           <div class="info-row">
             <span>👤 Owner</span>
-            <strong>{{ selected.Metadata.Owner }}</strong>
+            <strong>{{ selected.metadata.owner }}</strong>
           </div>
-          <div class="info-row" v-if="selected.Metadata.Team?.Slack">
+          <div class="info-row" v-if="selected.metadata.team?.slack">
             <span>💬 Slack</span>
-            <code>{{ selected.Metadata.Team.Slack }}</code>
+            <code>{{ selected.metadata.team.slack }}</code>
           </div>
-          <div class="info-row" v-if="selected.Metadata.Team?.Email">
+          <div class="info-row" v-if="selected.metadata.team?.email">
             <span>📧 Email</span>
-            <a :href="'mailto:'+selected.Metadata.Team.Email">{{ selected.Metadata.Team.Email }}</a>
+            <a :href="'mailto:'+selected.metadata.team.email">{{ selected.metadata.team.email }}</a>
           </div>
         </section>
 
         <!-- Tech -->
-        <section v-if="selected.Spec.Language || selected.Spec.Version">
+        <section v-if="selected.spec.language || selected.spec.version">
           <h4>Stack technique</h4>
-          <div class="info-row" v-if="selected.Spec.Language">
+          <div class="info-row" v-if="selected.spec.language">
             <span>Langage</span>
-            <strong>{{ langIcon(selected.Spec.Language) }} {{ selected.Spec.Language }}</strong>
+            <strong>{{ langIcon(selected.spec.language) }} {{ selected.spec.language }}</strong>
           </div>
-          <div class="info-row" v-if="selected.Spec.Type">
+          <div class="info-row" v-if="selected.spec.type">
             <span>Type</span>
-            <strong>{{ selected.Spec.Type }}</strong>
+            <strong>{{ selected.spec.type }}</strong>
           </div>
-          <div class="info-row" v-if="selected.Spec.Version">
+          <div class="info-row" v-if="selected.spec.version">
             <span>Version</span>
-            <code>v{{ selected.Spec.Version }}</code>
+            <code>v{{ selected.spec.version }}</code>
           </div>
-          <div class="info-row" v-if="selected.Spec.Registry">
+          <div class="info-row" v-if="selected.spec.registry">
             <span>Registry</span>
-            <code>{{ selected.Spec.Registry }}</code>
+            <code>{{ selected.spec.registry }}</code>
           </div>
         </section>
 
         <!-- SLO -->
-        <section v-if="selected.Spec.SLO?.Availability">
+        <section v-if="selected.spec.slo?.availability">
           <h4>SLO</h4>
           <div class="slo-grid">
             <div class="slo-card">
-              <div class="slo-value">{{ selected.Spec.SLO.Availability }}</div>
+              <div class="slo-value">{{ selected.spec.slo.availability }}</div>
               <div class="slo-label">Disponibilité</div>
             </div>
-            <div class="slo-card" v-if="selected.Spec.SLO.LatencyP99">
-              <div class="slo-value">{{ selected.Spec.SLO.LatencyP99 }}</div>
+            <div class="slo-card" v-if="selected.spec.slo.latency_p99">
+              <div class="slo-value">{{ selected.spec.slo.latency_p99 }}</div>
               <div class="slo-label">Latence p99</div>
             </div>
           </div>
         </section>
 
         <!-- Dépendances -->
-        <section v-if="selected.Spec.Dependencies?.length">
+        <section v-if="selected.spec.dependencies?.length">
           <h4>Dépendances</h4>
-          <div class="dep-item" v-for="dep in selected.Spec.Dependencies" :key="dep.Service">
-            <span class="dep-type">{{ depIcon(dep.Type) }} {{ dep.Type }}</span>
-            <span class="dep-name">{{ dep.Service }}</span>
+          <div class="dep-item" v-for="dep in selected.spec.dependencies" :key="dep.service">
+            <span class="dep-type">{{ depIcon(dep.type) }} {{ dep.type }}</span>
+            <span class="dep-name">{{ dep.service }}</span>
           </div>
         </section>
 
         <!-- Liens -->
-        <section v-if="selected.Spec.Links?.length">
+        <section v-if="selected.spec.links?.length">
           <h4>Liens</h4>
-          <a v-for="l in selected.Spec.Links" :key="l.Title"
-            :href="l.URL" target="_blank" class="link-item">
-            {{ linkIcon(l.Icon) }} {{ l.Title }}
+          <a v-for="l in selected.spec.links" :key="l.title"
+            :href="l.url" target="_blank" class="link-item">
+            {{ linkIcon(l.icon) }} {{ l.title }}
             <span class="link-arrow">↗</span>
           </a>
         </section>
 
         <!-- Actions -->
-        <section v-if="selected.Spec.Actions?.length">
+        <section v-if="selected.spec.actions?.length">
           <h4>Actions</h4>
-          <div v-for="action in selected.Spec.Actions" :key="action.Name" class="action-block">
-            <div class="action-title">⚡ {{ action.Name }}</div>
-            <div v-for="input in action.Inputs" :key="input.ID" class="field">
-              <label>{{ input.ID }}</label>
-              <input v-if="input.Type === 'integer'" type="number"
-                :min="input.Min" :max="input.Max"
-                v-model="vals[action.Name + input.ID]" />
+          <div v-for="action in selected.spec.actions" :key="action.name" class="action-block">
+            <div class="action-title">⚡ {{ action.name }}</div>
+            <div v-for="input in action.inputs" :key="input.id" class="field">
+              <label>{{ input.id }}</label>
+              <input v-if="input.type === 'integer'" type="number"
+                :min="input.min" :max="input.max"
+                v-model="vals[action.name + input.id]" />
               <input v-else type="text"
-                v-model="vals[action.Name + input.ID]"
-                :placeholder="input.Default || input.ID" />
+                v-model="vals[action.name + input.id]"
+                :placeholder="input.default || input.id" />
             </div>
-            <button class="btn" :disabled="busy[action.Name]" @click="trigger(action)">
-              {{ busy[action.Name] ? '⏳ Envoi...' : 'Déclencher' }}
+            <button class="btn" :disabled="busy[action.name]" @click="trigger(action)">
+              {{ busy[action.name] ? '⏳ Envoi...' : 'Déclencher' }}
             </button>
-            <div v-if="feedback[action.Name]"
-              :class="['feedback', feedback[action.Name].ok ? 'ok' : 'err']">
-              {{ feedback[action.Name].msg }}
+            <div v-if="feedback[action.name]"
+              :class="['feedback', feedback[action.name].ok ? 'ok' : 'err']">
+              {{ feedback[action.name].msg }}
             </div>
           </div>
         </section>
@@ -197,14 +197,14 @@ const filtered = computed(() =>
   services.value.filter(s => {
     const q = search.value.toLowerCase()
     const matchSearch = !q || [
-      s.Metadata.Name,
-      s.Metadata.Owner,
-      s.Spec.Language,
-      ...(s.Metadata.Tags || [])
+      s.metadata.name,
+      s.metadata.owner,
+      s.spec.language,
+      ...(s.metadata.tags || [])
     ].some(v => v?.toLowerCase().includes(q))
 
-    const matchTier = !filterTier.value || s.Metadata.Tier === filterTier.value
-    const matchLifecycle = !filterLifecycle.value || s.Metadata.Lifecycle === filterLifecycle.value
+    const matchTier = !filterTier.value || s.metadata.tier === filterTier.value
+    const matchLifecycle = !filterLifecycle.value || s.metadata.lifecycle === filterLifecycle.value
 
     return matchSearch && matchTier && matchLifecycle
   })
@@ -216,7 +216,7 @@ const depIcon = (type) => ({ database: '🗄️', cache: '⚡', api: '🔌', que
 const linkIcon = (icon) => ({ monitoring: '📊', errors: '🐛', docs: '📖', code: '💻', ci: '⚙️', web: '🌐', docker: '🐳' })[icon] || '🔗'
 
 function select(svc) {
-  selected.value = selected.value?.Metadata.Name === svc.Metadata.Name ? null : svc
+  selected.value = selected.value?.metadata.name === svc.metadata.name ? null : svc
 }
 
 onMounted(async () => {
@@ -229,15 +229,15 @@ onMounted(async () => {
 
 async function trigger(action) {
   const inputs = {}
-  action.Inputs?.forEach(i => { inputs[i.ID] = vals.value[action.Name + i.ID] })
-  busy.value[action.Name] = true
-  feedback.value[action.Name] = null
+  action.inputs?.forEach(i => { inputs[i.id] = vals.value[action.name + i.id] })
+  busy.value[action.name] = true
+  feedback.value[action.name] = null
   try {
-    await api.triggerAction(selected.value.Metadata.Name, action.Name, inputs)
-    feedback.value[action.Name] = { ok: true, msg: '✅ Action déclenchée' }
+    await api.triggerAction(selected.value.metadata.name, action.name, inputs)
+    feedback.value[action.name] = { ok: true, msg: '✅ Action déclenchée' }
   } catch (e) {
-    feedback.value[action.Name] = { ok: false, msg: '❌ ' + (e.response?.data?.error || e.message) }
-  } finally { busy.value[action.Name] = false }
+    feedback.value[action.name] = { ok: false, msg: '❌ ' + (e.response?.data?.error || e.message) }
+  } finally { busy.value[action.name] = false }
 }
 </script>
 
