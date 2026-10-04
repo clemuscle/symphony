@@ -257,3 +257,65 @@ func (p *Provider) resolveNamespace(name string) (int, error) {
 	}
 	return 0, fmt.Errorf("namespace %q introuvable", name)
 }
+
+func (p *Provider) DeleteFile(repoPath, branch, filePath, commitMsg string) error {
+	_, status, err := p.api("DELETE",
+		fmt.Sprintf("/projects/%s/repository/files/%s", url.PathEscape(repoPath), url.PathEscape(filePath)),
+		map[string]any{"branch": branch, "commit_message": commitMsg})
+	if err != nil {
+		return err
+	}
+	switch status {
+	case 204:
+		return nil
+	case 404:
+		return provider.ErrNotFound
+	default:
+		return fmt.Errorf("deleteFile %s: status %d", filePath, status)
+	}
+}
+
+// DeleteRepo supprime le projet. GitLab refuse tant que le container registry
+// contient des tags : on les supprime d'abord, puis on réessaie le temps que
+// GitLab termine la purge (asynchrone, souvent 2 à 3 min).
+func (p *Provider) DeleteRepo(repoPath string) error {
+	encoded := url.PathEscape(repoPath)
+
+	data, status, err := p.api("GET", "/projects/"+encoded+"/registry/repositories", nil)
+	if err != nil {
+		return err
+	}
+	if status == 404 {
+		return provider.ErrNotFound
+	}
+	if status == 200 {
+		var repos []struct {
+			ID int `json:"id"`
+		}
+		json.Unmarshal(data, &repos)
+		for _, r := range repos {
+			if _, st, err := p.api("DELETE",
+				fmt.Sprintf("/projects/%s/registry/repositories/%d", encoded, r.ID), nil); err != nil || st != 202 {
+				return fmt.Errorf("deleteRepo: purge registry %d: status %d %v", r.ID, st, err)
+			}
+		}
+	}
+
+	deadline := time.Now().Add(10 * time.Minute)
+	for {
+		data, status, err := p.api("DELETE", "/projects/"+encoded, nil)
+		if err != nil {
+			return err
+		}
+		switch {
+		case status == 202 || status == 204:
+			return nil
+		case status == 404:
+			return provider.ErrNotFound
+		case status == 400 && strings.Contains(string(data), "registry") && time.Now().Before(deadline):
+			time.Sleep(5 * time.Second)
+		default:
+			return fmt.Errorf("deleteRepo %s: status %d — %s", repoPath, status, string(data))
+		}
+	}
+}

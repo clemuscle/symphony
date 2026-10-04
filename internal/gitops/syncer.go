@@ -2,6 +2,7 @@ package gitops
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path"
@@ -63,6 +64,19 @@ func (s *Syncer) Register(svc catalogue.Service) error {
 	if err := s.scm.PushFile(s.configRepo, s.branch, filePath, string(content),
 		fmt.Sprintf("feat: register %s [symphony]", svc.Metadata.Name)); err != nil {
 		return fmt.Errorf("push %s: %w", filePath, err)
+	}
+	s.ForceSync()
+	return nil
+}
+
+// Unregister retire la fiche d'un service du repo de config puis recharge le
+// catalogue. Une fiche déjà absente n'est pas une erreur.
+func (s *Syncer) Unregister(name string) error {
+	filePath := path.Join(s.servicesDir, name+".yaml")
+	err := s.scm.DeleteFile(s.configRepo, s.branch, filePath,
+		fmt.Sprintf("chore: unregister %s [symphony]", name))
+	if err != nil && !errors.Is(err, provider.ErrNotFound) {
+		return fmt.Errorf("suppression %s: %w", filePath, err)
 	}
 	s.ForceSync()
 	return nil

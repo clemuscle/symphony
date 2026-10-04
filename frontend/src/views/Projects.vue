@@ -138,6 +138,9 @@
           <div class="project-footer">
             <a :href="p.repo_url" target="_blank" class="btn-ghost">GitLab ↗</a>
             <button class="btn-ghost" @click="triggerPipelineByPath(p.repo_path)">▶ Pipeline</button>
+            <button class="btn-ghost btn-danger" :disabled="p.deleting" @click="deleteProject(p)">
+              {{ p.deleting ? 'Suppression…' : 'Supprimer' }}
+            </button>
           </div>
           <div class="pipeline-status" v-if="repoPipelines[p.repo_path]">
             <span>Pipeline #{{ repoPipelines[p.repo_path].id }}</span>
@@ -179,7 +182,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 
 const showForm = ref(false)
@@ -198,6 +201,7 @@ const pipelineID = ref(null)
 const pipelineStatus = ref(null)
 const repoPipelines = ref({})
 const nameError = ref('')
+let deletionPoll = null
 
 const form = ref({
   name: '', description: '', namespace: '', port: 8080,
@@ -206,6 +210,8 @@ const form = ref({
 const langIcon = (lang) => ({
   go: '🐹', python: '🐍', node: '💚', java: '☕', default: '📦'
 })[lang] || '📦'
+
+onUnmounted(() => clearInterval(deletionPoll))
 
 onMounted(async () => {
   await Promise.all([loadGoldenPaths(), loadProjects(), loadRepos()])
@@ -240,6 +246,7 @@ async function loadProjects() {
   try {
     const { data } = await api.listProjects()
     symphonyProjects.value = data || []
+    if (symphonyProjects.value.some(p => p.deleting)) watchDeletions()
   } catch { symphonyProjects.value = [] }
   finally { loadingProjects.value = false }
 }
@@ -271,6 +278,31 @@ async function createProject() {
   } catch (e) {
     createError.value = e.response?.data?.error || e.message
   } finally { creating.value = false }
+}
+
+async function deleteProject(p) {
+  if (!confirm(`Supprimer définitivement ${p.name} ?\n\nLe repo ${p.repo_path}, ses images et sa fiche catalogue seront supprimés.`)) return
+  try {
+    // 202 : la suppression continue côté serveur (purge du registry GitLab)
+    await api.deleteProject(p.name)
+    p.deleting = true
+    watchDeletions()
+  } catch (e) {
+    alert('Erreur: ' + (e.response?.data?.error || e.message))
+  }
+}
+
+// Recharge la liste tant qu'une suppression est en cours
+function watchDeletions() {
+  if (deletionPoll) return
+  deletionPoll = setInterval(async () => {
+    await loadProjects()
+    if (!symphonyProjects.value.some(p => p.deleting)) {
+      clearInterval(deletionPoll)
+      deletionPoll = null
+      await loadRepos()
+    }
+  }, 5000)
 }
 
 async function triggerPipeline(repo) {
@@ -328,6 +360,9 @@ h2 { font-size: 22px; font-weight: 700; }
 .btn-secondary { padding: 8px 16px; background: white; border: 1px solid #667eea; color: #667eea; border-radius: 8px; cursor: pointer; font-size: 13px; }
 .btn-ghost { padding: 6px 12px; background: transparent; border: 1px solid #e2e2e2; border-radius: 6px; cursor: pointer; font-size: 13px; color: #555; text-decoration: none; display: inline-block; }
 .btn-ghost:hover { background: #f5f5f5; }
+.btn-danger { color: #c53030; border-color: #feb2b2; margin-left: auto; }
+.btn-danger:hover { background: #fff5f5; }
+.btn-danger:disabled { opacity: .6; cursor: wait; }
 .form-card { background: white; border: 1px solid #e2e2e2; border-radius: 14px; padding: 24px; margin-bottom: 24px; }
 h3 { font-size: 17px; font-weight: 700; margin-bottom: 20px; }
 .gp-section { margin-bottom: 24px; }
