@@ -76,9 +76,11 @@ Tokens are never written in `symphony.yaml`. Each provider has `config.token_env
 **Project creation** (`handlers/projects.go`):
 1. Resolve the golden path by id, then its SCM and CI providers.
 2. `CreateRepo`.
-3. Fetch the scaffold files, replace placeholders, and `PushFiles`.
-4. Fetch the CI template, replace placeholders, and push it as `.gitlab-ci.yml` (the file name is hardcoded, even for GitHub).
-5. Save the project in `projects` and write an audit log entry.
+3. Fetch the scaffold files (recursively) and the CI template, replace placeholders. The CI template becomes `.gitlab-ci.yml` (the file name is hardcoded, even for GitHub).
+4. `PushFiles` everything in **one** commit. A first commit without `.gitlab-ci.yml` would trigger GitLab Auto DevOps.
+5. Save the project in `projects`.
+6. `syncer.Register` writes `services/<name>.yaml` to the catalogue repo and forces a sync. A failure there doesn't undo the creation; it is logged and returned as `catalogue_error`. (The CI templates no longer have a `register-service` job.)
+7. Write an audit log entry.
 
 The CI provider is resolved but not used yet (`_ = ci`).
 
