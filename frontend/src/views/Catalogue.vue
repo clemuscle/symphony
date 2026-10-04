@@ -156,6 +156,7 @@
           <h4>Actions</h4>
           <div v-for="action in selected.spec.actions" :key="action.name" class="action-block">
             <div class="action-title">⚡ {{ action.name }}</div>
+            <div class="action-desc" v-if="action.description">{{ action.description }}</div>
             <div v-for="input in action.inputs" :key="input.id" class="field">
               <label>{{ input.id }}</label>
               <input v-if="input.type === 'integer'" type="number"
@@ -171,6 +172,7 @@
             <div v-if="feedback[action.name]"
               :class="['feedback', feedback[action.name].ok ? 'ok' : 'err']">
               {{ feedback[action.name].msg }}
+              <a v-if="feedback[action.name].url" :href="feedback[action.name].url" target="_blank">Voir ↗</a>
             </div>
           </div>
         </section>
@@ -233,8 +235,12 @@ async function trigger(action) {
   busy.value[action.name] = true
   feedback.value[action.name] = null
   try {
-    await api.triggerAction(selected.value.metadata.name, action.name, inputs)
-    feedback.value[action.name] = { ok: true, msg: '✅ Action déclenchée' }
+    const { data } = await api.triggerAction(selected.value.metadata.name, action.name, inputs)
+    feedback.value[action.name] = {
+      ok: true,
+      msg: data.pipeline ? `✅ Pipeline #${data.pipeline.id} lancée` : '✅ Action déclenchée',
+      url: data.pipeline?.web_url,
+    }
   } catch (e) {
     feedback.value[action.name] = { ok: false, msg: '❌ ' + (e.response?.data?.error || e.message) }
   } finally { busy.value[action.name] = false }
@@ -295,6 +301,7 @@ h4 { font-size: 11px; text-transform: uppercase; color: #aaa; letter-spacing: .0
 .link-arrow { color: #aaa; }
 .action-block { background: #f8f9fb; border-radius: 10px; padding: 14px; margin-bottom: 10px; }
 .action-title { font-weight: 600; font-size: 14px; margin-bottom: 10px; }
+.action-desc { font-size: 12px; color: #888; margin: -6px 0 10px; }
 .field { margin-bottom: 8px; }
 .field label { display: block; font-size: 12px; color: #888; margin-bottom: 4px; font-weight: 500; }
 .field input { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
