@@ -78,6 +78,14 @@ type RegistryProvider interface {
 	ID() string
 	GetImageURL(repoPath string) string
 	ListTags(repoPath string) ([]string, error)
+	Auth() *RegistryAuth // identifiants de pull, nil si aucun
+}
+
+// RegistryAuth : identifiants transmis au runtime pour puller une image
+type RegistryAuth struct {
+	Username      string `json:"username"`
+	Password      string `json:"password"`
+	ServerAddress string `json:"serveraddress"`
 }
 
 // ─── RUNTIME ──────────────────────────────────────────────────────────────────
@@ -101,6 +109,7 @@ type DeployRequest struct {
 	EnvVars       map[string]string `json:"env_vars"`
 	HealthCheck   string            `json:"health_check"`
 	RestartPolicy string            `json:"restart_policy"`
+	RegistryAuth  *RegistryAuth     `json:"-"` // renseigné par l'API, jamais lu du body
 }
 
 type Deployment struct {

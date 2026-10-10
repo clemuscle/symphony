@@ -41,6 +41,15 @@ func (p *Provider) GetImageURL(repoPath string) string {
 	return p.registryHost + "/" + strings.ToLower(repoPath)
 }
 
+// Auth : le registry GitLab accepte un personal access token comme mot de
+// passe, quel que soit le username
+func (p *Provider) Auth() *provider.RegistryAuth {
+	if p.token == "" {
+		return nil
+	}
+	return &provider.RegistryAuth{Username: "symphony", Password: p.token, ServerAddress: p.registryHost}
+}
+
 // ListTags liste les tags de l'image racine du projet, "latest" en tête.
 // Un projet sans image publiée renvoie une liste vide ; ErrNotFound si le
 // projet n'existe pas.
