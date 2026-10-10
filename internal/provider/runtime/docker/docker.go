@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -143,18 +144,26 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 
 	// Port hôte : demandé, sinon celui du container remplacé (l'URL ne change
 	// pas d'un déploiement à l'autre), sinon "" : Docker en choisit un libre
+	old, err := p.inspect(req.Name)
+	if err != nil && !errors.Is(err, provider.ErrNotFound) {
+		return nil, err
+	}
 	hostPort := ""
 	if req.HostPort != 0 {
 		hostPort = strconv.Itoa(req.HostPort)
-	} else if old, err := p.inspect(req.Name); err == nil {
+	} else if old != nil {
 		if port := old.hostPort(); port != 0 {
 			hostPort = strconv.Itoa(port)
 		}
 	}
 
-	// Nettoyage préalable
-	p.docker("POST", fmt.Sprintf("/containers/%s/stop", req.Name), nil)
-	p.docker("DELETE", fmt.Sprintf("/containers/%s?force=true", req.Name), nil)
+	// Le nouveau container est créé à côté de l'ancien, sous un nom
+	// temporaire, et ne prend le nom définitif qu'une fois démarré
+	name := req.Name
+	if old != nil {
+		name = req.Name + nextSuffix
+		p.docker("DELETE", fmt.Sprintf("/containers/%s?force=true", name), nil) // reste d'un échec précédent
+	}
 
 	env := make([]string, 0, len(req.EnvVars))
 	for k, v := range req.EnvVars {
@@ -185,7 +194,7 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 	}
 
 	data, status, err := p.docker("POST",
-		fmt.Sprintf("/containers/create?name=%s", req.Name), payload)
+		fmt.Sprintf("/containers/create?name=%s", name), payload)
 	if err != nil {
 		return nil, err
 	}
@@ -198,18 +207,82 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 	}
 	json.Unmarshal(data, &created)
 
-	data, status, err = p.docker("POST", fmt.Sprintf("/containers/%s/start", created.ID), nil)
-	if err != nil {
-		return nil, err
+	// Bascule : l'ancien est arrêté (il libère le port hôte) mais conservé
+	// jusqu'à ce que le nouveau ait tenu startupGrace
+	oldRunning := old != nil && old.State.Status == "running"
+	if oldRunning {
+		p.docker("POST", fmt.Sprintf("/containers/%s/stop", old.ID), nil)
 	}
-	if status != 204 {
-		// Port hôte déjà pris, typiquement : ne pas laisser un container créé mais arrêté
+	if err := p.startAndWatch(created.ID); err != nil {
 		p.docker("DELETE", fmt.Sprintf("/containers/%s?force=true", created.ID), nil)
-		return nil, fmt.Errorf("docker start: status %d — %s", status, string(data))
+		if oldRunning {
+			if _, st, _ := p.docker("POST", fmt.Sprintf("/containers/%s/start", old.ID), nil); st != 204 && st != 304 {
+				slog.Error("rollback : l'ancien container ne redémarre pas", "container", req.Name, "status", st)
+				return nil, fmt.Errorf("%w (et l'ancien container n'a pas pu être redémarré)", err)
+			}
+		}
+		return nil, fmt.Errorf("%w (ancien déploiement conservé)", err)
+	}
+
+	if old != nil {
+		p.docker("DELETE", fmt.Sprintf("/containers/%s?force=true", old.ID), nil)
+		if _, st, err := p.docker("POST",
+			fmt.Sprintf("/containers/%s/rename?name=%s", created.ID, url.QueryEscape(req.Name)), nil); err != nil || st != 204 {
+			// Le nouveau tourne : le déploiement a réussi, seul le nom est provisoire
+			slog.Warn("renommage du container", "from", name, "to", req.Name, "status", st, "error", err)
+		}
 	}
 
 	// Port réellement publié (choisi par Docker si hostPort est vide)
 	return p.Status(created.ID)
+}
+
+// nextSuffix : nom temporaire du nouveau container pendant la bascule
+const nextSuffix = "-next"
+
+// startupGrace : durée pendant laquelle un nouveau container doit rester
+// "running" avant de remplacer l'ancien (attrape les crashs au démarrage)
+var startupGrace = 3 * time.Second
+
+// startAndWatch démarre le container et vérifie qu'il tourne toujours après
+// startupGrace. En cas d'échec, l'erreur contient la fin de ses logs.
+func (p *Provider) startAndWatch(id string) error {
+	data, status, err := p.docker("POST", fmt.Sprintf("/containers/%s/start", id), nil)
+	if err != nil {
+		return err
+	}
+	if status != 204 {
+		// Port hôte déjà pris, typiquement
+		return fmt.Errorf("docker start: status %d — %s", status, strings.TrimSpace(string(data)))
+	}
+	time.Sleep(startupGrace)
+	info, err := p.inspect(id)
+	if err != nil {
+		return err
+	}
+	if info.State.Status != "running" {
+		logs, _ := p.Logs(id, 20)
+		return fmt.Errorf("le container ne tient pas au démarrage (état %s) — logs : %s",
+			info.State.Status, strings.TrimSpace(logs))
+	}
+	return nil
+}
+
+// cleanLogs retire l'en-tête binaire de 8 octets que Docker ajoute à chaque
+// ligne des logs d'un container sans TTY
+func cleanLogs(raw string) string {
+	var b strings.Builder
+	for len(raw) >= 8 && (raw[0] == 1 || raw[0] == 2) {
+		size := int(raw[4])<<24 | int(raw[5])<<16 | int(raw[6])<<8 | int(raw[7])
+		raw = raw[8:]
+		if size > len(raw) {
+			size = len(raw)
+		}
+		b.WriteString(raw[:size])
+		raw = raw[size:]
+	}
+	b.WriteString(raw)
+	return b.String()
 }
 
 // containerInfo : sous-ensemble de GET /containers/{id}/json
@@ -370,5 +443,5 @@ func (p *Provider) Logs(deploymentID string, lines int) (string, error) {
 	if status != 200 {
 		return "", fmt.Errorf("docker logs: status %d", status)
 	}
-	return string(data), nil
+	return cleanLogs(string(data)), nil
 }
