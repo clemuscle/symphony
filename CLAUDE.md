@@ -97,4 +97,4 @@ Every call in `frontend/src/api.js` has a matching route in `server.go`. `POST /
 
 Golden paths come from `symphony.yaml` and are only loaded at startup; there is no hot reload.
 
-The frontend base URL is hardcoded to `http://localhost:8080` in `frontend/src/api.js`.
+The frontend API base URL comes from `VITE_API_URL` at build time (e.g. in `frontend/.env.local`, gitignored), with `http://localhost:8080` as the default. An empty value means same origin. The server sends `Access-Control-Allow-Origin: *`.

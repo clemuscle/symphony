@@ -1,6 +1,8 @@
 import axios from 'axios'
 
-const http = axios.create({ baseURL: 'http://localhost:8080' })
+// URL de l'API Symphony, fixée au build par VITE_API_URL (frontend/.env.local par exemple).
+// Une chaîne vide appelle la même origine que la page.
+const http = axios.create({ baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:8080' })
 
 export const api = {
   // Catalogue
