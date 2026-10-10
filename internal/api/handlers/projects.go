@@ -128,6 +128,13 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			rtProvider = gp.RTProvider
 		}
 
+		// Registry : facultatif, un projet sans registry reste déployable avec
+		// une image saisie à la main
+		regProvider, registryURL := gp.RegProvider, ""
+		if reg, err := providers.GetRegistry(gp.RegProvider); err == nil {
+			regProvider, registryURL = reg.ID(), reg.GetImageURL(repo.Path)
+		}
+
 		proj := &database.Project{
 			Name:        req.Name,
 			Description: req.Description,
@@ -137,10 +144,11 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			Namespace:   req.Namespace,
 			SCMProvider: scm.ID(),
 			CIProvider:  gp.CIProvider,
-			RegProvider: gp.RegProvider,
+			RegProvider: regProvider,
 			RTProvider:  rtProvider,
 			RepoPath:    repo.Path,
 			RepoURL:     repo.HTTPCloneURL,
+			RegistryURL: registryURL,
 			GoldenPath:  req.GoldenPathID,
 			CreatedBy:   "system",
 		}
@@ -296,6 +304,45 @@ func ListProjects(db *database.DB) http.HandlerFunc {
 			_, projects[i].Deleting = deletingProjects.Load(projects[i].Name)
 		}
 		respond(w, http.StatusOK, projects)
+	}
+}
+
+// GetProjectImage renvoie l'image du projet dans son registry et ses tags,
+// pour préremplir un déploiement
+func GetProjectImage(providers *provider.Registry, db *database.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name := chi.URLParam(r, "name")
+		proj, err := db.GetProjectByName(name)
+		if errors.Is(err, sql.ErrNoRows) {
+			respondError(w, http.StatusNotFound, "projet introuvable: "+name)
+			return
+		}
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "db: "+err.Error())
+			return
+		}
+		// Projets créés avant le registry provider : registry par défaut
+		reg, err := providers.GetRegistry(proj.RegProvider)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "registry provider: "+err.Error())
+			return
+		}
+		tags, err := reg.ListTags(proj.RepoPath)
+		if errors.Is(err, provider.ErrNotFound) {
+			respondError(w, http.StatusNotFound, "repo introuvable dans le registry: "+proj.RepoPath)
+			return
+		}
+		if err != nil {
+			respondError(w, http.StatusBadGateway, "registry: "+err.Error())
+			return
+		}
+		respond(w, http.StatusOK, map[string]any{
+			"registry_provider": reg.ID(),
+			"image":             reg.GetImageURL(proj.RepoPath),
+			"tags":              tags,
+			"port":              proj.Port,
+			"runtime_provider":  proj.RTProvider,
+		})
 	}
 }
 
