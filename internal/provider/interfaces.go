@@ -2,6 +2,7 @@ package provider
 
 import (
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -12,6 +13,7 @@ var ErrNotFound = errors.New("introuvable")
 
 type SCMProvider interface {
 	ID() string
+	Platform() string // "gitlab", "github"
 	CreateRepo(req CreateRepoRequest) (*Repo, error)
 	PushFile(repoPath, branch, filePath, content, commitMsg string) error
 	PushFiles(repoPath, branch string, files map[string]string, commitMsg string) error
@@ -43,6 +45,7 @@ type Repo struct {
 
 type CIProvider interface {
 	ID() string
+	Platform() string                      // plateforme SCM sur laquelle ce CI tourne : "gitlab", "github"
 	ConfigFile() string                    // chemin du fichier CI dans le repo (".gitlab-ci.yml", ".github/workflows/ci.yml")
 	PipelinesURL(repoWebURL string) string // page des pipelines du repo
 	TriggerPipeline(repoPath, ref string, vars map[string]string) (*Pipeline, error)
@@ -57,6 +60,16 @@ type Pipeline struct {
 	Ref        string     `json:"ref"`
 	CreatedAt  time.Time  `json:"created_at"`
 	FinishedAt *time.Time `json:"finished_at"`
+}
+
+// CheckCompatible vérifie qu'un CI peut tourner sur les repos d'un SCM :
+// GitLab CI ne lit pas un repo GitHub, et inversement
+func CheckCompatible(scm SCMProvider, ci CIProvider) error {
+	if scm.Platform() != ci.Platform() {
+		return fmt.Errorf("ci provider %s (%s) incompatible avec le scm provider %s (%s)",
+			ci.ID(), ci.Platform(), scm.ID(), scm.Platform())
+	}
+	return nil
 }
 
 // ─── REGISTRY ─────────────────────────────────────────────────────────────────

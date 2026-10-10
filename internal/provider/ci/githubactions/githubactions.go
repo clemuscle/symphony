@@ -27,6 +27,8 @@ func New(id, token string) *Provider {
 
 func (p *Provider) ID() string { return p.id }
 
+func (p *Provider) Platform() string { return "github" }
+
 // workflowFile : workflow poussé à la création du projet, déclenché par défaut
 const workflowFile = "ci.yml"
 
