@@ -18,7 +18,7 @@ cd frontend && npm run dev     # Vue 3 + Vite dev server (npm install first)
 ```
 
 ```bash
-go test ./...                                   # tests unitaires (seul handlers/catalogue_test.go pour l'instant)
+go test ./...                                   # tests unitaires (handlers/catalogue_test.go, provider/compat_test.go)
 go test ./internal/api/handlers -run TestResolveInputs
 ```
 
@@ -77,7 +77,7 @@ Tokens are never written in `symphony.yaml`. Each provider has `config.token_env
 **Golden paths**: they are defined in `symphony.yaml` under `golden_paths`, not fetched from GitLab. Each one names its SCM/CI/runtime provider ids and points to a `scaffold` directory and a `ci_template` file in `root/symphony-templates` on GitLab (`source: git`, the only supported source). `TemplateLoader` fetches those files through the SCM provider when a project is created.
 
 **Project creation** (`handlers/projects.go`):
-1. Resolve the golden path by id, then its SCM and CI providers.
+1. Resolve the golden path by id, then its SCM provider (the request's `scm_provider` can override it) and its CI provider. `provider.CheckCompatible` rejects with a 400 a pair whose `Platform()` differs (e.g. a GitHub repo with GitLab CI). `main.go` logs a warning at startup for each golden path that has an unknown or incompatible provider.
 2. `CreateRepo`.
 3. Fetch the scaffold files (recursively) and the CI template, replace placeholders. The CI template is written at `ci.ConfigFile()` (`.gitlab-ci.yml` for GitLab CI, `.github/workflows/ci.yml` for GitHub Actions).
 4. `PushFiles` everything in **one** commit. That push starts the first pipeline (Symphony doesn't trigger one itself); on GitLab a first commit without `.gitlab-ci.yml` would trigger Auto DevOps.

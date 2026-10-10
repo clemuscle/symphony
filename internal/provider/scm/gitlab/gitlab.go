@@ -31,6 +31,8 @@ func New(id, baseURL, token string) *Provider {
 
 func (p *Provider) ID() string { return p.id }
 
+func (p *Provider) Platform() string { return "gitlab" }
+
 func (p *Provider) api(method, path string, body any) ([]byte, int, error) {
 	var buf io.Reader
 	if body != nil {

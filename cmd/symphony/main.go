@@ -138,6 +138,7 @@ func main() {
 	templateRepo := getEnv("TEMPLATES_REPO", cfg.Catalogue.Repo)
 	tmplLoader := gitops.NewTemplateLoader(defaultSCM, templateRepo, "main")
 	tmplLoader.Load(cfg.GoldenPaths)
+	checkGoldenPaths(cfg.GoldenPaths, providers)
 
 	// Démarrer le serveur
 	addr := ":" + getEnv("PORT", "8080")
@@ -146,6 +147,27 @@ func main() {
 	if err := http.ListenAndServe(addr, api.NewServer(providers, store, db, syncer, tmplLoader)); err != nil {
 		slog.Error("serveur HTTP", "error", err)
 		os.Exit(1)
+	}
+}
+
+// checkGoldenPaths signale au démarrage les golden paths inutilisables :
+// provider inconnu, ou CI incompatible avec le SCM. Ils restent chargés, la
+// création de projet les refusera avec le même message.
+func checkGoldenPaths(goldenPaths []config.GoldenPath, providers *provider.Registry) {
+	for _, gp := range goldenPaths {
+		scm, err := providers.SCM(gp.SCMProvider)
+		if err != nil {
+			slog.Warn("golden path inutilisable", "golden_path", gp.ID, "error", err)
+			continue
+		}
+		ci, err := providers.CI(gp.CIProvider)
+		if err != nil {
+			slog.Warn("golden path inutilisable", "golden_path", gp.ID, "error", err)
+			continue
+		}
+		if err := provider.CheckCompatible(scm, ci); err != nil {
+			slog.Warn("golden path inutilisable", "golden_path", gp.ID, "error", err)
+		}
 	}
 }
 

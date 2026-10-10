@@ -31,6 +31,8 @@ func New(id, token, org string) *Provider {
 
 func (p *Provider) ID() string { return p.id }
 
+func (p *Provider) Platform() string { return "github" }
+
 func (p *Provider) api(method, path string, body any) ([]byte, int, error) {
 	var buf io.Reader
 	if body != nil {

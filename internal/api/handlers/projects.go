@@ -72,6 +72,12 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			respondError(w, http.StatusBadRequest, "ci provider: "+err.Error())
 			return
 		}
+		// Le template CI du golden path est propre à son CI : changer de SCM
+		// vers une autre plateforme donnerait un repo dont la CI ne tourne pas
+		if err := provider.CheckCompatible(scm, ci); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 
 		// 1. Créer le repo
 		repo, err := scm.CreateRepo(provider.CreateRepoRequest{
