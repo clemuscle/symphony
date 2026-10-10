@@ -32,8 +32,12 @@
           <span class="hint" v-if="imageHint">{{ imageHint }}</span>
         </div>
         <div class="field">
-          <label>Port</label>
+          <label>Port de l'appli</label>
           <input v-model.number="form.port" type="number" placeholder="8080" />
+        </div>
+        <div class="field">
+          <label>Port hôte</label>
+          <input v-model.number="form.host_port" type="number" placeholder="auto" />
         </div>
         <div class="field">
           <label>Runtime provider</label>
@@ -86,7 +90,7 @@ const deployResult = ref(null)
 const deployError = ref(null)
 
 const form = ref({
-  project_name: '', image: '', tag: 'latest', port: 8080, runtime_provider: 'docker-local',
+  project_name: '', image: '', tag: 'latest', port: 8080, host_port: null, runtime_provider: 'docker-local',
 })
 
 const projects = ref([])
@@ -124,7 +128,10 @@ async function deploy() {
   deployResult.value = null
   deployError.value = null
   try {
-    const { data } = await api.deploy(form.value)
+    // Un champ number vidé vaut "" : l'API attend un entier (0 = défaut)
+    const { data } = await api.deploy({
+      ...form.value, port: form.value.port || 0, host_port: form.value.host_port || 0,
+    })
     deployResult.value = data
     await load()
   } catch (e) {

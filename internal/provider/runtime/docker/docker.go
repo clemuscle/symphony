@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -134,15 +135,26 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 		slog.Warn("pull impossible, image locale utilisée", "image", image, "error", err)
 	}
 
+	containerPort := req.Port
+	if containerPort == 0 {
+		containerPort = 8080
+	}
+	portKey := fmt.Sprintf("%d/tcp", containerPort)
+
+	// Port hôte : demandé, sinon celui du container remplacé (l'URL ne change
+	// pas d'un déploiement à l'autre), sinon "" : Docker en choisit un libre
+	hostPort := ""
+	if req.HostPort != 0 {
+		hostPort = strconv.Itoa(req.HostPort)
+	} else if old, err := p.inspect(req.Name); err == nil {
+		if port := old.hostPort(); port != 0 {
+			hostPort = strconv.Itoa(port)
+		}
+	}
+
 	// Nettoyage préalable
 	p.docker("POST", fmt.Sprintf("/containers/%s/stop", req.Name), nil)
 	p.docker("DELETE", fmt.Sprintf("/containers/%s?force=true", req.Name), nil)
-
-	port := req.Port
-	if port == 0 {
-		port = 8080
-	}
-	portKey := fmt.Sprintf("%d/tcp", port)
 
 	env := make([]string, 0, len(req.EnvVars))
 	for k, v := range req.EnvVars {
@@ -162,7 +174,7 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 		},
 		"HostConfig": map[string]any{
 			"PortBindings": map[string]any{
-				portKey: []map[string]string{{"HostPort": fmt.Sprintf("%d", port)}},
+				portKey: []map[string]string{{"HostPort": hostPort}},
 			},
 			"RestartPolicy": map[string]string{"Name": restartPolicy},
 		},
@@ -186,23 +198,75 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 	}
 	json.Unmarshal(data, &created)
 
-	_, status, err = p.docker("POST", fmt.Sprintf("/containers/%s/start", created.ID), nil)
+	data, status, err = p.docker("POST", fmt.Sprintf("/containers/%s/start", created.ID), nil)
 	if err != nil {
 		return nil, err
 	}
 	if status != 204 {
-		return nil, fmt.Errorf("docker start: status %d", status)
+		// Port hôte déjà pris, typiquement : ne pas laisser un container créé mais arrêté
+		p.docker("DELETE", fmt.Sprintf("/containers/%s?force=true", created.ID), nil)
+		return nil, fmt.Errorf("docker start: status %d — %s", status, string(data))
 	}
 
-	return &provider.Deployment{
-		ID:        created.ID[:12],
-		Name:      req.Name,
-		Image:     image,
-		Status:    "running",
-		URL:       fmt.Sprintf("http://localhost:%d", port),
-		Port:      port,
-		CreatedAt: time.Now(),
-	}, nil
+	// Port réellement publié (choisi par Docker si hostPort est vide)
+	return p.Status(created.ID)
+}
+
+// containerInfo : sous-ensemble de GET /containers/{id}/json
+type containerInfo struct {
+	ID      string    `json:"Id"`
+	Name    string    `json:"Name"`
+	Created time.Time `json:"Created"`
+	State   struct {
+		Status string `json:"Status"`
+	} `json:"State"`
+	Config struct {
+		Image  string            `json:"Image"`
+		Labels map[string]string `json:"Labels"`
+	} `json:"Config"`
+	HostConfig struct {
+		PortBindings map[string][]portBinding `json:"PortBindings"`
+	} `json:"HostConfig"`
+	NetworkSettings struct {
+		Ports map[string][]portBinding `json:"Ports"`
+	} `json:"NetworkSettings"`
+}
+
+type portBinding struct {
+	HostPort string `json:"HostPort"`
+}
+
+// hostPort : port publié du container en marche, sinon celui demandé à sa
+// création (un container arrêté n'a plus de NetworkSettings.Ports)
+func (c *containerInfo) hostPort() int {
+	for _, ports := range []map[string][]portBinding{c.NetworkSettings.Ports, c.HostConfig.PortBindings} {
+		for _, bindings := range ports {
+			for _, b := range bindings {
+				if port, err := strconv.Atoi(b.HostPort); err == nil && port > 0 {
+					return port
+				}
+			}
+		}
+	}
+	return 0
+}
+
+func (p *Provider) inspect(idOrName string) (*containerInfo, error) {
+	data, status, err := p.docker("GET", fmt.Sprintf("/containers/%s/json", idOrName), nil)
+	if err != nil {
+		return nil, err
+	}
+	if status == 404 {
+		return nil, provider.ErrNotFound
+	}
+	if status != 200 {
+		return nil, fmt.Errorf("docker inspect: status %d", status)
+	}
+	var info containerInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return nil, fmt.Errorf("docker inspect: %w", err)
+	}
+	return &info, nil
 }
 
 func (p *Provider) Stop(deploymentID string) error {
@@ -228,50 +292,22 @@ func (p *Provider) Restart(deploymentID string) error {
 }
 
 func (p *Provider) Status(deploymentID string) (*provider.Deployment, error) {
-	data, status, err := p.docker("GET", fmt.Sprintf("/containers/%s/json", deploymentID), nil)
+	info, err := p.inspect(deploymentID)
 	if err != nil {
 		return nil, err
 	}
-	if status != 200 {
-		return nil, fmt.Errorf("docker inspect: status %d", status)
+	d := &provider.Deployment{
+		ID:        info.ID[:12],
+		Name:      strings.TrimPrefix(info.Name, "/"),
+		Image:     info.Config.Image,
+		Status:    info.State.Status,
+		Port:      info.hostPort(),
+		CreatedAt: info.Created,
 	}
-
-	var info struct {
-		ID   string `json:"Id"`
-		Name string `json:"Name"`
-		State struct {
-			Status string `json:"Status"`
-		} `json:"State"`
-		Config struct {
-			Image  string   `json:"Image"`
-			Labels map[string]string `json:"Labels"`
-		} `json:"Config"`
-		HostConfig struct {
-			PortBindings map[string][]struct {
-				HostPort string `json:"HostPort"`
-			} `json:"PortBindings"`
-		} `json:"HostConfig"`
+	if d.Port != 0 {
+		d.URL = fmt.Sprintf("http://localhost:%d", d.Port)
 	}
-	json.Unmarshal(data, &info)
-
-	port := 0
-	url := ""
-	for _, bindings := range info.HostConfig.PortBindings {
-		if len(bindings) > 0 && bindings[0].HostPort != "" {
-			fmt.Sscanf(bindings[0].HostPort, "%d", &port)
-			url = fmt.Sprintf("http://localhost:%d", port)
-			break
-		}
-	}
-
-	return &provider.Deployment{
-		ID:     info.ID[:12],
-		Name:   strings.TrimPrefix(info.Name, "/"),
-		Image:  info.Config.Image,
-		Status: info.State.Status,
-		URL:    url,
-		Port:   port,
-	}, nil
+	return d, nil
 }
 
 func (p *Provider) List() ([]provider.Deployment, error) {
@@ -281,16 +317,16 @@ func (p *Provider) List() ([]provider.Deployment, error) {
 	}
 
 	var containers []struct {
-		ID    string            `json:"Id"`
-		Names []string          `json:"Names"`
-		Image string            `json:"Image"`
-		State string            `json:"State"`
+		ID    string   `json:"Id"`
+		Names []string `json:"Names"`
+		Image string   `json:"Image"`
+		State string   `json:"State"`
 		Ports []struct {
 			PublicPort int    `json:"PublicPort"`
 			Type       string `json:"Type"`
 		} `json:"Ports"`
-		Labels    map[string]string `json:"Labels"`
-		Created   int64             `json:"Created"`
+		Labels  map[string]string `json:"Labels"`
+		Created int64             `json:"Created"`
 	}
 	json.Unmarshal(data, &containers)
 
