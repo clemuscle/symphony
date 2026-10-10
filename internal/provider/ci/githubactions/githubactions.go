@@ -27,6 +27,13 @@ func New(id, token string) *Provider {
 
 func (p *Provider) ID() string { return p.id }
 
+// workflowFile : workflow poussé à la création du projet, déclenché par défaut
+const workflowFile = "ci.yml"
+
+func (p *Provider) ConfigFile() string { return ".github/workflows/" + workflowFile }
+
+func (p *Provider) PipelinesURL(repoWebURL string) string { return repoWebURL + "/actions" }
+
 func (p *Provider) api(method, path string, body any) ([]byte, int, error) {
 	var buf io.Reader
 	if body != nil {
@@ -60,10 +67,13 @@ func (p *Provider) TriggerPipeline(repoPath, ref string, vars map[string]string)
 	}
 
 	// GitHub Actions: workflow_dispatch
-	// repoPath doit contenir le workflow file: "owner/repo/workflow.yml"
+	// repoPath : "owner/repo/workflow.yml", ou "owner/repo" pour le workflow créé par Symphony
 	parts := splitRepoPath(repoPath)
+	if len(parts) == 2 {
+		parts = append(parts, workflowFile)
+	}
 	if len(parts) < 3 {
-		return nil, fmt.Errorf("githubactions: repoPath doit être 'owner/repo/workflow.yml', reçu: %s", repoPath)
+		return nil, fmt.Errorf("githubactions: repoPath doit être 'owner/repo[/workflow.yml]', reçu: %s", repoPath)
 	}
 	owner, repo, workflow := parts[0], parts[1], parts[2]
 

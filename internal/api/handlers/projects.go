@@ -72,7 +72,6 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			respondError(w, http.StatusBadRequest, "ci provider: "+err.Error())
 			return
 		}
-		_ = ci // utilisé plus tard pour déclencher le premier pipeline
 
 		// 1. Créer le repo
 		repo, err := scm.CreateRepo(provider.CreateRepoRequest{
@@ -100,16 +99,17 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			processedFiles[path] = content
 		}
 
-		// 3. Ajouter le template CI au scaffold
+		// 3. Ajouter le template CI au scaffold, à l'emplacement attendu par le provider CI
 		ciContent, err := templates.GetCITemplate(*gp)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "ci template: "+err.Error())
 			return
 		}
-		processedFiles[".gitlab-ci.yml"] = replacePlaceholders(ciContent, req.Name, req.Description, gp, req.Port)
+		processedFiles[ci.ConfigFile()] = replacePlaceholders(ciContent, req.Name, req.Description, gp, req.Port)
 
-		// 4. Pousser scaffold + CI en un seul commit : un premier commit sans
-		// .gitlab-ci.yml déclencherait l'Auto DevOps de GitLab
+		// 4. Pousser scaffold + CI en un seul commit : ce push lance la première
+		// pipeline, et sur GitLab un premier commit sans .gitlab-ci.yml
+		// déclencherait l'Auto DevOps
 		if err := scm.PushFiles(repo.Path, repo.DefaultBranch, processedFiles,
 			"chore: scaffold initial [symphony]"); err != nil {
 			respondError(w, http.StatusInternalServerError, "push scaffold: "+err.Error())
@@ -146,7 +146,7 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 		// 6. Enregistrer le service dans le catalogue. Le projet existe déjà :
 		// un échec ici est signalé sans annuler la création.
 		catalogueErr := ""
-		if err := syncer.Register(serviceFromProject(proj, gp, repo)); err != nil {
+		if err := syncer.Register(serviceFromProject(proj, gp, repo, ci)); err != nil {
 			slog.Warn("enregistrement catalogue", "project", req.Name, "error", err)
 			catalogueErr = err.Error()
 		}
@@ -162,7 +162,7 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			"project":  proj,
 			"repo":     repo,
 			"message":  fmt.Sprintf("Projet %s créé avec succès", req.Name),
-			"pipeline": repo.WebURL + "/-/pipelines",
+			"pipeline": ci.PipelinesURL(repo.WebURL),
 		}
 		if catalogueErr != "" {
 			resp["catalogue_error"] = catalogueErr
@@ -172,7 +172,7 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 }
 
 // serviceFromProject construit la fiche catalogue d'un projet nouvellement créé
-func serviceFromProject(proj *database.Project, gp *config.GoldenPath, repo *provider.Repo) catalogue.Service {
+func serviceFromProject(proj *database.Project, gp *config.GoldenPath, repo *provider.Repo, ci provider.CIProvider) catalogue.Service {
 	return catalogue.Service{
 		APIVersion: "symphony/v1",
 		Kind:       "Service",
@@ -190,13 +190,13 @@ func serviceFromProject(proj *database.Project, gp *config.GoldenPath, repo *pro
 			Repo:     repo.WebURL,
 			Links: []catalogue.Link{
 				{Title: "Repository", URL: repo.WebURL, Icon: "code"},
-				{Title: "Pipelines", URL: repo.WebURL + "/-/pipelines", Icon: "ci"},
+				{Title: "Pipelines", URL: ci.PipelinesURL(repo.WebURL), Icon: "ci"},
 			},
 			Actions: []catalogue.Action{
 				{
 					Name:        "Relancer la pipeline",
 					Description: "Relance la pipeline CI sur main",
-					CIProvider:  gp.CIProvider,
+					CIProvider:  ci.ID(),
 				},
 			},
 		},

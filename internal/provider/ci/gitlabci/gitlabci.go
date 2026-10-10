@@ -31,6 +31,10 @@ func New(id, baseURL, token string) *Provider {
 
 func (p *Provider) ID() string { return p.id }
 
+func (p *Provider) ConfigFile() string { return ".gitlab-ci.yml" }
+
+func (p *Provider) PipelinesURL(repoWebURL string) string { return repoWebURL + "/-/pipelines" }
+
 func (p *Provider) api(method, path string, body any) ([]byte, int, error) {
 	var buf io.Reader
 	if body != nil {
