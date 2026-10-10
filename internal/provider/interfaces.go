@@ -105,7 +105,8 @@ type DeployRequest struct {
 	Name          string            `json:"name"`
 	Image         string            `json:"image"`
 	Tag           string            `json:"tag"`
-	Port          int               `json:"port"`
+	Port          int               `json:"port"`      // port écouté par l'appli dans le container
+	HostPort      int               `json:"host_port"` // 0 : celui du déploiement précédent, sinon choisi par le runtime
 	EnvVars       map[string]string `json:"env_vars"`
 	HealthCheck   string            `json:"health_check"`
 	RestartPolicy string            `json:"restart_policy"`
@@ -118,6 +119,6 @@ type Deployment struct {
 	Image     string    `json:"image"`
 	Status    string    `json:"status"` // running, stopped, error
 	URL       string    `json:"url"`
-	Port      int       `json:"port"`
+	Port      int       `json:"port"` // port publié côté hôte (celui de l'URL)
 	CreatedAt time.Time `json:"created_at"`
 }

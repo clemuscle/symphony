@@ -73,6 +73,8 @@ Two different things are both called "registry", so don't mix them up:
 
 At creation, the project stores the resolved registry id and its image URL (`reg_provider`, `registry_url`). The registry is optional, so a missing one doesn't block creation. `Deploy` passes the registry's `Auth()` to the runtime, but only when the image is hosted on that registry (prefix `ServerAddress/`), so the token never goes to a third-party registry. The Docker runtime pulls **before** stopping the old container: if the pull fails, the running deployment keeps running. If an image already exists locally (a local build, or an unreachable registry), Docker uses it and logs a warning. The Docker daemon must list `gitlab.local:5050` as an insecure registry (HTTP).
 
+Ports: `port` in a deploy request is the port the app listens on **inside** the container. `host_port` is the published port. When it's 0, Docker reuses the host port of the container being replaced (so the URL stays stable), or picks a free port on a first deployment. The returned `Deployment.Port`/`URL` are the host port actually published, read by inspecting the container after it starts. If the host port is already taken, the new container is removed, but the old one has already been stopped by then.
+
 `GET /projects/{name}/image` returns `image`, `tags`, `port` and `runtime_provider`, and the Deployments form uses them to prefill a deployment.
 
 Tokens are never written in `symphony.yaml`. Each provider has `config.token_env` naming an env var. GitLab SCM falls back to a literal `config.token`. GitLab CI and the GitLab registry try `token_env`, then `<scm_ref>_TOKEN`, then `GITLAB_TOKEN` (`gitlabToken` in `main.go`).

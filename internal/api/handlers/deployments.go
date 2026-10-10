@@ -37,6 +37,7 @@ func Deploy(providers *provider.Registry, db *database.DB) http.HandlerFunc {
 			Image           string            `json:"image"`
 			Tag             string            `json:"tag"`
 			Port            int               `json:"port"`
+			HostPort        int               `json:"host_port"`
 			RuntimeProvider string            `json:"runtime_provider"`
 			EnvVars         map[string]string `json:"env_vars"`
 		}
@@ -60,6 +61,7 @@ func Deploy(providers *provider.Registry, db *database.DB) http.HandlerFunc {
 			Image:        req.Image,
 			Tag:          req.Tag,
 			Port:         req.Port,
+			HostPort:     req.HostPort,
 			EnvVars:      req.EnvVars,
 			RegistryAuth: registryAuth(providers, db, req.ProjectName, req.Image),
 		})
@@ -74,7 +76,7 @@ func Deploy(providers *provider.Registry, db *database.DB) http.HandlerFunc {
 			RTProvider:   rt.ID(),
 			Image:        req.Image,
 			Tag:          req.Tag,
-			Port:         req.Port,
+			Port:         deployment.Port,
 			Status:       deployment.Status,
 			URL:          deployment.URL,
 			DeployedBy:   "system",
