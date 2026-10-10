@@ -3,11 +3,14 @@ package docker
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -15,21 +18,21 @@ import (
 )
 
 type Provider struct {
-	id     string
-	client *http.Client
+	id         string
+	client     *http.Client
+	pullClient *http.Client // pull : peut durer bien plus que 30 s
 }
 
 func New(id, socketPath string) *Provider {
-	return &Provider{
-		id: id,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-					return net.DialTimeout("unix", socketPath, 5*time.Second)
-				},
-			},
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return net.DialTimeout("unix", socketPath, 5*time.Second)
 		},
+	}
+	return &Provider{
+		id:         id,
+		client:     &http.Client{Timeout: 30 * time.Second, Transport: transport},
+		pullClient: &http.Client{Timeout: 10 * time.Minute, Transport: transport},
 	}
 }
 
@@ -56,7 +59,81 @@ func (p *Provider) docker(method, path string, body any) ([]byte, int, error) {
 	return data, resp.StatusCode, nil
 }
 
+// splitImage sépare le dépôt et le tag d'une image. Le tag explicite
+// l'emporte sur celui de l'image ; par défaut "latest". Le ":" d'un port de
+// registry (gitlab.local:5050/...) n'est pas un tag.
+func splitImage(image, tag string) (string, string) {
+	repo := image
+	if i := strings.LastIndex(image, ":"); i > strings.LastIndex(image, "/") {
+		repo = image[:i]
+		if tag == "" {
+			tag = image[i+1:]
+		}
+	}
+	if tag == "" {
+		tag = "latest"
+	}
+	return repo, tag
+}
+
+// pull télécharge l'image. Docker renvoie 200 puis signale une erreur en
+// cours de flux : chaque ligne JSON est lue pour la détecter.
+func (p *Provider) pull(repo, tag string, auth *provider.RegistryAuth) error {
+	req, err := http.NewRequest("POST", "http://localhost/v1.43/images/create?"+url.Values{
+		"fromImage": {repo}, "tag": {tag},
+	}.Encode(), nil)
+	if err != nil {
+		return err
+	}
+	if auth != nil {
+		b, _ := json.Marshal(auth)
+		req.Header.Set("X-Registry-Auth", base64.URLEncoding.EncodeToString(b))
+	}
+	resp, err := p.pullClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("docker socket: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		data, _ := io.ReadAll(resp.Body)
+		var e struct {
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(data, &e) == nil && e.Message != "" {
+			return fmt.Errorf("docker pull: status %d — %s", resp.StatusCode, e.Message)
+		}
+		return fmt.Errorf("docker pull: status %d — %s", resp.StatusCode, string(data))
+	}
+	dec := json.NewDecoder(resp.Body)
+	for {
+		var msg struct {
+			Error string `json:"error"`
+		}
+		if err := dec.Decode(&msg); err == io.EOF {
+			return nil
+		} else if err != nil {
+			return fmt.Errorf("docker pull: %w", err)
+		}
+		if msg.Error != "" {
+			return fmt.Errorf("docker pull: %s", msg.Error)
+		}
+	}
+}
+
 func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, error) {
+	repo, tag := splitImage(req.Image, req.Tag)
+	image := repo + ":" + tag
+
+	// Pull avant de toucher au container en place : si l'image est
+	// inaccessible, l'ancien déploiement continue de tourner. Une image
+	// présente localement (build local, registry injoignable) suffit.
+	if err := p.pull(repo, tag, req.RegistryAuth); err != nil {
+		if _, status, _ := p.docker("GET", "/images/"+image+"/json", nil); status != 200 {
+			return nil, err
+		}
+		slog.Warn("pull impossible, image locale utilisée", "image", image, "error", err)
+	}
+
 	// Nettoyage préalable
 	p.docker("POST", fmt.Sprintf("/containers/%s/stop", req.Name), nil)
 	p.docker("DELETE", fmt.Sprintf("/containers/%s?force=true", req.Name), nil)
@@ -66,13 +143,6 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 		port = 8080
 	}
 	portKey := fmt.Sprintf("%d/tcp", port)
-
-	image := req.Image
-	if req.Tag != "" && req.Tag != "latest" {
-		image = req.Image + ":" + req.Tag
-	} else if !strings.Contains(req.Image, ":") {
-		image = req.Image + ":latest"
-	}
 
 	env := make([]string, 0, len(req.EnvVars))
 	for k, v := range req.EnvVars {

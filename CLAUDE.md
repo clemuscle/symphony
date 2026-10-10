@@ -18,7 +18,7 @@ cd frontend && npm run dev     # Vue 3 + Vite dev server (npm install first)
 ```
 
 ```bash
-go test ./...                                   # tests unitaires (handlers/catalogue_test.go, provider/compat_test.go, gitlabregistry)
+go test ./...                                   # tests unitaires (handlers, provider, gitlabregistry, docker)
 go test ./internal/api/handlers -run TestResolveInputs
 ```
 
@@ -55,7 +55,7 @@ internal/provider/          interfaces.go (SCM, CI, Registry, Runtime) + registr
   scm/gitlab, scm/github
   ci/gitlabci, ci/githubactions
   registry/gitlabregistry   GitLab container registry (image URL, tags)
-  runtime/docker            Docker Engine API over the unix socket (no SDK)
+  runtime/docker            Docker Engine API over the unix socket (no SDK). Deploy pulls the image first (registry auth via X-Registry-Auth), then replaces the container
   runtime/kubernetes        stub: every method returns "non implémenté"
 internal/catalogue/         in-memory Store + Service types
 internal/gitops/            syncer.go (catalogue poll) + template_loader.go (golden paths, scaffold/CI fetch)
@@ -71,7 +71,9 @@ Two different things are both called "registry", so don't mix them up:
 - `provider.Registry` (`registry.go`) is the container of all providers.
 - `RegistryProvider` is the *container-image* registry interface, looked up with `providers.GetRegistry(id)`. Its only implementation is `registry/gitlabregistry` (`type: gitlab_registry`, `config.registry_host`, e.g. `gitlab.local:5050`). Its `GetImageURL` returns `<registry_host>/<repo path in lowercase>`. Its `ListTags` lists the tags of the project's root image (not of sub-images), with `latest` first.
 
-At creation, the project stores the resolved registry id and its image URL (`reg_provider`, `registry_url`). The registry is optional, so a missing one doesn't block creation. `GET /projects/{name}/image` returns `image`, `tags`, `port` and `runtime_provider`, and the Deployments form uses them to prefill a deployment.
+At creation, the project stores the resolved registry id and its image URL (`reg_provider`, `registry_url`). The registry is optional, so a missing one doesn't block creation. `Deploy` passes the registry's `Auth()` to the runtime, but only when the image is hosted on that registry (prefix `ServerAddress/`), so the token never goes to a third-party registry. The Docker runtime pulls **before** stopping the old container: if the pull fails, the running deployment keeps running. If an image already exists locally (a local build, or an unreachable registry), Docker uses it and logs a warning. The Docker daemon must list `gitlab.local:5050` as an insecure registry (HTTP).
+
+`GET /projects/{name}/image` returns `image`, `tags`, `port` and `runtime_provider`, and the Deployments form uses them to prefill a deployment.
 
 Tokens are never written in `symphony.yaml`. Each provider has `config.token_env` naming an env var. GitLab SCM falls back to a literal `config.token`. GitLab CI and the GitLab registry try `token_env`, then `<scm_ref>_TOKEN`, then `GITLAB_TOKEN` (`gitlabToken` in `main.go`).
 

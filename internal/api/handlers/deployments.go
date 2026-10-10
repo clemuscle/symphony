@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/yourorg/symphony/internal/database"
@@ -55,11 +56,12 @@ func Deploy(providers *provider.Registry, db *database.DB) http.HandlerFunc {
 		}
 
 		deployment, err := rt.Deploy(provider.DeployRequest{
-			Name:    req.ProjectName,
-			Image:   req.Image,
-			Tag:     req.Tag,
-			Port:    req.Port,
-			EnvVars: req.EnvVars,
+			Name:         req.ProjectName,
+			Image:        req.Image,
+			Tag:          req.Tag,
+			Port:         req.Port,
+			EnvVars:      req.EnvVars,
+			RegistryAuth: registryAuth(providers, db, req.ProjectName, req.Image),
 		})
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "deploy: "+err.Error())
@@ -146,4 +148,23 @@ func GetLogs(providers *provider.Registry) http.HandlerFunc {
 		}
 		respond(w, http.StatusOK, map[string]string{"logs": logs, "id": id})
 	}
+}
+
+// registryAuth : identifiants du registry du projet (ou du registry par
+// défaut), transmis seulement si l'image est hébergée sur ce registry, pour
+// ne pas envoyer le token à un registry tiers
+func registryAuth(providers *provider.Registry, db *database.DB, projectName, image string) *provider.RegistryAuth {
+	regID := ""
+	if proj, err := db.GetProjectByName(projectName); err == nil {
+		regID = proj.RegProvider
+	}
+	reg, err := providers.GetRegistry(regID)
+	if err != nil {
+		return nil
+	}
+	auth := reg.Auth()
+	if auth == nil || !strings.HasPrefix(image, auth.ServerAddress+"/") {
+		return nil
+	}
+	return auth
 }
