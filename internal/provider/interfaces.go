@@ -43,6 +43,8 @@ type Repo struct {
 
 type CIProvider interface {
 	ID() string
+	ConfigFile() string                    // chemin du fichier CI dans le repo (".gitlab-ci.yml", ".github/workflows/ci.yml")
+	PipelinesURL(repoWebURL string) string // page des pipelines du repo
 	TriggerPipeline(repoPath, ref string, vars map[string]string) (*Pipeline, error)
 	GetPipeline(repoPath, pipelineID string) (*Pipeline, error)
 	ListPipelines(repoPath string, limit int) ([]Pipeline, error)

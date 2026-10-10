@@ -30,7 +30,7 @@ go test ./internal/api/handlers -run TestResolveInputs
 - **GitLab** at `http://gitlab.local:8929` (the URL comes from `symphony.yaml`). The default SCM provider must work at startup, because the catalogue syncer and the template loader both use it. The process exits if no default SCM provider is registered.
 - **Docker socket** at `/var/run/docker.sock`, set per runtime provider in `symphony.yaml`.
 
-SQL migrations are embedded in the binary with `go:embed`. `symphony.yaml` and `.env` are still read from the working directory. The `Dockerfile` still uses `golang:1.22-alpine`, while go.mod requires Go 1.25.
+SQL migrations are embedded in the binary with `go:embed`. `symphony.yaml` and `.env` are still read from the working directory.
 
 ### Environment variables
 
@@ -79,13 +79,13 @@ Tokens are never written in `symphony.yaml`. Each provider has `config.token_env
 **Project creation** (`handlers/projects.go`):
 1. Resolve the golden path by id, then its SCM and CI providers.
 2. `CreateRepo`.
-3. Fetch the scaffold files (recursively) and the CI template, replace placeholders. The CI template becomes `.gitlab-ci.yml` (the file name is hardcoded, even for GitHub).
-4. `PushFiles` everything in **one** commit. A first commit without `.gitlab-ci.yml` would trigger GitLab Auto DevOps.
+3. Fetch the scaffold files (recursively) and the CI template, replace placeholders. The CI template is written at `ci.ConfigFile()` (`.gitlab-ci.yml` for GitLab CI, `.github/workflows/ci.yml` for GitHub Actions).
+4. `PushFiles` everything in **one** commit. That push starts the first pipeline (Symphony doesn't trigger one itself); on GitLab a first commit without `.gitlab-ci.yml` would trigger Auto DevOps.
 5. Save the project in `projects`.
 6. `syncer.Register` writes `services/<name>.yaml` to the catalogue repo and forces a sync. A failure there doesn't undo the creation; it is logged and returned as `catalogue_error`. (The CI templates no longer have a `register-service` job.)
 7. Write an audit log entry.
 
-The CI provider is resolved but not used yet (`_ = ci`).
+The pipelines links (API response and catalogue entry) come from `ci.PipelinesURL`. GitHub Actions `TriggerPipeline` takes `owner/repo/workflow.yml`, or `owner/repo` for Symphony's `ci.yml`; the workflow needs `workflow_dispatch` with the inputs declared, since GitHub rejects undeclared inputs (including `SYMPHONY_*`).
 
 **Persistence**: tables `projects`, `pipelines`, `deployments`, `audit_log` and `schema_migrations`. `Migrate()` applies each migration listed in `db.go` whose version is missing from `schema_migrations`. To add a migration, create `migrations/00N_*.sql`, add a `//go:embed` variable for it, **and** add it to the list in `db.go`. Mutating handlers record an audit entry with `db.LogAudit(action, resource, details)`.
 
