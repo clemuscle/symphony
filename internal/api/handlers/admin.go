@@ -22,9 +22,10 @@ func ListGoldenPaths(templates *gitops.TemplateLoader) http.HandlerFunc {
 func ListProviders(providers *provider.Registry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusOK, map[string]any{
-			"scm":     providers.ListSCM(),
-			"ci":      providers.ListCI(),
-			"runtime": providers.ListRuntimes(),
+			"scm":      providers.ListSCM(),
+			"ci":       providers.ListCI(),
+			"registry": providers.ListRegistries(),
+			"runtime":  providers.ListRuntimes(),
 		})
 	}
 }

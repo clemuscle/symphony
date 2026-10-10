@@ -17,6 +17,7 @@ import (
 	gitlabci "github.com/yourorg/symphony/internal/provider/ci/gitlabci"
 	githubci "github.com/yourorg/symphony/internal/provider/ci/githubactions"
 	dockerrt "github.com/yourorg/symphony/internal/provider/runtime/docker"
+	gitlabregistry "github.com/yourorg/symphony/internal/provider/registry/gitlabregistry"
 	k8srt "github.com/yourorg/symphony/internal/provider/runtime/kubernetes"
 )
 
@@ -77,17 +78,7 @@ func main() {
 	for _, def := range cfg.Providers.CI {
 		switch def.Type {
 		case "gitlab_ci":
-			url := def.Config["url"]
-			token := os.Getenv(def.Config["token_env"])
-			if token == "" {
-				// Réutiliser le token du SCM GitLab référencé
-				scmRef := def.Config["scm_ref"]
-				token = os.Getenv(scmRef + "_TOKEN")
-				if token == "" {
-					token = os.Getenv("GITLAB_TOKEN")
-				}
-			}
-			p := gitlabci.New(def.ID, url, token)
+			p := gitlabci.New(def.ID, def.Config["url"], gitlabToken(def))
 			providers.RegisterCI(p, def.Default)
 			slog.Info("provider CI enregistré", "id", def.ID, "type", def.Type)
 
@@ -96,6 +87,15 @@ func main() {
 			p := githubci.New(def.ID, token)
 			providers.RegisterCI(p, def.Default)
 			slog.Info("provider CI enregistré", "id", def.ID, "type", def.Type)
+		}
+	}
+
+	for _, def := range cfg.Providers.Registry {
+		switch def.Type {
+		case "gitlab_registry":
+			p := gitlabregistry.New(def.ID, def.Config["url"], def.Config["registry_host"], gitlabToken(def))
+			providers.RegisterRegistry(p, def.Default)
+			slog.Info("provider registry enregistré", "id", def.ID, "type", def.Type)
 		}
 	}
 
@@ -148,6 +148,18 @@ func main() {
 		slog.Error("serveur HTTP", "error", err)
 		os.Exit(1)
 	}
+}
+
+// gitlabToken : token_env, sinon <scm_ref>_TOKEN, sinon GITLAB_TOKEN
+// (réutilise le token du SCM GitLab référencé)
+func gitlabToken(def config.ProviderDef) string {
+	if token := os.Getenv(def.Config["token_env"]); token != "" {
+		return token
+	}
+	if token := os.Getenv(def.Config["scm_ref"] + "_TOKEN"); token != "" {
+		return token
+	}
+	return os.Getenv("GITLAB_TOKEN")
 }
 
 // checkGoldenPaths signale au démarrage les golden paths inutilisables :

@@ -28,6 +28,15 @@ providers:
       config:
         token_env: GITHUB_TOKEN
 
+  registry:
+    - id: gitlab-registry
+      type: gitlab_registry
+      default: true
+      config:
+        url: http://gitlab.local:8929
+        registry_host: gitlab.local:5050
+        scm_ref: gitlab-local
+
   runtime:
     - id: docker-local
       type: docker
@@ -54,7 +63,7 @@ golden_paths:
     type: api
     scm_provider: gitlab-local
     ci_provider: gitlab-ci
-    registry_provider: ""
+    registry_provider: gitlab-registry
     runtime_provider: docker-local
     scaffold:
       source: git
@@ -73,7 +82,7 @@ golden_paths:
     type: api
     scm_provider: gitlab-local
     ci_provider: gitlab-ci
-    registry_provider: ""
+    registry_provider: gitlab-registry
     runtime_provider: docker-local
     scaffold:
       source: git
@@ -92,7 +101,7 @@ golden_paths:
     type: api
     scm_provider: gitlab-local
     ci_provider: gitlab-ci
-    registry_provider: ""
+    registry_provider: gitlab-registry
     runtime_provider: docker-local
     scaffold:
       source: git
@@ -111,7 +120,7 @@ golden_paths:
     type: worker
     scm_provider: gitlab-local
     ci_provider: gitlab-ci
-    registry_provider: ""
+    registry_provider: gitlab-registry
     runtime_provider: docker-local
     scaffold:
       source: git

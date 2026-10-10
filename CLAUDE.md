@@ -18,7 +18,7 @@ cd frontend && npm run dev     # Vue 3 + Vite dev server (npm install first)
 ```
 
 ```bash
-go test ./...                                   # tests unitaires (handlers/catalogue_test.go, provider/compat_test.go)
+go test ./...                                   # tests unitaires (handlers/catalogue_test.go, provider/compat_test.go, gitlabregistry)
 go test ./internal/api/handlers -run TestResolveInputs
 ```
 
@@ -54,6 +54,7 @@ internal/config/            symphony.yaml types + loader (providers, catalogue, 
 internal/provider/          interfaces.go (SCM, CI, Registry, Runtime) + registry.go (the provider Registry) + implementations:
   scm/gitlab, scm/github
   ci/gitlabci, ci/githubactions
+  registry/gitlabregistry   GitLab container registry (image URL, tags)
   runtime/docker            Docker Engine API over the unix socket (no SDK)
   runtime/kubernetes        stub: every method returns "non implémenté"
 internal/catalogue/         in-memory Store + Service types
@@ -64,13 +65,15 @@ internal/auth/              empty: OIDC not implemented
 frontend/                   Vue 3 + Vite + vue-router + axios
 ```
 
-**Provider wiring**: `main.go` loops over `cfg.Providers.{SCM,CI,Runtime}` and switches on `type` (`gitlab`, `github`, `gitlab_ci`, `github_actions`, `docker`, `kubernetes`). It creates each provider and calls `providers.Register*(p, def.Default)`. To add a provider type, implement the interface in `internal/provider/interfaces.go` and add a `case` in `main.go`. Handlers look providers up by id with `providers.SCM(id)`, `CI(id)` or `Runtime(id)`. An empty id returns the default one.
+**Provider wiring**: `main.go` loops over `cfg.Providers.{SCM,CI,Registry,Runtime}` and switches on `type` (`gitlab`, `github`, `gitlab_ci`, `github_actions`, `gitlab_registry`, `docker`, `kubernetes`). It creates each provider and calls `providers.Register*(p, def.Default)`. To add a provider type, implement the interface in `internal/provider/interfaces.go` and add a `case` in `main.go`. Handlers look providers up by id with `providers.SCM(id)`, `CI(id)` or `Runtime(id)`. An empty id returns the default one.
 
 Two different things are both called "registry", so don't mix them up:
 - `provider.Registry` (`registry.go`) is the container of all providers.
-- `RegistryProvider` is the *container-image* registry interface. It has **no implementation**, and `main.go` never registers one, even though `config.ProvidersConfig` has a `Registry` section and golden paths have `registry_provider`. `providers.GetRegistry()` will always error.
+- `RegistryProvider` is the *container-image* registry interface, looked up with `providers.GetRegistry(id)`. Its only implementation is `registry/gitlabregistry` (`type: gitlab_registry`, `config.registry_host`, e.g. `gitlab.local:5050`). Its `GetImageURL` returns `<registry_host>/<repo path in lowercase>`. Its `ListTags` lists the tags of the project's root image (not of sub-images), with `latest` first.
 
-Tokens are never written in `symphony.yaml`. Each provider has `config.token_env` naming an env var. GitLab SCM falls back to a literal `config.token`. GitLab CI tries `token_env`, then `<scm_ref>_TOKEN`, then `GITLAB_TOKEN`.
+At creation, the project stores the resolved registry id and its image URL (`reg_provider`, `registry_url`). The registry is optional, so a missing one doesn't block creation. `GET /projects/{name}/image` returns `image`, `tags`, `port` and `runtime_provider`, and the Deployments form uses them to prefill a deployment.
+
+Tokens are never written in `symphony.yaml`. Each provider has `config.token_env` naming an env var. GitLab SCM falls back to a literal `config.token`. GitLab CI and the GitLab registry try `token_env`, then `<scm_ref>_TOKEN`, then `GITLAB_TOKEN` (`gitlabToken` in `main.go`).
 
 **Service catalogue (GitOps)**: the catalogue is loaded from **GitLab** (`catalogue.repo`/`catalogue.path`, by default `root/symphony-config` → `services/`) by `gitops.Syncer`, through the default SCM provider. It polls every 15s and replaces the in-memory `catalogue.Store`, and `POST /api/v1/sync` forces a reload. It is **not** loaded from the local `config/` directory (`config/services/*.yaml` and `config/integrations.yaml` are leftovers, unused). The catalogue is not stored in Postgres.
 

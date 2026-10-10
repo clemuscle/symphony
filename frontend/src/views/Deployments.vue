@@ -14,7 +14,10 @@
       <div class="form-grid">
         <div class="field">
           <label>Projet *</label>
-          <input v-model="form.project_name" placeholder="mon-api" required />
+          <input v-model="form.project_name" placeholder="mon-api" list="projects" required />
+          <datalist id="projects">
+            <option v-for="p in projects" :key="p.name" :value="p.name" />
+          </datalist>
         </div>
         <div class="field">
           <label>Image *</label>
@@ -22,7 +25,11 @@
         </div>
         <div class="field">
           <label>Tag</label>
-          <input v-model="form.tag" placeholder="latest" />
+          <input v-model="form.tag" placeholder="latest" list="tags" />
+          <datalist id="tags">
+            <option v-for="t in tags" :key="t" :value="t" />
+          </datalist>
+          <span class="hint" v-if="imageHint">{{ imageHint }}</span>
         </div>
         <div class="field">
           <label>Port</label>
@@ -69,7 +76,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { api } from '../api'
 
 const deployments = ref([])
@@ -82,7 +89,35 @@ const form = ref({
   project_name: '', image: '', tag: 'latest', port: 8080, runtime_provider: 'docker-local',
 })
 
-onMounted(load)
+const projects = ref([])
+const tags = ref([])
+const imageHint = ref('')
+let autoImage = '' // dernière image préremplie : écrasée seulement si l'utilisateur ne l'a pas modifiée
+
+onMounted(() => {
+  load()
+  api.listProjects().then(({ data }) => { projects.value = data || [] }).catch(() => {})
+})
+
+// Projet connu : préremplir image, tags, port et runtime depuis son registry
+watch(() => form.value.project_name, async (name) => {
+  tags.value = []
+  imageHint.value = ''
+  if (!projects.value.some(p => p.name === name)) return
+  try {
+    const { data } = await api.getProjectImage(name)
+    if (form.value.project_name !== name) return
+    if (!form.value.image || form.value.image === autoImage) form.value.image = data.image
+    autoImage = data.image
+    tags.value = data.tags
+    if (data.tags.length && !data.tags.includes(form.value.tag)) form.value.tag = data.tags[0]
+    if (data.port) form.value.port = data.port
+    if (data.runtime_provider) form.value.runtime_provider = data.runtime_provider
+    if (!data.tags.length) imageHint.value = 'Aucune image publiée pour ce projet'
+  } catch (e) {
+    imageHint.value = e.response?.data?.error || e.message
+  }
+})
 
 async function deploy() {
   deploying.value = true
@@ -139,6 +174,7 @@ h2 { font-size: 22px; font-weight: 700; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field label { font-size: 13px; font-weight: 500; color: #555; }
 .field input { padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+.hint { font-size: 12px; color: #888; }
 .field input:focus { outline: none; border-color: #667eea; }
 .btn-primary { padding: 9px 20px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; }
 .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
