@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/yourorg/symphony/internal/catalogue"
@@ -14,29 +15,54 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Syncer lit le catalogue dans le repo de config via le provider SCM par
+// défaut, résolu à chaque appel : il suit les rechargements de configuration
 type Syncer struct {
-	scm        provider.SCMProvider
-	store      *catalogue.Store
-	configRepo string
-	branch     string
-	servicesDir string
-	interval   time.Duration
-	lastCommit string
+	providers *provider.Registry
+	store     *catalogue.Store
+	interval  time.Duration
+
+	syncMu sync.Mutex // une synchronisation à la fois, sinon une ancienne pourrait écraser une récente
+
+	mu     sync.RWMutex
+	source catalogueSource
 }
 
-func NewSyncer(scm provider.SCMProvider, store *catalogue.Store, configRepo, branch, servicesDir string) *Syncer {
+type catalogueSource struct {
+	configRepo  string
+	branch      string
+	servicesDir string
+}
+
+func NewSyncer(providers *provider.Registry, store *catalogue.Store, configRepo, branch, servicesDir string) *Syncer {
 	return &Syncer{
-		scm:         scm,
-		store:       store,
-		configRepo:  configRepo,
-		branch:      branch,
-		servicesDir: servicesDir,
-		interval:    15 * time.Second,
+		providers: providers,
+		store:     store,
+		source:    catalogueSource{configRepo, branch, servicesDir},
+		interval:  15 * time.Second,
 	}
 }
 
+// SetSource change le repo du catalogue (rechargement de configuration) ;
+// la synchronisation suivante lit le nouveau repo
+func (s *Syncer) SetSource(configRepo, branch, servicesDir string) {
+	s.mu.Lock()
+	s.source = catalogueSource{configRepo, branch, servicesDir}
+	s.mu.Unlock()
+}
+
+// current renvoie le SCM par défaut et la source du catalogue du moment
+func (s *Syncer) current() (provider.SCMProvider, catalogueSource, error) {
+	s.mu.RLock()
+	src := s.source
+	s.mu.RUnlock()
+	scm, err := s.providers.SCM("")
+	return scm, src, err
+}
+
 func (s *Syncer) Start() {
-	slog.Info("gitops syncer démarré", "repo", s.configRepo, "interval", s.interval)
+	_, src, _ := s.current()
+	slog.Info("gitops syncer démarré", "repo", src.configRepo, "interval", s.interval)
 	s.sync()
 	ticker := time.NewTicker(s.interval)
 	for range ticker.C {
@@ -45,7 +71,6 @@ func (s *Syncer) Start() {
 }
 
 func (s *Syncer) ForceSync() {
-	s.lastCommit = "" // force le rechargement
 	s.sync()
 }
 
@@ -60,8 +85,12 @@ func (s *Syncer) Register(svc catalogue.Service) error {
 		return fmt.Errorf("sérialisation service %s: %w", svc.Metadata.Name, err)
 	}
 	content := buf.Bytes()
-	filePath := path.Join(s.servicesDir, svc.Metadata.Name+".yaml")
-	if err := s.scm.PushFile(s.configRepo, s.branch, filePath, string(content),
+	scm, src, err := s.current()
+	if err != nil {
+		return err
+	}
+	filePath := path.Join(src.servicesDir, svc.Metadata.Name+".yaml")
+	if err := scm.PushFile(src.configRepo, src.branch, filePath, string(content),
 		fmt.Sprintf("feat: register %s [symphony]", svc.Metadata.Name)); err != nil {
 		return fmt.Errorf("push %s: %w", filePath, err)
 	}
@@ -72,8 +101,12 @@ func (s *Syncer) Register(svc catalogue.Service) error {
 // Unregister retire la fiche d'un service du repo de config puis recharge le
 // catalogue. Une fiche déjà absente n'est pas une erreur.
 func (s *Syncer) Unregister(name string) error {
-	filePath := path.Join(s.servicesDir, name+".yaml")
-	err := s.scm.DeleteFile(s.configRepo, s.branch, filePath,
+	scm, src, err := s.current()
+	if err != nil {
+		return err
+	}
+	filePath := path.Join(src.servicesDir, name+".yaml")
+	err = scm.DeleteFile(src.configRepo, src.branch, filePath,
 		fmt.Sprintf("chore: unregister %s [symphony]", name))
 	if err != nil && !errors.Is(err, provider.ErrNotFound) {
 		return fmt.Errorf("suppression %s: %w", filePath, err)
@@ -83,7 +116,15 @@ func (s *Syncer) Unregister(name string) error {
 }
 
 func (s *Syncer) sync() {
-	files, err := s.scm.ListFiles(s.configRepo, s.branch, s.servicesDir)
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+
+	scm, src, err := s.current()
+	if err != nil {
+		slog.Warn("gitops sync: provider SCM", "error", err)
+		return
+	}
+	files, err := scm.ListFiles(src.configRepo, src.branch, src.servicesDir)
 	if err != nil {
 		slog.Warn("gitops sync: liste fichiers", "error", err)
 		return
@@ -98,7 +139,7 @@ func (s *Syncer) sync() {
 			continue
 		}
 
-		content, err := s.scm.GetFileContent(s.configRepo, s.branch, filePath)
+		content, err := scm.GetFileContent(src.configRepo, src.branch, filePath)
 		if err != nil {
 			slog.Warn("gitops sync: lecture fichier", "path", filePath, "error", err)
 			continue
