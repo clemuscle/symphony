@@ -88,6 +88,14 @@ func loadConfig(path string) (*config.Config, error) {
 	return cfg, err
 }
 
+// catalogueSource : repo, branche et dossier du catalogue, avec leurs défauts.
+// CATALOGUE_BRANCH surcharge la branche de la configuration.
+func catalogueSource(cfg *config.Config) (repo, branch, dir string) {
+	return cfg.Catalogue.Repo,
+		getEnv("CATALOGUE_BRANCH", orDefault(cfg.Catalogue.Branch, "main")),
+		orDefault(cfg.Catalogue.Path, "services")
+}
+
 // templatesSource : repo, branche et dossier des templates, avec leurs défauts
 func templatesSource(cfg *config.Config) (repo, branch, dir string) {
 	return orDefault(cfg.Templates.Repo, "root/symphony-templates"),
@@ -150,7 +158,7 @@ func (w *configWatcher) apply(cfg *config.Config) error {
 		return err
 	}
 	w.providers.Replace(next)
-	w.syncer.SetSource(cfg.Catalogue.Repo, getEnv("CATALOGUE_BRANCH", "main"), cfg.Catalogue.Path)
+	w.syncer.SetSource(catalogueSource(cfg))
 	w.templates.SetSource(templatesSource(cfg))
 	logProviders("configuration rechargée", w.providers)
 

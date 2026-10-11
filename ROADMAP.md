@@ -26,9 +26,9 @@ Le détail de l'architecture est dans [documentation/architecture.md](documentat
 
 Objectif : un repo propre, une CI verte, un binaire unique observable.
 
-- [ ] Ménage : supprimer `config/` et `script.deb.sh` ; module Go
+- [x] Ménage : supprimer `config/` et `script.deb.sh` ; module Go
       `github.com/clemuscle/symphony` ; `gofmt` sur tout le code (commit dédié)
-- [ ] Lire `catalogue.branch` dans la configuration (`CATALOGUE_BRANCH` en surcharge)
+- [x] Lire `catalogue.branch` dans la configuration (`CATALOGUE_BRANCH` en surcharge)
 - [ ] CI GitHub Actions : `go vet`, `go test -race`, build Go, build du front, image Docker
       publiée sur `ghcr.io/clemuscle/symphony`
 - [ ] Binaire unique : le front compilé embarqué avec `go:embed`, servi par le serveur Go

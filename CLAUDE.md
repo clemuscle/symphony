@@ -25,7 +25,7 @@ cd frontend && npm run dev      # front (npm install d'abord) ; npx vite build p
   configuration complète (hors ligne). `${VAR}` est remplacé par l'environnement.
 - **`.env`** à la racine (godotenv) : `GITLAB_TOKEN`, `GITHUB_TOKEN`, `DB_HOST`/`DB_PORT`/
   `DB_NAME`/`DB_USER`/`DB_PASSWORD` (défauts `localhost`/`5432`/`symphony`/`symphony`/
-  `symphony123`), `PORT` (8080), `CATALOGUE_BRANCH` (main).
+  `symphony123`), `PORT` (8080), `CATALOGUE_BRANCH` (surcharge `catalogue.branch`).
 - **PostgreSQL** (conteneur `symphony-postgres`), **GitLab** sur `http://gitlab.local:8929`,
   **socket Docker** ; le daemon Docker doit déclarer `gitlab.local:5050` en insecure registry.
 - Front : l'URL de l'API vient de `VITE_API_URL` au build (`frontend/.env.local`, ignoré
@@ -52,8 +52,6 @@ cd frontend && npm run dev      # front (npm install d'abord) ; npx vite build p
 - Le contenu de `provider.Registry` est **remplacé d'un bloc** au rechargement de la
   config. Ne jamais garder un provider dans une struct longue durée : le résoudre à chaque
   appel (`providers.SCM("")`), comme `Syncer` et `TemplateLoader`.
-- `catalogue.branch` est **ignoré** : la branche du catalogue vient de `CATALOGUE_BRANCH`
-  (correction prévue en v0.1).
 - Un `GoldenPath` chargé garde son `repo`/`branch` : on lit son skeleton là d'où il vient,
   même si la config a changé de repo de templates.
 - Port d'un déploiement : `port` = port de l'appli **dans** le conteneur, `host_port` = port
