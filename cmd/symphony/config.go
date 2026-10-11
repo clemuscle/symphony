@@ -7,9 +7,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/yourorg/symphony/internal/config"
-	"github.com/yourorg/symphony/internal/gitops"
-	"github.com/yourorg/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/config"
+	"github.com/clemuscle/symphony/internal/gitops"
+	"github.com/clemuscle/symphony/internal/provider"
 )
 
 // configSource lit la configuration : dans le repo Git désigné par le

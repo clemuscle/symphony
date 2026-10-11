@@ -1,4 +1,4 @@
-module github.com/yourorg/symphony
+module github.com/clemuscle/symphony
 
 go 1.22.5
 

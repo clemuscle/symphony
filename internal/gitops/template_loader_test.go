@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yourorg/symphony/internal/provider"
-	githubci "github.com/yourorg/symphony/internal/provider/ci/githubactions"
-	gitlabci "github.com/yourorg/symphony/internal/provider/ci/gitlabci"
-	k8srt "github.com/yourorg/symphony/internal/provider/runtime/kubernetes"
-	gitlabscm "github.com/yourorg/symphony/internal/provider/scm/gitlab"
+	"github.com/clemuscle/symphony/internal/provider"
+	githubci "github.com/clemuscle/symphony/internal/provider/ci/githubactions"
+	gitlabci "github.com/clemuscle/symphony/internal/provider/ci/gitlabci"
+	k8srt "github.com/clemuscle/symphony/internal/provider/runtime/kubernetes"
+	gitlabscm "github.com/clemuscle/symphony/internal/provider/scm/gitlab"
 )
 
 // fakeSCM sert un repo en mémoire (chemin → contenu) ; err simule un repo illisible

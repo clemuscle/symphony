@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/yourorg/symphony/internal/api"
-	"github.com/yourorg/symphony/internal/catalogue"
-	"github.com/yourorg/symphony/internal/database"
-	"github.com/yourorg/symphony/internal/gitops"
+	"github.com/clemuscle/symphony/internal/api"
+	"github.com/clemuscle/symphony/internal/catalogue"
+	"github.com/clemuscle/symphony/internal/database"
+	"github.com/clemuscle/symphony/internal/gitops"
 )
 
 func main() {

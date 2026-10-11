@@ -4,7 +4,7 @@ import (
 	"maps"
 	"testing"
 
-	"github.com/yourorg/symphony/internal/catalogue"
+	"github.com/clemuscle/symphony/internal/catalogue"
 )
 
 func intPtr(n int) *int { return &n }

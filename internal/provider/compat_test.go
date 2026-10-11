@@ -3,11 +3,11 @@ package provider_test
 import (
 	"testing"
 
-	"github.com/yourorg/symphony/internal/provider"
-	githubci "github.com/yourorg/symphony/internal/provider/ci/githubactions"
-	gitlabci "github.com/yourorg/symphony/internal/provider/ci/gitlabci"
-	githubscm "github.com/yourorg/symphony/internal/provider/scm/github"
-	gitlabscm "github.com/yourorg/symphony/internal/provider/scm/gitlab"
+	"github.com/clemuscle/symphony/internal/provider"
+	githubci "github.com/clemuscle/symphony/internal/provider/ci/githubactions"
+	gitlabci "github.com/clemuscle/symphony/internal/provider/ci/gitlabci"
+	githubscm "github.com/clemuscle/symphony/internal/provider/scm/github"
+	gitlabscm "github.com/clemuscle/symphony/internal/provider/scm/gitlab"
 )
 
 func TestCheckCompatible(t *testing.T) {
