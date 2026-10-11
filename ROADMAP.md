@@ -29,13 +29,13 @@ Objectif : un repo propre, une CI verte, un binaire unique observable.
 - [x] Ménage : supprimer `config/` et `script.deb.sh` ; module Go
       `github.com/clemuscle/symphony` ; `gofmt` sur tout le code (commit dédié)
 - [x] Lire `catalogue.branch` dans la configuration (`CATALOGUE_BRANCH` en surcharge)
-- [ ] CI GitHub Actions : `go vet`, `go test -race`, build Go, build du front, image Docker
+- [x] CI GitHub Actions : `go vet`, `go test -race`, build Go, build du front, image Docker
       publiée sur `ghcr.io/clemuscle/symphony`
 - [x] Binaire unique : le front compilé embarqué avec `go:embed`, servi par le serveur Go
       (même origine, plus besoin de `VITE_API_URL` en production)
 - [x] `/metrics` Prometheus : requêtes HTTP (latence, codes), appels aux providers (erreurs,
       latence), état des rechargements (catalogue, templates, configuration)
-- [ ] `CHANGELOG.md` (fait), tag `v0.1`
+- [x] `CHANGELOG.md`, tag `v0.1`
 
 Fini quand : la CI passe sur `main`, `docker run ghcr.io/clemuscle/symphony` sert l'UI et
 l'API sur un seul port, `/metrics` répond.
