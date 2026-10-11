@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/config"
 	"github.com/clemuscle/symphony/internal/gitops"
@@ -104,11 +105,14 @@ catalogue:
 		t.Fatal(err)
 	}
 	syncer := gitops.NewSyncer(providers, catalogue.NewStore(), "root/symphony-config", "main", "services")
+	codec, _, _ := auth.NewCodec("")
 	w := &configWatcher{
 		source:    source,
 		providers: providers,
 		syncer:    syncer,
 		templates: gitops.NewTemplateLoader(providers, "root/symphony-templates", "main", "templates"),
+		security:  auth.NewHolder(&auth.Policy{}),
+		codec:     codec,
 		last:      raw,
 	}
 	assertSCM := func(want string) {

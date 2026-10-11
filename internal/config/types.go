@@ -8,6 +8,28 @@ type Config struct {
 	Providers ProvidersConfig `yaml:"providers"`
 	Catalogue CatalogueConfig `yaml:"catalogue"`
 	Templates TemplatesConfig `yaml:"templates"`
+
+	// Auth absent : authentification désactivée (tout le monde est admin)
+	Auth *AuthConfig `yaml:"auth"`
+	// Origines autorisées à appeler l'API depuis un autre site (CORS). Vide :
+	// même origine seulement, le front étant servi par Symphony.
+	CORSOrigins []string `yaml:"cors_origins"`
+}
+
+// AuthConfig : fournisseur OIDC et correspondance groupes → rôles
+type AuthConfig struct {
+	// Issuer tel que le voit le navigateur (claim iss des jetons)
+	Issuer string `yaml:"issuer"`
+	// URL où Symphony lit la découverte OIDC, si elle diffère de l'issuer
+	// (Symphony dans un conteneur, Keycloak joint par son nom de service)
+	DiscoveryURL    string `yaml:"discovery_url"`
+	ClientID        string `yaml:"client_id"`
+	ClientSecretEnv string `yaml:"client_secret_env"` // vide : client public (PKCE)
+	// URL de retour après connexion ; vide : déduite de la requête
+	RedirectURL string `yaml:"redirect_url"`
+	GroupsClaim string `yaml:"groups_claim"` // défaut : groups
+	// Rôle (viewer, developer, admin) → groupes OIDC qui le donnent
+	Roles map[string][]string `yaml:"roles"`
 }
 
 type ProvidersConfig struct {

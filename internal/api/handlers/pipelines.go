@@ -45,7 +45,12 @@ func TriggerPipeline(providers *provider.Registry, db *database.DB) http.Handler
 			Status:      pipeline.Status,
 			WebURL:      pipeline.WebURL,
 			Ref:         pipeline.Ref,
-			TriggeredBy: "system",
+			TriggeredBy: userID(r),
+		})
+		audit(db, r, "trigger_pipeline", req.RepoPath, map[string]any{
+			"ref":         req.Ref,
+			"ci_provider": ci.ID(),
+			"pipeline_id": pipeline.ID,
 		})
 
 		respond(w, http.StatusOK, pipeline)

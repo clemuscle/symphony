@@ -150,7 +150,7 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			RepoURL:     repo.HTTPCloneURL,
 			RegistryURL: registryURL,
 			GoldenPath:  req.GoldenPathID,
-			CreatedBy:   "system",
+			CreatedBy:   userID(r),
 		}
 		if err := db.CreateProject(proj); err != nil {
 			respondError(w, http.StatusInternalServerError, "db: "+err.Error())
@@ -165,12 +165,12 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			catalogueErr = err.Error()
 		}
 
-		db.LogAudit("create_project", req.Name, map[string]any{
+		audit(db, r, "create_project", req.Name, map[string]any{
 			"golden_path": req.GoldenPathID,
 			"language":    gp.Language,
 			"scm":         scm.ID(),
 			"repo":        repo.Path,
-		}, "system", "")
+		})
 
 		resp := map[string]any{
 			"project":  proj,
@@ -252,17 +252,17 @@ func DeleteProject(providers *provider.Registry, db *database.DB, syncer *gitops
 			defer deletingProjects.Delete(name)
 			if err := deleteProject(proj, scm, db, syncer); err != nil {
 				slog.Error("suppression projet", "project", name, "error", err)
-				db.LogAudit("delete_project_failed", name, map[string]any{
+				audit(db, r, "delete_project_failed", name, map[string]any{
 					"repo":  proj.RepoPath,
 					"error": err.Error(),
-				}, "system", "")
+				})
 				return
 			}
 			slog.Info("projet supprimé", "project", name)
-			db.LogAudit("delete_project", name, map[string]any{
+			audit(db, r, "delete_project", name, map[string]any{
 				"scm":  scm.ID(),
 				"repo": proj.RepoPath,
-			}, "system", "")
+			})
 		}()
 
 		respond(w, http.StatusAccepted, map[string]string{

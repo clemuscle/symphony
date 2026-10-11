@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/config"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/metrics"
@@ -91,6 +92,23 @@ func loadConfig(path string) (*config.Config, error) {
 	return cfg, err
 }
 
+// buildPolicy construit l'authentification et le CORS de la configuration.
+// Sans section auth, l'authentification est désactivée (développement local).
+func buildPolicy(cfg *config.Config, codec *auth.Codec) (*auth.Policy, error) {
+	p := &auth.Policy{CORSOrigins: cfg.CORSOrigins}
+	if cfg.Auth == nil {
+		slog.Warn("authentification désactivée (pas de section auth) : tout le monde est admin")
+		return p, nil
+	}
+	a, err := auth.NewAuthenticator(*cfg.Auth, codec)
+	if err != nil {
+		return nil, fmt.Errorf("auth: %w", err)
+	}
+	p.Auth = a
+	slog.Info("authentification OIDC", "issuer", cfg.Auth.Issuer, "client_id", cfg.Auth.ClientID)
+	return p, nil
+}
+
 // catalogueSource : repo, branche et dossier du catalogue, avec leurs défauts.
 // CATALOGUE_BRANCH surcharge la branche de la configuration.
 func catalogueSource(cfg *config.Config) (repo, branch, dir string) {
@@ -115,6 +133,8 @@ type configWatcher struct {
 	providers *provider.Registry
 	syncer    *gitops.Syncer
 	templates *gitops.TemplateLoader
+	security  *auth.Holder
+	codec     *auth.Codec
 	interval  time.Duration
 
 	last    []byte // dernier contenu traité (appliqué ou refusé)
@@ -168,7 +188,12 @@ func (w *configWatcher) apply(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	policy, err := buildPolicy(cfg, w.codec)
+	if err != nil {
+		return err
+	}
 	w.providers.Replace(next)
+	w.security.Set(policy)
 	w.syncer.SetSource(catalogueSource(cfg))
 	w.templates.SetSource(templatesSource(cfg))
 	logProviders("configuration rechargée", w.providers)
