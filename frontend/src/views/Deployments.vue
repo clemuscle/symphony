@@ -9,7 +9,7 @@
     </div>
 
     <!-- Déploiement manuel -->
-    <form class="form-card" @submit.prevent="deploy">
+    <form class="form-card" v-if="can('developer')" @submit.prevent="deploy">
       <h3>🚀 Nouveau déploiement</h3>
       <div class="form-grid">
         <div class="field">
@@ -67,7 +67,7 @@
         <div class="deploy-image">🐳 {{ d.image }}</div>
         <a v-if="d.url" :href="d.url" target="_blank" class="deploy-url">{{ d.url }} ↗</a>
         <div class="deploy-footer">
-          <button class="btn-stop" @click="stop(d.id)">⏹ Stop</button>
+          <button class="btn-stop" v-if="can('developer')" @click="stop(d.id)">⏹ Stop</button>
         </div>
       </div>
       <div class="empty" v-if="!deployments.length">
@@ -82,6 +82,7 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 import { api } from '../api'
+import { can } from '../stores/session'
 
 const deployments = ref([])
 const loading = ref(true)

@@ -1,13 +1,26 @@
 import axios from 'axios'
 
-// URL de l'API Symphony. Le build de production est servi par Symphony lui-même :
-// même origine. En dev (npm run dev), l'API tourne à part sur le port 8080.
-// VITE_API_URL (frontend/.env.local par exemple) remplace l'une et l'autre.
-const http = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:8080' : ''),
+// L'API est sur la même origine que la page : servie par Symphony en production,
+// relayée par le proxy de Vite en dev (vite.config.js). La session est un cookie
+// HttpOnly posé par Symphony : le front ne manipule aucun jeton.
+// VITE_API_URL (frontend/.env.local) permet de viser une autre instance.
+const http = axios.create({ baseURL: import.meta.env.VITE_API_URL ?? '' })
+
+// Connexion OIDC, puis retour sur la page courante
+export function goToLogin() {
+  window.location.href = '/auth/login?redirect=' + encodeURIComponent(location.pathname + location.search)
+}
+
+// Session absente ou expirée : direction la page de connexion
+http.interceptors.response.use(undefined, (err) => {
+  if (err.response?.status === 401) goToLogin()
+  return Promise.reject(err)
 })
 
 export const api = {
+  // Session
+  me: () => http.get('/api/v1/me'),
+
   // Catalogue
   getServices: () => http.get('/api/v1/services'),
   triggerAction: (service, action, inputs) =>

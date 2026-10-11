@@ -5,7 +5,7 @@
         <h2>Projets</h2>
         <p class="subtitle">Crée un projet depuis un Golden Path approuvé</p>
       </div>
-      <button class="btn-primary" @click="showForm = !showForm">
+      <button class="btn-primary" v-if="can('developer')" @click="showForm = !showForm">
         {{ showForm ? '✕ Fermer' : '+ Nouveau projet' }}
       </button>
     </div>
@@ -19,7 +19,7 @@
         <div class="gp-section">
           <div class="section-head">
             <div class="section-label">Choisis un Golden Path</div>
-            <button class="btn-ghost" :disabled="syncingGP" @click="syncGoldenPaths">
+            <button class="btn-ghost" v-if="can('admin')" :disabled="syncingGP" @click="syncGoldenPaths">
               {{ syncingGP ? 'Rechargement...' : '↻ Recharger depuis Git' }}
             </button>
           </div>
@@ -142,8 +142,8 @@
           </div>
           <div class="project-footer">
             <a :href="p.repo_url" target="_blank" class="btn-ghost">GitLab ↗</a>
-            <button class="btn-ghost" @click="triggerPipelineByPath(p.repo_path)">▶ Pipeline</button>
-            <button class="btn-ghost btn-danger" :disabled="p.deleting" @click="deleteProject(p)">
+            <button class="btn-ghost" v-if="can('developer')" @click="triggerPipelineByPath(p.repo_path)">▶ Pipeline</button>
+            <button class="btn-ghost btn-danger" v-if="can('admin')" :disabled="p.deleting" @click="deleteProject(p)">
               {{ p.deleting ? 'Suppression…' : 'Supprimer' }}
             </button>
           </div>
@@ -171,7 +171,7 @@
           <div class="project-meta"><span>📁 {{ repo.path }}</span></div>
           <div class="project-footer">
             <a :href="repo.web_url" target="_blank" class="btn-ghost">GitLab ↗</a>
-            <button class="btn-ghost" @click="triggerPipelineByPath(repo.path)">▶ Pipeline</button>
+            <button class="btn-ghost" v-if="can('developer')" @click="triggerPipelineByPath(repo.path)">▶ Pipeline</button>
           </div>
           <div class="pipeline-status" v-if="repoPipelines[repo.path]">
             <span>Pipeline #{{ repoPipelines[repo.path].id }}</span>
@@ -189,6 +189,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
+import { can } from '../stores/session'
 
 const showForm = ref(false)
 const activeTab = ref('symphony')

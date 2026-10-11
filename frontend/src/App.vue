@@ -11,12 +11,33 @@
         <RouterLink to="/projects" class="nav-link">🗂 Projets</RouterLink>
         <RouterLink to="/deployments" class="nav-link">🚀 Déploiements</RouterLink>
       </nav>
+      <div class="user" v-if="session.loaded">
+        <template v-if="session.authEnabled">
+          <span class="user-name">{{ session.user.name || session.user.email }}</span>
+          <span class="role-badge" :class="session.user.role || 'none'">{{ session.user.role || 'aucun rôle' }}</span>
+          <!-- POST : une simple image ou un lien d'un autre site ne peut pas déconnecter -->
+          <form method="post" action="/auth/logout">
+            <button class="logout" type="submit">Déconnexion</button>
+          </form>
+        </template>
+        <span class="role-badge none" v-else title="Pas de section auth dans la configuration">auth désactivée</span>
+      </div>
     </header>
     <main class="main">
-      <RouterView />
+      <div class="no-role" v-if="session.loaded && !session.user?.role">
+        Connecté·e, mais sans rôle Symphony : demander l'accès à l'équipe plateforme.
+      </div>
+      <RouterView v-else-if="session.loaded" />
     </main>
   </div>
 </template>
+
+<script setup>
+import { onMounted } from 'vue'
+import { session, loadSession } from './stores/session'
+
+onMounted(loadSession)
+</script>
 
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -31,5 +52,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #
 .nav-link { color: #aaa; text-decoration: none; padding: 6px 14px; border-radius: 6px; font-size: 14px; transition: all .15s; }
 .nav-link:hover { color: white; background: #ffffff15; }
 .nav-link.router-link-active { color: white; background: #667eea; }
+.user { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.user-name { color: #ddd; }
+.role-badge { padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #ffffff20; color: #ddd; }
+.role-badge.admin { background: #e53e3e; color: white; }
+.role-badge.developer { background: #667eea; color: white; }
+.role-badge.viewer { background: #38a169; color: white; }
+.logout { background: transparent; border: 1px solid #ffffff40; color: #ddd; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+.logout:hover { background: #ffffff15; }
+.no-role { background: #fffbea; border: 1px solid #f6e05e; padding: 16px; border-radius: 8px; }
 .main { flex: 1; padding: 28px; max-width: 1200px; margin: 0 auto; width: 100%; }
 </style>
