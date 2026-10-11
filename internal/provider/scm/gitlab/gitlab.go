@@ -214,32 +214,41 @@ func (p *Provider) GetFileContent(repoPath, branch, filePath string) (string, er
 }
 
 func (p *Provider) ListFiles(repoPath, branch, dirPath string) ([]string, error) {
+	const perPage = 100
 	encoded := url.PathEscape(repoPath)
-	apiPath := fmt.Sprintf("/projects/%s/repository/tree?path=%s&ref=%s&per_page=100&recursive=true",
-		encoded, url.QueryEscape(dirPath), branch)
 
-	data, status, err := p.api("GET", apiPath, nil)
-	if err != nil {
-		return nil, err
-	}
-	if status != 200 {
-		return nil, fmt.Errorf("listFiles %s: status %d — %s", dirPath, status, string(data))
-	}
-
-	var items []struct {
-		Name string `json:"name"`
-		Path string `json:"path"`
-		Type string `json:"type"`
-	}
-	json.Unmarshal(data, &items)
-
+	// Pagination : sans elle, un arbre de plus de 100 entrées serait tronqué
 	var paths []string
-	for _, item := range items {
-		if item.Type == "blob" {
-			paths = append(paths, item.Path)
+	for page := 1; ; page++ {
+		apiPath := fmt.Sprintf("/projects/%s/repository/tree?path=%s&ref=%s&per_page=%d&page=%d&recursive=true",
+			encoded, url.QueryEscape(dirPath), url.QueryEscape(branch), perPage, page)
+
+		data, status, err := p.api("GET", apiPath, nil)
+		if err != nil {
+			return nil, err
+		}
+		if status != 200 {
+			return nil, fmt.Errorf("listFiles %s: status %d — %s", dirPath, status, string(data))
+		}
+
+		var items []struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(data, &items); err != nil {
+			return nil, fmt.Errorf("listFiles %s: %w", dirPath, err)
+		}
+
+		for _, item := range items {
+			if item.Type == "blob" {
+				paths = append(paths, item.Path)
+			}
+		}
+		if len(items) < perPage {
+			return paths, nil
 		}
 	}
-	return paths, nil
 }
 
 func (p *Provider) resolveNamespace(name string) (int, error) {

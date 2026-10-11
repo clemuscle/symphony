@@ -79,7 +79,7 @@ func NewServer(
 
 		// Admin
 		r.Get("/providers", handlers.ListProviders(providers))
-		r.Post("/sync", handlers.ForceSync(syncer))
+		r.Post("/sync", handlers.ForceSync(syncer, templates))
 		r.Get("/audit", handlers.ListAudit(db))
 	})
 

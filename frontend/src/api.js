@@ -13,6 +13,9 @@ export const api = {
   // Golden Paths
   getGoldenPaths: () => http.get('/api/v1/golden-paths'),
 
+  // Recharge le catalogue et les golden paths depuis Git
+  sync: () => http.post('/api/v1/sync'),
+
   // Projets
   createProject: (data) => http.post('/api/v1/projects', data),
   listProjects: () => http.get('/api/v1/projects'),
