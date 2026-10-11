@@ -1,6 +1,10 @@
 package config
 
 type Config struct {
+	// Bootstrap : si renseigné, la configuration (providers, catalogue,
+	// templates) est lue dans un repo Git et le reste du fichier local est ignoré
+	ConfigSource *ConfigSource `yaml:"config_source"`
+
 	Providers ProvidersConfig `yaml:"providers"`
 	Catalogue CatalogueConfig `yaml:"catalogue"`
 	Templates TemplatesConfig `yaml:"templates"`
@@ -32,4 +36,13 @@ type TemplatesConfig struct {
 	Repo   string `yaml:"repo"`
 	Branch string `yaml:"branch"`
 	Path   string `yaml:"path"`
+}
+
+// ConfigSource : où lire la configuration dans Git, et le SCM à utiliser pour
+// la lire (même format qu'un provider SCM ; il n'est pas enregistré)
+type ConfigSource struct {
+	SCM    ProviderDef `yaml:"scm"`
+	Repo   string      `yaml:"repo"`
+	Branch string      `yaml:"branch"`
+	Path   string      `yaml:"path"`
 }
