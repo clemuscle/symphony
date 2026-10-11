@@ -1,0 +1,69 @@
+{
+  "realm": "symphony",
+  "displayName": "Symphony (démo)",
+  "enabled": true,
+  "sslRequired": "none",
+  "groups": [
+    { "name": "symphony-admins" },
+    { "name": "symphony-developers" },
+    { "name": "symphony-viewers" }
+  ],
+  "users": [
+    {
+      "username": "alice", "email": "alice@demo.symphony", "firstName": "Alice", "lastName": "Admin",
+      "enabled": true, "emailVerified": true, "groups": ["/symphony-admins"],
+      "credentials": [{ "type": "password", "value": "alice", "temporary": false }]
+    },
+    {
+      "username": "bob", "email": "bob@demo.symphony", "firstName": "Bob", "lastName": "Developer",
+      "enabled": true, "emailVerified": true, "groups": ["/symphony-developers"],
+      "credentials": [{ "type": "password", "value": "bob", "temporary": false }]
+    },
+    {
+      "username": "carol", "email": "carol@demo.symphony", "firstName": "Carol", "lastName": "Viewer",
+      "enabled": true, "emailVerified": true, "groups": ["/symphony-viewers"],
+      "credentials": [{ "type": "password", "value": "carol", "temporary": false }]
+    },
+    {
+      "username": "dave", "email": "dave@demo.symphony", "firstName": "Dave", "lastName": "SansRole",
+      "enabled": true, "emailVerified": true, "groups": [],
+      "credentials": [{ "type": "password", "value": "dave", "temporary": false }]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "symphony",
+      "name": "Symphony",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["__SYMPHONY_URL__/auth/callback", "http://localhost:5173/auth/callback"],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "__SYMPHONY_URL__/##http://localhost:5173/"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups", "full.path": "false",
+            "id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience symphony",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "symphony",
+            "id.token.claim": "false", "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

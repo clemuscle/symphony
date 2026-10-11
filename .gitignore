@@ -6,3 +6,4 @@ node_modules/
 frontend/dist/
 internal/web/dist/*
 !internal/web/dist/.gitkeep
+demo/keycloak/import/

@@ -23,28 +23,34 @@ existants (GitLab ou GitHub, leur CI, un registry, Docker) au lieu de les rempla
 - **Plateforme pilotée par Git** : la configuration elle-même (providers, repos) est lue
   dans Git et appliquée à chaud ; une version invalide est refusée et l'ancienne reste en
   place.
+- **Sécurisé** : connexion OIDC (Keycloak en démo, tout fournisseur OIDC), rôles
+  `viewer` / `developer` / `admin` déduits des groupes de l'annuaire, audit de qui a fait
+  quoi.
 - **Observable** : `/metrics` Prometheus sur l'API, chaque appel à GitLab, GitHub ou Docker
   et chaque rechargement depuis Git.
 
 ## Essayer
 
-Prérequis : Docker avec Compose v2, `curl`, `jq`, ~4 Go de RAM libres pour GitLab.
+Prérequis : Docker avec Compose v2, `curl`, `jq`, ~5 Go de RAM libres (GitLab, Keycloak).
 
 ```bash
 git clone https://github.com/clemuscle/symphony.git && cd symphony
-./demo/up.sh        # GitLab CE + runner + PostgreSQL + Symphony, initialisés (5 à 10 min la 1re fois)
+./demo/up.sh        # GitLab CE + runner + Keycloak + PostgreSQL + Symphony (5 à 10 min la 1re fois)
 ```
 
-Le script affiche les URL et identifiants. Suivre ensuite le
+Le script affiche les URL et identifiants. Comptes de démo (mot de passe = identifiant) :
+`alice` (admin), `bob` (developer), `carol` (viewer), `dave` (sans rôle). Suivre ensuite le
 [scénario de démo](demo/SCENARIO.md) (10 min). Ports déjà pris ?
-`GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18080 ./demo/up.sh`.
+`GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 ./demo/up.sh`.
 Arrêt : `./demo/down.sh` (`--purge` pour tout effacer).
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  UI[SPA Vue 3] -->|REST| API
+  UI[SPA Vue 3] -->|REST + cookie de session| API
+  UI -.->|connexion| IDP[Keycloak / OIDC]
+  API -->|code + PKCE, JWKS| IDP
   subgraph Symphony["Symphony — un binaire Go, ~10 Mo"]
     API[API chi] --> REG[Registry de providers]
     W[configWatcher] -->|remplace d'un bloc| REG
@@ -73,6 +79,7 @@ implémenter une interface. Détails, flux et décisions :
 | Configuration à chaud | Un nouveau jeu de providers est construit à côté puis substitué d'un bloc ; les requêtes en cours finissent avec l'ancien. Les composants de longue durée résolvent leur provider à chaque appel. |
 | Templates invalides | Validés au chargement (schéma strict, chemins confinés au dossier du template, fichiers présents, CI compatible avec le SCM) ; un template cassé est ignoré, pas fatal. |
 | Bascule de conteneur | Pull **avant** d'arrêter l'ancien ; le nouveau démarre à côté et ne remplace l'ancien que s'il tourne encore après le délai de démarrage. |
+| Authentification | Backend-for-Frontend : Symphony fait le flux OIDC (code + PKCE) et ne donne au navigateur qu'un cookie signé `HttpOnly` ; rôle recalculé à chaque requête depuis les groupes, CSRF bloqué par contrôle d'origine. Jetons `Bearer` pour les scripts. |
 | Sécurité des actions | Les entrées d'une action Day-2 sont validées contre leur déclaration ; une clé non déclarée est refusée (pas d'injection de variables CI). Les identifiants du registry ne partent que vers le registry qui héberge l'image. |
 | Dépendances | API Docker appelée directement sur le socket (pas de SDK), `database/sql` sans ORM, front embarqué avec `go:embed`, image `scratch`. |
 | Métriques | Routes étiquetées par motif chi (séries bornées) ; appels aux providers mesurés par des décorateurs, sans toucher aux implémentations. |
@@ -90,9 +97,10 @@ sans section `config_source`, il est lu comme une configuration complète (hors 
 
 ## Feuille de route
 
-Fait : v0.1 (binaire unique, `/metrics`, CI et image publiée), v0.2 (démo). À venir :
-authentification OIDC et RBAC (Keycloak), Kubernetes en GitOps (k3d + Argo CD),
-opérations Day-2 asynchrones, Vault. Détail : [ROADMAP.md](ROADMAP.md) et
+Fait : v0.1 (binaire unique, `/metrics`, CI et image publiée), v0.2 (démo), v0.3 (OIDC,
+rôles, audit). À venir : Kubernetes en GitOps (k3d + Argo CD), opérations Day-2
+asynchrones, Vault. Détail : [ROADMAP.md](ROADMAP.md) et
 [CHANGELOG.md](CHANGELOG.md).
 
-**Stack** : Go 1.22+, chi, PostgreSQL, Prometheus client, Vue 3 + Vite, GitLab CE, Docker.
+**Stack** : Go 1.22+, chi, go-oidc, PostgreSQL, Prometheus client, Vue 3 + Vite, GitLab CE,
+Keycloak, Docker.

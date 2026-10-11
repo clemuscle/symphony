@@ -5,7 +5,8 @@
 #
 # Les ports sont réglables (variables d'environnement ou demo/.env) pour
 # cohabiter avec une autre GitLab :
-#   GITLAB_PORT (8929), REGISTRY_PORT (5050), GITLAB_SSH_PORT (2224), SYMPHONY_PORT (8080)
+#   GITLAB_PORT (8929), REGISTRY_PORT (5050), GITLAB_SSH_PORT (2224), SYMPHONY_PORT (8080),
+#   KEYCLOAK_PORT (8180)
 #
 # GitLab est vu sous deux noms : http://gitlab:<port> depuis les conteneurs
 # (Symphony, runner), http://localhost:<port> depuis la machine (navigateur,
@@ -69,6 +70,24 @@ services:
       retries: 40
       start_period: 180s
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0.7
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?lancer ./demo/up.sh}
+      # Même principe que GitLab : le navigateur voit http://localhost:<port>,
+      # Symphony joint http://keycloak:8080 (jetons, clés). L'issuer des jetons
+      # reste l'URL du navigateur.
+      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8180}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "${KEYCLOAK_PORT:-8180}:8080"
+    volumes:
+      # Realm généré par up.sh depuis keycloak/realm-symphony.template.json
+      - ./keycloak/import:/opt/keycloak/data/import:ro
+
   gitlab-runner:
     image: gitlab/gitlab-runner:v18.11.3
     volumes:
@@ -84,11 +103,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    env_file: .env # écrit par up.sh (GITLAB_TOKEN)
     environment:
+      # Secrets générés par up.sh dans demo/.env
+      GITLAB_TOKEN: ${GITLAB_TOKEN:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
       DB_HOST: postgres
       GITLAB_PORT: ${GITLAB_PORT:-8929}
       REGISTRY_PORT: ${REGISTRY_PORT:-5050}
+      KEYCLOAK_PORT: ${KEYCLOAK_PORT:-8180}
     ports:
       - "${SYMPHONY_PORT:-8080}:8080"
     volumes:

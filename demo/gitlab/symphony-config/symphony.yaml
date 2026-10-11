@@ -46,3 +46,14 @@ templates:
   repo: root/symphony-templates
   branch: main
   path: templates
+
+# Connexion via Keycloak (realm de démo : alice admin, bob developer,
+# carol viewer, dave sans rôle ; mot de passe = identifiant)
+auth:
+  issuer: http://localhost:${KEYCLOAK_PORT}/realms/symphony
+  discovery_url: http://keycloak:8080/realms/symphony
+  client_id: symphony
+  roles:
+    admin: [symphony-admins]
+    developer: [symphony-developers]
+    viewer: [symphony-viewers]
