@@ -71,7 +71,7 @@
               <div class="summary-title">Ce que Symphony va créer :</div>
               <div class="summary-items">
                 <div class="summary-item">✅ Repo GitLab <code>{{ form.namespace || 'root' }}/{{ form.name || '...' }}</code></div>
-                <div class="summary-item">✅ Pipeline CI <code>{{ selectedGP.ci_template?.path }}</code></div>
+                <div class="summary-item">✅ Pipeline CI <code>{{ selectedGP.ci_template }}</code></div>
                 <div class="summary-item">✅ Pipeline Build/Deploy</div>
               </div>
             </div>
