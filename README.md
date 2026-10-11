@@ -1,6 +1,6 @@
 # Symphony
 
-[![CI](https://github.com/clemuscle/symphony/actions/workflows/ci.yml/badge.svg?branch=v2)](https://github.com/clemuscle/symphony/actions/workflows/ci.yml)
+[![CI](https://github.com/clemuscle/symphony/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/clemuscle/symphony/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/clemuscle/symphony)](https://github.com/clemuscle/symphony/releases)
 
 **Une Internal Developer Platform en Go** : un développeur crée un service prêt pour la
@@ -31,7 +31,7 @@ existants (GitLab ou GitHub, leur CI, un registry, Docker) au lieu de les rempla
 Prérequis : Docker avec Compose v2, `curl`, `jq`, ~4 Go de RAM libres pour GitLab.
 
 ```bash
-git clone -b v2 https://github.com/clemuscle/symphony.git && cd symphony
+git clone https://github.com/clemuscle/symphony.git && cd symphony
 ./demo/up.sh        # GitLab CE + runner + PostgreSQL + Symphony, initialisés (5 à 10 min la 1re fois)
 ```
 
