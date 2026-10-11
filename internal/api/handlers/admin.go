@@ -30,8 +30,9 @@ func ListProviders(providers *provider.Registry) http.HandlerFunc {
 }
 
 // ForceSync recharge le catalogue et les golden paths depuis Git
-func ForceSync(syncer *gitops.Syncer, templates *gitops.TemplateLoader) http.HandlerFunc {
+func ForceSync(syncer *gitops.Syncer, templates *gitops.TemplateLoader, db *database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		audit(db, r, "force_sync", "catalogue+templates", nil)
 		go syncer.ForceSync()
 		go templates.Reload()
 		respond(w, http.StatusOK, map[string]string{"status": "sync déclenché"})

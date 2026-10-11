@@ -95,11 +95,11 @@ func TriggerAction(store *catalogue.Store, providers *provider.Registry, db *dat
 				respondError(w, http.StatusBadGateway, "webhook: "+err.Error())
 				return
 			}
-			db.LogAudit("trigger_action", svcName+"/"+actionName, map[string]any{
+			audit(db, r, "trigger_action", svcName+"/"+actionName, map[string]any{
 				"mode":        "webhook",
 				"inputs":      inputs,
 				"http_status": status,
-			}, "system", "")
+			})
 			respond(w, http.StatusOK, map[string]any{
 				"status":      "dispatched",
 				"mode":        "webhook",
@@ -133,13 +133,13 @@ func TriggerAction(store *catalogue.Store, providers *provider.Registry, db *dat
 				respondError(w, http.StatusBadGateway, "pipeline: "+err.Error())
 				return
 			}
-			db.LogAudit("trigger_action", svcName+"/"+actionName, map[string]any{
+			audit(db, r, "trigger_action", svcName+"/"+actionName, map[string]any{
 				"mode":        "pipeline",
 				"ci_provider": ci.ID(),
 				"repo":        repoPath,
 				"pipeline_id": pipeline.ID,
 				"inputs":      inputs,
-			}, "system", "")
+			})
 			respond(w, http.StatusOK, map[string]any{
 				"status":   "dispatched",
 				"mode":     "pipeline",

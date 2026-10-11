@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/clemuscle/symphony/internal/api"
+	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/gitops"
@@ -56,6 +57,23 @@ func main() {
 	}
 	logProviders("providers enregistrés", providers)
 
+	// Authentification et CORS. Le secret de session est commun à toutes les
+	// versions de la configuration : un rechargement ne déconnecte personne.
+	codec, persistent, err := auth.NewCodec(os.Getenv("SESSION_SECRET"))
+	if err != nil {
+		slog.Error("SESSION_SECRET", "error", err)
+		os.Exit(1)
+	}
+	if !persistent {
+		slog.Warn("SESSION_SECRET absent : secret aléatoire, les sessions ne survivront pas à un redémarrage")
+	}
+	policy, err := buildPolicy(cfg, codec)
+	if err != nil {
+		slog.Error("auth", "error", err)
+		os.Exit(1)
+	}
+	security := auth.NewHolder(policy)
+
 	// Catalogue + GitOps syncer
 	store := catalogue.NewStore()
 	catRepo, catBranch, catDir := catalogueSource(cfg)
@@ -73,6 +91,8 @@ func main() {
 		providers: providers,
 		syncer:    syncer,
 		templates: tmplLoader,
+		security:  security,
+		codec:     codec,
 		interval:  15 * time.Second,
 		last:      raw,
 	}
@@ -82,7 +102,7 @@ func main() {
 	addr := ":" + getEnv("PORT", "8080")
 	slog.Info("Symphony démarré", "addr", addr)
 
-	if err := http.ListenAndServe(addr, api.NewServer(providers, store, db, syncer, tmplLoader)); err != nil {
+	if err := http.ListenAndServe(addr, api.NewServer(providers, store, db, syncer, tmplLoader, security)); err != nil {
 		slog.Error("serveur HTTP", "error", err)
 		os.Exit(1)
 	}

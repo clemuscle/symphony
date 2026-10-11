@@ -79,14 +79,14 @@ func Deploy(providers *provider.Registry, db *database.DB) http.HandlerFunc {
 			Port:         deployment.Port,
 			Status:       deployment.Status,
 			URL:          deployment.URL,
-			DeployedBy:   "system",
+			DeployedBy:   userID(r),
 		})
 
-		db.LogAudit("deploy", req.ProjectName, map[string]any{
+		audit(db, r, "deploy", req.ProjectName, map[string]any{
 			"image":    req.Image,
 			"tag":      req.Tag,
 			"provider": rt.ID(),
-		}, "system", "")
+		})
 
 		respond(w, http.StatusCreated, deployment)
 	}
@@ -108,7 +108,7 @@ func StopDeployment(providers *provider.Registry, db *database.DB) http.HandlerF
 		}
 
 		db.UpdateDeploymentStatus(id, "stopped")
-		db.LogAudit("stop_deployment", id, nil, "system", "")
+		audit(db, r, "stop_deployment", id, nil)
 		respond(w, http.StatusOK, map[string]string{"status": "stopped", "id": id})
 	}
 }
@@ -128,6 +128,7 @@ func RestartDeployment(providers *provider.Registry, db *database.DB) http.Handl
 			return
 		}
 
+		audit(db, r, "restart_deployment", id, nil)
 		respond(w, http.StatusOK, map[string]string{"status": "restarted", "id": id})
 	}
 }
