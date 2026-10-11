@@ -59,15 +59,16 @@ déploie un service depuis l'UI.
 
 Objectif : plus d'API ouverte ; qui fait quoi est connu et tracé.
 
-- [ ] Keycloak dans le `docker compose`, realm d'exemple (utilisateurs et groupes)
-- [ ] Connexion OIDC (Authorization Code + PKCE), validation des jetons côté API
-- [ ] RBAC par groupes : `viewer` (lecture), `developer` (créer, déployer, actions),
+- [x] Keycloak dans le `docker compose`, realm d'exemple (utilisateurs et groupes)
+- [x] Connexion OIDC (Authorization Code + PKCE) en Backend-for-Frontend : le navigateur
+      ne reçoit qu'un cookie de session signé ; jetons Bearer acceptés pour les scripts
+- [x] RBAC par groupes : `viewer` (lecture), `developer` (créer, déployer, actions),
       `admin` (supprimer, synchroniser, audit)
-- [ ] CORS restreint aux origines configurées
-- [ ] Audit avec l'utilisateur réel au lieu de `system`
+- [x] CORS restreint aux origines configurées
+- [x] Audit avec l'utilisateur réel au lieu de `system`
 
-Fini quand : chaque route `/api/v1` exige un jeton, chaque rôle est testé, l'audit montre
-qui a fait quoi.
+Fini quand : chaque route `/api/v1` exige une session ou un jeton, chaque rôle est testé,
+l'audit montre qui a fait quoi.
 
 ## v0.4 — Kubernetes en GitOps
 

@@ -32,9 +32,9 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
 - **PostgreSQL** (conteneur `symphony-postgres`), **GitLab** sur `http://gitlab.local:8929`,
   **socket Docker** ; le daemon Docker doit déclarer `gitlab.local:5050` en insecure registry.
 - Front : servi par le binaire (`internal/web`, `go:embed`) ; sans `npm run build`, `/`
-  affiche une page d'aide. Le build de production appelle l'API sur la même origine ;
-  `npm run dev` l'appelle sur `http://localhost:8080`. `VITE_API_URL`
-  (`frontend/.env.local`) remplace les deux.
+  affiche une page d'aide. Il appelle toujours l'API sur sa propre origine : en dev,
+  Vite relaie `/api` et `/auth` vers `http://localhost:8080` (cookie de session).
+  `VITE_API_URL` (`frontend/.env.local`) vise une autre instance.
 - Le serveur s'arrête si la configuration est illisible au démarrage ou s'il n'y a pas de
   provider SCM par défaut.
 
@@ -45,6 +45,9 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
 - `internal/provider` : interfaces (`interfaces.go`) et `Registry`. Ajouter un type de
   provider = implémenter l'interface + un `case` dans `providers.go`, enveloppé par
   `instrumented.SCM/CI/Registry/Runtime` (mesures pour `/metrics`).
+- `internal/auth` : OIDC en Backend-for-Frontend (`/auth/login`, `/auth/callback`,
+  `/auth/logout`), session en cookie signé, rôles, CSRF, CORS. Le `Holder` porte la
+  politique courante et est remplacé au rechargement de la config (`buildPolicy`).
 - `internal/metrics` : métriques Prometheus (`/metrics`, middleware HTTP, `Reload`).
 - `internal/gitops` : `Syncer` (catalogue, `services/` du repo de config) et
   `TemplateLoader` (golden paths, `templates/<nom>/template.yaml` de `symphony-templates`).
@@ -54,12 +57,21 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
   poussé dans la GitLab de démo (`symphony-config`, `symphony-templates`) : le mettre à jour
   quand on change les golden paths de référence. `demo/capture/` régénère
   `documentation/demo.gif` (Playwright).
-- `internal/api` : toutes les routes dans `server.go`, un fichier de handlers par domaine ;
+- `internal/api` : toutes les routes dans `server.go`, chacune avec son rôle minimum
+  (`r.With(viewer|developer|admin)`), un fichier de handlers par domaine ;
   ce qui n'est pas une route d'API va au front (`web.Handler`, `index.html` pour les routes Vue).
   Chaque appel de `frontend/src/api.js` a sa route.
 
 ## Pièges
 
+- Une nouvelle route `/api/v1` doit déclarer son rôle (`r.With(...)`) : sans lui, tout
+  utilisateur connecté, même sans rôle, y aurait accès. Les handlers lisent
+  l'utilisateur avec `auth.UserFrom(ctx)` ; `audit(db, r, ...)` et `userID(r)` l'utilisent.
+- Sans section `auth` dans la config, l'authentification est **désactivée** (tout le monde
+  est admin, avertissement au démarrage) : c'est le cas de la config de l'utilisateur.
+  `SESSION_SECRET` (32 caractères min.) garde les sessions d'un redémarrage à l'autre.
+- `auth.issuer` est l'URL vue par le navigateur ; `auth.discovery_url` l'URL interne
+  (Symphony en conteneur). Keycloak : `KC_HOSTNAME` + `KC_HOSTNAME_BACKCHANNEL_DYNAMIC`.
 - Deux « registry » : `provider.Registry` contient tous les providers ;
   `RegistryProvider` est le registry d'**images** (`providers.GetRegistry(id)`).
 - Le contenu de `provider.Registry` est **remplacé d'un bloc** au rechargement de la
@@ -115,7 +127,9 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
 - Modifications temporaires d'un repo de config ou de templates : restaurer l'original et
   vérifier qu'il est identique.
 - Démo : la tester sur des ports décalés pour ne pas gêner la GitLab de l'utilisateur
-  (`GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18090`),
+  (`GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18090
+  KEYCLOAK_PORT=18180`). Jeton pour l'API : grant `password` du client `symphony` sur
+  Keycloak (`username=bob&password=bob`) ; parcours navigateur avec Playwright,
   `SYMPHONY_IMAGE=symphony:local` pour une image construite localement, puis
   `./demo/down.sh --purge` (~4 Go de RAM). `down.sh` ne supprime que les conteneurs dont
   l'image vient du registry de la démo.

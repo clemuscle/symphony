@@ -3,6 +3,28 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
+## v0.3 — Sécurité
+
+### Ajouté
+- **Connexion OIDC** en Backend-for-Frontend : Symphony fait le flux Authorization Code +
+  PKCE et pose un cookie de session signé (`HttpOnly`, `SameSite=Lax`) ; le navigateur ne
+  reçoit aucun jeton. Les scripts et la CI peuvent présenter un jeton `Bearer`.
+- **Rôles** `viewer`, `developer`, `admin` déduits des groupes OIDC (section `auth.roles`
+  de la configuration, rechargée à chaud), vérifiés route par route ; l'UI masque ce que le
+  rôle ne permet pas et affiche l'utilisateur.
+- **Protection CSRF** : une requête modifiante portée par le cookie doit venir de Symphony.
+- **Keycloak dans la démo** : realm `symphony` avec alice (admin), bob (developer), carol
+  (viewer) et dave (sans rôle).
+- Audit des pipelines lancées à la main, des redémarrages et des synchronisations forcées.
+
+### Modifié
+- L'audit, les projets, pipelines et déploiements enregistrent l'utilisateur réel au lieu
+  de `system`.
+- CORS : plus de `*` ; seules les origines de `cors_origins` sont autorisées, sans cookies.
+- En dev, le serveur Vite relaie `/api` et `/auth` vers Symphony (même origine).
+- Sans section `auth`, l'authentification est désactivée avec un avertissement (tout le
+  monde est admin) : pratique en local, à ne pas utiliser en production.
+
 ## v0.2 — Démo
 
 ### Ajouté

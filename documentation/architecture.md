@@ -72,6 +72,7 @@ redémarrage, comme l'`app-config` de Backstage.
 | `internal/database` | PostgreSQL via `database/sql` : `projects`, `pipelines`, `deployments`, `audit_log` ; migrations embarquées |
 | `internal/api` | Routeur chi, handlers par domaine, `/healthz` |
 | `internal/metrics` | Métriques Prometheus sur `/metrics` ; `internal/provider/instrumented` enveloppe chaque provider pour mesurer ses appels |
+| `internal/auth` | OIDC (connexion, retour, déconnexion), cookie de session signé, rôles, CSRF, CORS ; `Holder` remplacé d'un bloc au rechargement de la config |
 | `internal/web` | Front compilé embarqué (`go:embed`), avec repli sur `index.html` pour les routes Vue |
 | `frontend/` | Vue 3 + Vite : pages Catalogue, Projets, Déploiements |
 
@@ -106,6 +107,20 @@ précédente reste en place.
    arrêté ; si le nouveau tourne encore après 3 s il remplace l'ancien, sinon l'ancien
    redémarre et l'erreur contient les derniers logs du nouveau.
 
+### Se connecter (OIDC, Backend-for-Frontend)
+
+1. Le front appelle `/api/v1/me` ; sans session, l'API répond 401 et le front envoie le
+   navigateur sur `/auth/login?redirect=<page>`.
+2. Symphony génère `state`, `nonce` et un vérificateur PKCE, les garde dans un cookie
+   signé de 10 min, et redirige vers le fournisseur d'identité.
+3. Au retour (`/auth/callback`), il vérifie `state`, échange le code contre les jetons
+   (avec le vérificateur PKCE, de serveur à serveur), vérifie l'ID token (signature,
+   `iss`, `aud`, `nonce`) et pose la session : identité et groupes, signés, 8 h. Aucun
+   jeton n'est donné au navigateur ; l'ID token n'est gardé que dans un cookie limité à
+   `/auth/logout`, pour une déconnexion sans écran de confirmation.
+4. À chaque requête, le rôle est recalculé depuis les groupes et la configuration : un
+   changement de `auth.roles` s'applique sans reconnexion.
+
 ### Actions Day-2
 
 Une fiche de catalogue peut déclarer des actions (« Relancer la pipeline »…) : un appel
@@ -133,13 +148,16 @@ implémentations n'en savent rien.
 
 | Sujet | Aujourd'hui | Prévu |
 |---|---|---|
-| Authentification | aucune ; CORS `*` | OIDC (Keycloak), CORS restreint — v0.3 |
-| Autorisations | aucune | rôles déduits des groupes OIDC — v0.3 |
+| Authentification | OIDC (Keycloak en démo), Authorization Code + PKCE fait par le serveur ; cookie de session signé (`HttpOnly`, `SameSite=Lax`) ou jeton `Bearer` | — |
+| Autorisations | rôles `viewer` < `developer` < `admin` déduits des groupes OIDC (configuration), vérifiés par route | rôles par projet |
+| CSRF | requête modifiante avec cookie : `Origin` (ou `Sec-Fetch-Site`) doit être Symphony | — |
+| CORS | aucune origine tierce par défaut ; liste `cors_origins`, sans cookies | — |
 | Secrets | variables d'environnement, jamais dans les fichiers | Vault — v0.6 |
 | Fuite de token | l'auth du registry n'est envoyée qu'au registry qui héberge l'image | — |
 | Injection CI | entrées d'action validées, clés inconnues refusées | — |
 | Configuration | une config invalide est refusée, la précédente reste en place | — |
-| Traçabilité | `audit_log` des actions mutantes (utilisateur `system`) | utilisateur OIDC réel — v0.3 |
+| Traçabilité | `audit_log` des actions mutantes, avec l'utilisateur OIDC et son adresse | — |
+| `/metrics` | public | à protéger au niveau réseau |
 
 ## Décisions
 
@@ -152,6 +170,9 @@ implémentations n'en savent rien.
 | `Registry.Replace` plutôt que redémarrer | pas de coupure ; les requêtes en cours finissent avec leurs providers | redémarrage du processus |
 | API Docker sur le socket, sans SDK | quelques appels HTTP suffisent, pas de dépendance lourde | SDK Docker |
 | Catalogue en mémoire, source dans Git | Git est la source de vérité, la base ne garde que l'état propre à Symphony | catalogue en base |
+| Backend-for-Frontend pour l'OIDC | le navigateur ne détient aucun jeton (pas de vol par XSS), le front n'a pas de bibliothèque OIDC ; recommandé par l'IETF pour les applications navigateur | jetons gérés par la SPA (oidc-client) |
+| Session dans un cookie signé, rôle recalculé à chaque requête | pas de stockage de sessions ; un changement de groupes → rôles dans la config s'applique sans reconnexion | sessions en base |
+| Découverte OIDC paresseuse et retentée | Symphony démarre même si l'IdP est absent ; `discovery_url` sépare l'URL interne de l'issuer vu par le navigateur | découverte au démarrage, bloquante |
 | Kubernetes via Argo CD (prévu) | Symphony écrit des manifests, Argo CD applique : fidèle au principe de délégation | appels directs à l'API Kubernetes |
 
 ## Écarts avec la proposition KoreIDP
@@ -162,7 +183,7 @@ implémentations n'en savent rien.
 | Configuration déclarative dans un repo Git | **fait**, avec rechargement à chaud |
 | Drivers Go stricts, pas de plugins | **fait** (4 interfaces, 7 implémentations) |
 | L'IDP n'exécute pas de `kubectl apply` | respecté pour Kubernetes (Argo CD, v0.4) ; le runtime Docker local déploie directement, pour la démo |
-| OIDC exclusif, RBAC par groupes | prévu en v0.3 (Keycloak) |
+| OIDC exclusif, RBAC par groupes | **fait** (Keycloak en démo, tout fournisseur OIDC ; sans section `auth`, mode développement) |
 | Vault pour les secrets | prévu en v0.6 |
 | Tâches asynchrones PENDING → RUNNING → SUCCESS via webhooks CI | prévu en v0.5 |
 | `/metrics` Prometheus | **fait** (API, providers, rechargements) |

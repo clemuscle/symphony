@@ -6,6 +6,12 @@ Compter 10 minutes, dont 3 à 4 d'attente de pipeline.
 Prérequis : `./demo/up.sh` a fini et affiche les URL de Symphony et de GitLab. Les exemples
 ci-dessous utilisent les ports par défaut (Symphony sur 8080, GitLab sur 8929).
 
+## 0. Se connecter (30 s)
+
+Ouvrir http://localhost:8080 : Symphony renvoie vers Keycloak. Se connecter en **bob**
+(mot de passe `bob`, rôle developer). L'en-tête affiche l'utilisateur et son rôle ; le
+navigateur n'a reçu qu'un cookie de session, aucun jeton.
+
 ## 1. Le catalogue (30 s)
 
 Ouvrir **Catalogue** sur http://localhost:8080 : quatre services d'exemple, avec équipe,
@@ -50,7 +56,15 @@ différent du dossier : le golden path disparaît de la liste, les autres resten
 provider : il disparaît de `GET /api/v1/providers` en moins de 15 s. Une configuration
 invalide (YAML cassé) est refusée, et la précédente reste en place.
 
-## 5. Observer (30 s)
+## 5. Les rôles (1 min)
+
+**Déconnexion**, puis connexion en **carol** (viewer) : catalogue et projets visibles,
+mais plus de bouton « Nouveau projet » ni de formulaire de déploiement ; l'API refuse de
+toute façon (`403`). **dave** est connecté mais sans rôle : Symphony le lui dit. **alice**
+(admin) peut supprimer un projet et lire l'audit (`/api/v1/audit`), qui montre que `hello-api` a été créé
+par `bob@demo.symphony`.
+
+## 6. Observer (30 s)
 
 http://localhost:8080/metrics : requêtes de l'API par route, appels à GitLab et à Docker par
 méthode (durée, erreurs), rechargements du catalogue, des templates et de la configuration.

@@ -5,10 +5,13 @@
 #   3. initialise GitLab : Auto DevOps désactivé, token API, repos
 #      root/symphony-config et root/symphony-templates (contenu de demo/gitlab/),
 #      runner enregistré
-#   4. démarre Symphony et attend qu'il ait chargé golden paths et catalogue
+#   4. démarre Keycloak (realm symphony : alice admin, bob developer,
+#      carol viewer, dave sans rôle)
+#   5. démarre Symphony et attend qu'il ait chargé golden paths et catalogue
 #
 # Rejouable : chaque étape vérifie ce qui existe déjà.
-# Ports réglables : GITLAB_PORT=18929 REGISTRY_PORT=15050 SYMPHONY_PORT=18080 ./demo/up.sh
+# Ports réglables : GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 \
+#   SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 ./demo/up.sh
 # Arrêt : ./demo/down.sh
 
 set -euo pipefail
@@ -26,13 +29,18 @@ GITLAB_PORT=${GITLAB_PORT:-$(saved GITLAB_PORT)}; GITLAB_PORT=${GITLAB_PORT:-892
 REGISTRY_PORT=${REGISTRY_PORT:-$(saved REGISTRY_PORT)}; REGISTRY_PORT=${REGISTRY_PORT:-5050}
 GITLAB_SSH_PORT=${GITLAB_SSH_PORT:-$(saved GITLAB_SSH_PORT)}; GITLAB_SSH_PORT=${GITLAB_SSH_PORT:-2224}
 SYMPHONY_PORT=${SYMPHONY_PORT:-$(saved SYMPHONY_PORT)}; SYMPHONY_PORT=${SYMPHONY_PORT:-8080}
+KEYCLOAK_PORT=${KEYCLOAK_PORT:-$(saved KEYCLOAK_PORT)}; KEYCLOAK_PORT=${KEYCLOAK_PORT:-8180}
 SYMPHONY_IMAGE=${SYMPHONY_IMAGE:-$(saved SYMPHONY_IMAGE)}; SYMPHONY_IMAGE=${SYMPHONY_IMAGE:-ghcr.io/clemuscle/symphony:latest}
 GITLAB_TOKEN=$(saved GITLAB_TOKEN)
 GITLAB_ROOT_PASSWORD=$(saved GITLAB_ROOT_PASSWORD)
-GITLAB_ROOT_PASSWORD=${GITLAB_ROOT_PASSWORD:-Sy-$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 20)}
+random() { head -c 64 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c "$1"; }
+GITLAB_ROOT_PASSWORD=${GITLAB_ROOT_PASSWORD:-Sy-$(random 20)}
+KEYCLOAK_ADMIN_PASSWORD=$(saved KEYCLOAK_ADMIN_PASSWORD); KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-$(random 20)}
+SESSION_SECRET=$(saved SESSION_SECRET); SESSION_SECRET=${SESSION_SECRET:-$(random 48)}
 
 GITLAB_URL="http://localhost:${GITLAB_PORT}"
 SYMPHONY_URL="http://localhost:${SYMPHONY_PORT}"
+KEYCLOAK_URL="http://localhost:${KEYCLOAK_PORT}"
 
 write_env() {
   cat > .env <<EOF
@@ -41,7 +49,10 @@ GITLAB_PORT=${GITLAB_PORT}
 REGISTRY_PORT=${REGISTRY_PORT}
 GITLAB_SSH_PORT=${GITLAB_SSH_PORT}
 SYMPHONY_PORT=${SYMPHONY_PORT}
+KEYCLOAK_PORT=${KEYCLOAK_PORT}
 SYMPHONY_IMAGE=${SYMPHONY_IMAGE}
+KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
+SESSION_SECRET=${SESSION_SECRET}
 GITLAB_ROOT_PASSWORD=${GITLAB_ROOT_PASSWORD}
 GITLAB_TOKEN=${GITLAB_TOKEN}
 EOF
@@ -66,18 +77,22 @@ fi
 # Un port pris par autre chose que la démo elle-même = conflit
 running=$($COMPOSE ps --services --status running 2>/dev/null || true)
 if [ -z "$running" ] && command -v ss >/dev/null 2>&1; then
-  for p in "$GITLAB_PORT" "$REGISTRY_PORT" "$GITLAB_SSH_PORT" "$SYMPHONY_PORT"; do
+  for p in "$GITLAB_PORT" "$REGISTRY_PORT" "$GITLAB_SSH_PORT" "$SYMPHONY_PORT" "$KEYCLOAK_PORT"; do
     ss -ltn | awk '{print $4}' | grep -q ":${p}\$" \
-      && fail "port ${p} déjà utilisé ; choisir d'autres ports, ex. GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18080 ./demo/up.sh"
+      && fail "port ${p} déjà utilisé ; choisir d'autres ports, ex. GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 ./demo/up.sh"
   done
 fi
 
 write_env
 
+# Realm Keycloak : les URL de retour dépendent du port de Symphony
+mkdir -p keycloak/import
+sed "s|__SYMPHONY_URL__|${SYMPHONY_URL}|g" keycloak/realm-symphony.template.json > keycloak/import/realm-symphony.json
+
 # ── 2. Infra ──────────────────────────────────────────────────────────────────
 
-info "Démarrage de PostgreSQL, GitLab CE et du runner…"
-$COMPOSE up -d postgres gitlab gitlab-runner >/dev/null
+info "Démarrage de PostgreSQL, GitLab CE, du runner et de Keycloak…"
+$COMPOSE up -d postgres gitlab gitlab-runner keycloak >/dev/null
 
 info "Attente de GitLab (3 à 5 min au premier démarrage)…"
 for i in $(seq 90); do
@@ -148,24 +163,41 @@ else
   ok "Runner enregistré"
 fi
 
-# ── 4. Symphony ───────────────────────────────────────────────────────────────
+# ── 4. Keycloak ───────────────────────────────────────────────────────────────
+
+for i in $(seq 60); do
+  curl -sf -o /dev/null "$KEYCLOAK_URL/realms/symphony/.well-known/openid-configuration" && break
+  [ "$i" = 60 ] && fail "Keycloak ne répond pas : $COMPOSE logs keycloak"
+  sleep 3
+done
+ok "Keycloak prêt : $KEYCLOAK_URL (realm symphony)"
+
+# ── 5. Symphony ───────────────────────────────────────────────────────────────
 
 info "Démarrage de Symphony ($SYMPHONY_IMAGE)…"
 $COMPOSE --profile symphony up -d symphony >/dev/null
+# L'API exige une session : on vérifie avec un jeton de carol (viewer)
+token=$(curl -sf -d grant_type=password -d client_id=symphony -d username=carol -d password=carol \
+  "$KEYCLOAK_URL/realms/symphony/protocol/openid-connect/token" | jq -r .access_token)
+[ -n "$token" ] && [ "$token" != null ] || fail "jeton de démo impossible à obtenir auprès de Keycloak"
+count() { curl -sf -H "Authorization: Bearer $token" "$SYMPHONY_URL/api/v1/$1" 2>/dev/null | jq length 2>/dev/null || echo 0; }
 for i in $(seq 60); do
-  n=$(curl -sf "$SYMPHONY_URL/api/v1/golden-paths" 2>/dev/null | jq length 2>/dev/null || echo 0)
-  [ "${n:-0}" -gt 0 ] && break
-  [ "$i" = 60 ] && fail "Symphony n'a pas chargé les golden paths : $COMPOSE logs symphony"
+  n=$(count golden-paths); m=$(count services)
+  [ "${n:-0}" -gt 0 ] && [ "${m:-0}" -gt 0 ] && break
+  [ "$i" = 60 ] && fail "Symphony n'a pas chargé golden paths et catalogue : $COMPOSE logs symphony"
   sleep 2
 done
-ok "Symphony prêt : $n golden paths, $(curl -sf "$SYMPHONY_URL/api/v1/services" | jq length) services au catalogue"
+ok "Symphony prêt : $n golden paths, $m services au catalogue"
 
 cat <<EOF
 
 $(echo -e "${GREEN}Démo prête${NC}")
 
   Symphony   $SYMPHONY_URL
+             alice (admin) · bob (developer) · carol (viewer) · dave (sans rôle)
+             mot de passe = identifiant
   GitLab     $GITLAB_URL   (root / $GITLAB_ROOT_PASSWORD)
+  Keycloak   $KEYCLOAK_URL/admin   (admin / $KEYCLOAK_ADMIN_PASSWORD)
   Métriques  $SYMPHONY_URL/metrics
 
   Scénario : demo/SCENARIO.md      Arrêt : ./demo/down.sh

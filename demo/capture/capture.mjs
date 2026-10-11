@@ -1,8 +1,10 @@
 // Capture le parcours de démo et l'assemble en GIF (documentation/demo.gif).
-// Prérequis : démo lancée (./demo/up.sh), service hello-api déployé (scénario
-// étapes 2 et 3). Crée le projet orders-api dans la GitLab de démo.
+// Prérequis : démo lancée (./demo/up.sh), un service déployé (scénario
+// étapes 2 et 3, hello-api par défaut). Se connecte en bob (developer) et crée
+// le projet orders-api dans la GitLab de démo.
 //   cd demo/capture && npm install
 //   CHROME=/chemin/vers/chrome SYMPHONY_URL=http://localhost:8080 npm run capture
+// Variables : DEMO_USER (bob), DEPLOYED (hello-api)
 import { chromium } from 'playwright-core'
 import gifenc from 'gifenc'
 const { GIFEncoder, quantize, applyPalette } = gifenc
@@ -23,8 +25,18 @@ async function shot(delay, name) {
   if (name) fs.writeFileSync(`${pngDir}/${String(++n).padStart(2, '0')}-${name}.png`, buf)
 }
 
-// 1. Catalogue
+const user = process.env.DEMO_USER || 'bob'
+const deployed = process.env.DEPLOYED || 'hello-api'
+
+// 0. Connexion via Keycloak (OIDC)
 await page.goto(base + '/')
+await page.waitForSelector('#username')
+await page.fill('#username', user)
+await page.fill('#password', user)
+await shot(1500, 'connexion')
+await page.click('#kc-login')
+
+// 1. Catalogue
 await page.waitForSelector('text=payment-api')
 await shot(2500, 'catalogue')
 
@@ -47,10 +59,10 @@ await page.goto(base + '/')
 await page.waitForSelector('text=orders-api')
 await shot(2000)
 
-// 4. Déploiements : hello-api tourne, formulaire prérempli depuis le registry
+// 4. Déploiements : un service tourne, formulaire prérempli depuis le registry
 await page.goto(base + '/deployments')
-await page.waitForSelector('text=hello-api')
-await page.fill('input[placeholder="mon-api"]', 'hello-api')
+await page.waitForSelector(`text=${deployed}`)
+await page.fill('input[placeholder="mon-api"]', deployed)
 await page.locator('input[placeholder="mon-api"]').blur()
 await page.waitForTimeout(1500)
 await shot(3500, 'deploiements')
