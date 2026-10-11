@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/yourorg/symphony/internal/catalogue"
-	"github.com/yourorg/symphony/internal/database"
-	"github.com/yourorg/symphony/internal/gitops"
-	"github.com/yourorg/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/catalogue"
+	"github.com/clemuscle/symphony/internal/database"
+	"github.com/clemuscle/symphony/internal/gitops"
+	"github.com/clemuscle/symphony/internal/provider"
 )
 
 type CreateProjectRequest struct {

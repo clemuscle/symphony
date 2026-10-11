@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/yourorg/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/provider"
 )
 
 func TestListTags(t *testing.T) {

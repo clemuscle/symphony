@@ -6,11 +6,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/yourorg/symphony/internal/api/handlers"
-	"github.com/yourorg/symphony/internal/catalogue"
-	"github.com/yourorg/symphony/internal/database"
-	"github.com/yourorg/symphony/internal/gitops"
-	"github.com/yourorg/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/api/handlers"
+	"github.com/clemuscle/symphony/internal/catalogue"
+	"github.com/clemuscle/symphony/internal/database"
+	"github.com/clemuscle/symphony/internal/gitops"
+	"github.com/clemuscle/symphony/internal/provider"
 )
 
 type Server struct {

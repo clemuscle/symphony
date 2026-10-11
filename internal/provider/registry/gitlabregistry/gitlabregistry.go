@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yourorg/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/provider"
 )
 
 // Provider : container registry intégré à GitLab. Les images d'un projet

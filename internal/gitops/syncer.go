@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yourorg/symphony/internal/catalogue"
-	"github.com/yourorg/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/catalogue"
+	"github.com/clemuscle/symphony/internal/provider"
 	"gopkg.in/yaml.v3"
 )
 

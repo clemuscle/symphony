@@ -3,9 +3,9 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/yourorg/symphony/internal/database"
-	"github.com/yourorg/symphony/internal/gitops"
-	"github.com/yourorg/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/database"
+	"github.com/clemuscle/symphony/internal/gitops"
+	"github.com/clemuscle/symphony/internal/provider"
 )
 
 func ListGoldenPaths(templates *gitops.TemplateLoader) http.HandlerFunc {

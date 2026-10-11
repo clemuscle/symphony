@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yourorg/symphony/internal/catalogue"
-	"github.com/yourorg/symphony/internal/gitops"
+	"github.com/clemuscle/symphony/internal/catalogue"
+	"github.com/clemuscle/symphony/internal/gitops"
 )
 
 // fakeGitLab sert les fichiers bruts d'un repo (chemin → contenu), comme

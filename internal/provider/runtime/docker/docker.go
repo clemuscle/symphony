@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yourorg/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/provider"
 )
 
 type Provider struct {

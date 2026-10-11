@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yourorg/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/provider"
 )
 
 // Provider est un stub — implémentation complète prévue post-MVP

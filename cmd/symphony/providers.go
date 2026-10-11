@@ -5,15 +5,15 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/yourorg/symphony/internal/config"
-	"github.com/yourorg/symphony/internal/provider"
-	githubci "github.com/yourorg/symphony/internal/provider/ci/githubactions"
-	gitlabci "github.com/yourorg/symphony/internal/provider/ci/gitlabci"
-	gitlabregistry "github.com/yourorg/symphony/internal/provider/registry/gitlabregistry"
-	dockerrt "github.com/yourorg/symphony/internal/provider/runtime/docker"
-	k8srt "github.com/yourorg/symphony/internal/provider/runtime/kubernetes"
-	githubscm "github.com/yourorg/symphony/internal/provider/scm/github"
-	gitlabscm "github.com/yourorg/symphony/internal/provider/scm/gitlab"
+	"github.com/clemuscle/symphony/internal/config"
+	"github.com/clemuscle/symphony/internal/provider"
+	githubci "github.com/clemuscle/symphony/internal/provider/ci/githubactions"
+	gitlabci "github.com/clemuscle/symphony/internal/provider/ci/gitlabci"
+	gitlabregistry "github.com/clemuscle/symphony/internal/provider/registry/gitlabregistry"
+	dockerrt "github.com/clemuscle/symphony/internal/provider/runtime/docker"
+	k8srt "github.com/clemuscle/symphony/internal/provider/runtime/kubernetes"
+	githubscm "github.com/clemuscle/symphony/internal/provider/scm/github"
+	gitlabscm "github.com/clemuscle/symphony/internal/provider/scm/gitlab"
 )
 
 // buildProviders crée les providers de la configuration dans un nouveau
