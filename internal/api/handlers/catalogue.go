@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/provider"
+	"github.com/go-chi/chi/v5"
 )
 
 func ListServices(store *catalogue.Store) http.HandlerFunc {

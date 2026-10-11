@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/provider"
+	"github.com/go-chi/chi/v5"
 )
 
 func ListDeployments(providers *provider.Registry, db *database.DB) http.HandlerFunc {

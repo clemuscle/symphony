@@ -6,11 +6,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/clemuscle/symphony/internal/api"
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/gitops"
+	"github.com/joho/godotenv"
 )
 
 func main() {
