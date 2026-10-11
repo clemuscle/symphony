@@ -71,6 +71,7 @@ redémarrage, comme l'`app-config` de Backstage.
 | `internal/catalogue` | Store en mémoire des services (`kind: Service`) |
 | `internal/database` | PostgreSQL via `database/sql` : `projects`, `pipelines`, `deployments`, `audit_log` ; migrations embarquées |
 | `internal/api` | Routeur chi, handlers par domaine, `/healthz` |
+| `internal/metrics` | Métriques Prometheus sur `/metrics` ; `internal/provider/instrumented` enveloppe chaque provider pour mesurer ses appels |
 | `internal/web` | Front compilé embarqué (`go:embed`), avec repli sur `index.html` pour les routes Vue |
 | `frontend/` | Vue 3 + Vite : pages Catalogue, Projets, Déploiements |
 
@@ -112,6 +113,22 @@ webhook, ou une pipeline avec des entrées typées. Les entrées sont validées 
 requis) et **les clés non déclarées sont refusées**, pour qu'un appelant ne puisse pas
 injecter de variables CI arbitraires.
 
+## Observabilité
+
+`/metrics` (format Prometheus) expose :
+
+| Métrique | Labels | Sert à voir |
+|---|---|---|
+| `symphony_http_requests_total`, `symphony_http_request_duration_seconds` | `method`, `route` (motif chi), `status` | trafic, latence et erreurs de l'API |
+| `symphony_provider_calls_total`, `symphony_provider_call_duration_seconds` | `kind`, `provider`, `method`, `result` | santé et lenteur de GitLab, GitHub, Docker… |
+| `symphony_reloads_total`, `symphony_last_successful_reload_timestamp_seconds` | `source` (catalogue, templates, config), `result` (ok, error, refused) | un repo illisible, une config refusée, une synchro arrêtée |
+| `symphony_catalogue_services`, `symphony_golden_paths` | — | ce qui est chargé |
+
+Plus les métriques du runtime Go et du processus. Les routes sont étiquetées par leur motif
+(`/api/v1/projects/{name}`), jamais par le chemin, pour garder un nombre de séries borné.
+Les appels aux providers sont mesurés par des décorateurs posés dans `buildProviders` : les
+implémentations n'en savent rien.
+
 ## Sécurité
 
 | Sujet | Aujourd'hui | Prévu |
@@ -148,7 +165,7 @@ injecter de variables CI arbitraires.
 | OIDC exclusif, RBAC par groupes | prévu en v0.3 (Keycloak) |
 | Vault pour les secrets | prévu en v0.6 |
 | Tâches asynchrones PENDING → RUNNING → SUCCESS via webhooks CI | prévu en v0.5 |
-| `/metrics` Prometheus | prévu en v0.1 |
+| `/metrics` Prometheus | **fait** (API, providers, rechargements) |
 | Repos d'infra séparés des repos applicatifs | repris pour Kubernetes : manifests dans un repo de déploiement (v0.4) |
 | Harbor, Jenkins, Terraform | hors périmètre : registry GitLab, GitLab CI / GitHub Actions |
 | Haute disponibilité multi-réplicas | hors périmètre : l'état en mémoire (catalogue, suppressions en cours) suppose une instance |

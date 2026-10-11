@@ -42,7 +42,9 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
 - `cmd/symphony` : `config.go` (bootstrap, source de config, `configWatcher` qui recharge
   à chaud), `providers.go` (`buildProviders` : un `case` par type de provider), `main.go`.
 - `internal/provider` : interfaces (`interfaces.go`) et `Registry`. Ajouter un type de
-  provider = implémenter l'interface + un `case` dans `providers.go`.
+  provider = implémenter l'interface + un `case` dans `providers.go`, enveloppé par
+  `instrumented.SCM/CI/Registry/Runtime` (mesures pour `/metrics`).
+- `internal/metrics` : métriques Prometheus (`/metrics`, middleware HTTP, `Reload`).
 - `internal/gitops` : `Syncer` (catalogue, `services/` du repo de config) et
   `TemplateLoader` (golden paths, `templates/<nom>/template.yaml` de `symphony-templates`).
   Format des templates : README de ce repo.
@@ -67,6 +69,9 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
   `json` en snake_case.
 - `resolveInputs` refuse les entrées d'action non déclarées (anti-injection de variables
   CI) : ne pas assouplir.
+- Une méthode ajoutée à une interface de provider doit aussi l'être dans
+  `internal/provider/instrumented` : sinon l'embarquement la transmet sans la mesurer.
+- `/metrics` est public tant que l'authentification (v0.3) n'existe pas.
 - Migrations SQL : créer `migrations/00N_*.sql`, ajouter sa variable `//go:embed` **et**
   l'ajouter à la liste dans `db.go`.
 

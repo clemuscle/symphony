@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/clemuscle/symphony/internal/metrics"
 	"github.com/clemuscle/symphony/internal/provider"
 	"gopkg.in/yaml.v3"
 )
@@ -222,11 +223,13 @@ func (l *TemplateLoader) Reload() {
 	scm, err := l.providers.SCM("")
 	if err != nil {
 		slog.Warn("templates: provider SCM, liste précédente conservée", "error", err)
+		metrics.Reload("templates", "error")
 		return
 	}
 	files, err := scm.ListFiles(src.repo, src.branch, src.dir)
 	if err != nil {
 		slog.Warn("templates: liste fichiers, liste précédente conservée", "repo", src.repo, "error", err)
+		metrics.Reload("templates", "error")
 		return
 	}
 
@@ -250,6 +253,7 @@ func (l *TemplateLoader) Reload() {
 		content, err := scm.GetFileContent(src.repo, src.branch, filePath)
 		if err != nil {
 			slog.Warn("templates: lecture, liste précédente conservée", "path", filePath, "error", err)
+			metrics.Reload("templates", "error")
 			return
 		}
 		gp, err := parseTemplate(dir, content)
@@ -279,6 +283,8 @@ func (l *TemplateLoader) Reload() {
 	changed := report != l.lastReport
 	l.lastReport = report
 	l.mu.Unlock()
+	metrics.Reload("templates", "ok")
+	metrics.GoldenPaths.Set(float64(len(goldenPaths)))
 
 	// Rechargé toutes les 15 s : on ne journalise que ce qui change
 	if changed {

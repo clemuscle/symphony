@@ -33,7 +33,7 @@ Objectif : un repo propre, une CI verte, un binaire unique observable.
       publiée sur `ghcr.io/clemuscle/symphony`
 - [x] Binaire unique : le front compilé embarqué avec `go:embed`, servi par le serveur Go
       (même origine, plus besoin de `VITE_API_URL` en production)
-- [ ] `/metrics` Prometheus : requêtes HTTP (latence, codes), appels aux providers (erreurs,
+- [x] `/metrics` Prometheus : requêtes HTTP (latence, codes), appels aux providers (erreurs,
       latence), état des rechargements (catalogue, templates, configuration)
 - [ ] `CHANGELOG.md`, tag `v0.1`
 

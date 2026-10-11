@@ -9,6 +9,7 @@ import (
 	"github.com/clemuscle/symphony/internal/provider"
 	githubci "github.com/clemuscle/symphony/internal/provider/ci/githubactions"
 	gitlabci "github.com/clemuscle/symphony/internal/provider/ci/gitlabci"
+	"github.com/clemuscle/symphony/internal/provider/instrumented"
 	gitlabregistry "github.com/clemuscle/symphony/internal/provider/registry/gitlabregistry"
 	dockerrt "github.com/clemuscle/symphony/internal/provider/runtime/docker"
 	k8srt "github.com/clemuscle/symphony/internal/provider/runtime/kubernetes"
@@ -17,7 +18,7 @@ import (
 )
 
 // buildProviders crée les providers de la configuration dans un nouveau
-// registry. Un type inconnu est ignoré avec un warning ; sans provider SCM
+// registry, enveloppés pour mesurer leurs appels (/metrics). Un type inconnu est ignoré avec un warning ; sans provider SCM
 // par défaut (catalogue et templates en dépendent), la configuration est refusée.
 func buildProviders(cfg *config.Config) (*provider.Registry, error) {
 	providers := provider.NewRegistry()
@@ -28,15 +29,15 @@ func buildProviders(cfg *config.Config) (*provider.Registry, error) {
 			slog.Warn("provider SCM ignoré", "id", def.ID, "error", err)
 			continue
 		}
-		providers.RegisterSCM(p, def.Default)
+		providers.RegisterSCM(instrumented.SCM(p), def.Default)
 	}
 
 	for _, def := range cfg.Providers.CI {
 		switch def.Type {
 		case "gitlab_ci":
-			providers.RegisterCI(gitlabci.New(def.ID, def.Config["url"], gitlabToken(def)), def.Default)
+			providers.RegisterCI(instrumented.CI(gitlabci.New(def.ID, def.Config["url"], gitlabToken(def))), def.Default)
 		case "github_actions":
-			providers.RegisterCI(githubci.New(def.ID, os.Getenv(def.Config["token_env"])), def.Default)
+			providers.RegisterCI(instrumented.CI(githubci.New(def.ID, os.Getenv(def.Config["token_env"]))), def.Default)
 		default:
 			slog.Warn("provider CI ignoré", "id", def.ID, "error", fmt.Sprintf("type %q inconnu", def.Type))
 		}
@@ -45,7 +46,7 @@ func buildProviders(cfg *config.Config) (*provider.Registry, error) {
 	for _, def := range cfg.Providers.Registry {
 		switch def.Type {
 		case "gitlab_registry":
-			providers.RegisterRegistry(gitlabregistry.New(def.ID, def.Config["url"], def.Config["registry_host"], gitlabToken(def)), def.Default)
+			providers.RegisterRegistry(instrumented.Registry(gitlabregistry.New(def.ID, def.Config["url"], def.Config["registry_host"], gitlabToken(def))), def.Default)
 		default:
 			slog.Warn("provider registry ignoré", "id", def.ID, "error", fmt.Sprintf("type %q inconnu", def.Type))
 		}
@@ -58,9 +59,9 @@ func buildProviders(cfg *config.Config) (*provider.Registry, error) {
 			if socket == "" {
 				socket = "/var/run/docker.sock"
 			}
-			providers.RegisterRuntime(dockerrt.New(def.ID, socket), def.Default)
+			providers.RegisterRuntime(instrumented.Runtime(dockerrt.New(def.ID, socket)), def.Default)
 		case "kubernetes":
-			providers.RegisterRuntime(k8srt.New(def.ID), def.Default) // stub
+			providers.RegisterRuntime(instrumented.Runtime(k8srt.New(def.ID)), def.Default) // stub
 		default:
 			slog.Warn("provider runtime ignoré", "id", def.ID, "error", fmt.Sprintf("type %q inconnu", def.Type))
 		}
