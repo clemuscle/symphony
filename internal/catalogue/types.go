@@ -24,16 +24,16 @@ type Team struct {
 }
 
 type ServiceSpec struct {
-	Type         string       `yaml:"type"         json:"type"`
-	Language     string       `yaml:"language"     json:"language"`
-	Version      string       `yaml:"version"      json:"version"`
-	Repo         string       `yaml:"repo"         json:"repo"`
-	Registry     string       `yaml:"registry"     json:"registry"`
-	Docs         string       `yaml:"docs"         json:"docs"`
-	Links        []Link       `yaml:"links"        json:"links"`
-	Actions      []Action     `yaml:"actions"      json:"actions"`
-	Dependencies []Dependency `yaml:"dependencies" json:"dependencies"`
-	SLO          SLO          `yaml:"slo"          json:"slo"`
+	Type         string        `yaml:"type"         json:"type"`
+	Language     string        `yaml:"language"     json:"language"`
+	Version      string        `yaml:"version"      json:"version"`
+	Repo         string        `yaml:"repo"         json:"repo"`
+	Registry     string        `yaml:"registry"     json:"registry"`
+	Docs         string        `yaml:"docs"         json:"docs"`
+	Links        []Link        `yaml:"links"        json:"links"`
+	Actions      []Action      `yaml:"actions"      json:"actions"`
+	Dependencies []Dependency  `yaml:"dependencies" json:"dependencies"`
+	SLO          SLO           `yaml:"slo"          json:"slo"`
 	Environments []Environment `yaml:"environments" json:"environments"`
 }
 
@@ -53,14 +53,14 @@ type Action struct {
 }
 
 type Input struct {
-	ID          string   `yaml:"id"          json:"id"`
-	Label       string   `yaml:"label"       json:"label"`
-	Type        string   `yaml:"type"        json:"type"`
-	Required    bool     `yaml:"required"    json:"required"`
-	Default     string   `yaml:"default"     json:"default,omitempty"`
-	Options     []string `yaml:"options"     json:"options,omitempty"`
-	Min         *int     `yaml:"min"         json:"min,omitempty"`
-	Max         *int     `yaml:"max"         json:"max,omitempty"`
+	ID       string   `yaml:"id"          json:"id"`
+	Label    string   `yaml:"label"       json:"label"`
+	Type     string   `yaml:"type"        json:"type"`
+	Required bool     `yaml:"required"    json:"required"`
+	Default  string   `yaml:"default"     json:"default,omitempty"`
+	Options  []string `yaml:"options"     json:"options,omitempty"`
+	Min      *int     `yaml:"min"         json:"min,omitempty"`
+	Max      *int     `yaml:"max"         json:"max,omitempty"`
 }
 
 type Dependency struct {

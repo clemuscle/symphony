@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/provider"
+	"github.com/go-chi/chi/v5"
 )
 
 func TriggerPipeline(providers *provider.Registry, db *database.DB) http.HandlerFunc {

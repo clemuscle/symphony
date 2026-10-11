@@ -74,8 +74,7 @@ cd frontend && npm run dev      # front (npm install d'abord) ; npx vite build p
   GitLab CI et le registry GitLab essaient `token_env`, puis `<scm_ref>_TOKEN`, puis
   `GITLAB_TOKEN` (`gitlabToken`).
 - Les handlers qui modifient quelque chose écrivent dans l'audit (`db.LogAudit`).
-- Plusieurs fichiers dérivent de `gofmt` (reformatage prévu en v0.1) : ne pas reformater
-  du code qu'on ne touche pas.
+- Code formaté avec `gofmt` (vérifié par la CI).
 
 ## Règles de travail
 

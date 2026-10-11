@@ -137,9 +137,9 @@ func (p *Provider) PushFiles(repoPath, branch string, files map[string]string, c
 	actions := make([]map[string]string, 0, len(files))
 	for path, content := range files {
 		actions = append(actions, map[string]string{
-			"action":   "create",
+			"action":    "create",
 			"file_path": path,
-			"content":  content,
+			"content":   content,
 		})
 	}
 

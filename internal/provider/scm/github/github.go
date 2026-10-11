@@ -114,7 +114,9 @@ func (p *Provider) PushFile(repoPath, branch, filePath, content, commitMsg strin
 	existing, status, _ := p.api("GET",
 		fmt.Sprintf("/repos/%s/contents/%s?ref=%s", repoPath, filePath, branch), nil)
 	if status == 200 {
-		var f struct{ SHA string `json:"sha"` }
+		var f struct {
+			SHA string `json:"sha"`
+		}
 		json.Unmarshal(existing, &f)
 		sha = f.SHA
 	}

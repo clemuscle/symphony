@@ -11,22 +11,22 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/provider"
+	"github.com/go-chi/chi/v5"
 )
 
 type CreateProjectRequest struct {
-	Name          string            `json:"name"`
-	Description   string            `json:"description"`
-	Namespace     string            `json:"namespace"`
-	GoldenPathID  string            `json:"golden_path_id"`
-	Port          int               `json:"port"`
-	SCMProvider   string            `json:"scm_provider"`
-	RuntimeProvider string          `json:"runtime_provider"`
-	EnvVars       map[string]string `json:"env_vars"`
+	Name            string            `json:"name"`
+	Description     string            `json:"description"`
+	Namespace       string            `json:"namespace"`
+	GoldenPathID    string            `json:"golden_path_id"`
+	Port            int               `json:"port"`
+	SCMProvider     string            `json:"scm_provider"`
+	RuntimeProvider string            `json:"runtime_provider"`
+	EnvVars         map[string]string `json:"env_vars"`
 }
 
 func CreateProject(providers *provider.Registry, db *database.DB, templates *gitops.TemplateLoader, syncer *gitops.Syncer) http.HandlerFunc {
