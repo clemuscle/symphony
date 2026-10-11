@@ -1,0 +1,48 @@
+# Configuration de Symphony (démo), relue toutes les 15 s : une version
+# valide est appliquée à chaud, une version invalide est refusée et la
+# précédente reste en place. Les ${VAR} viennent de l'environnement de
+# Symphony ; les tokens n'apparaissent jamais ici (token_env).
+
+providers:
+  scm:
+    - id: gitlab-local
+      type: gitlab
+      default: true
+      config:
+        url: http://gitlab:${GITLAB_PORT}
+        token_env: GITLAB_TOKEN
+
+  ci:
+    - id: gitlab-ci
+      type: gitlab_ci
+      default: true
+      config:
+        url: http://gitlab:${GITLAB_PORT}
+        scm_ref: gitlab-local
+
+  registry:
+    - id: gitlab-registry
+      type: gitlab_registry
+      default: true
+      config:
+        url: http://gitlab:${GITLAB_PORT}
+        # Vu depuis la machine : c'est le daemon Docker qui tire les images
+        registry_host: localhost:${REGISTRY_PORT}
+        scm_ref: gitlab-local
+
+  runtime:
+    - id: docker-local
+      type: docker
+      default: true
+      config:
+        socket: /var/run/docker.sock
+
+catalogue:
+  repo: root/symphony-config
+  branch: main
+  path: services
+
+templates:
+  repo: root/symphony-templates
+  branch: main
+  path: templates

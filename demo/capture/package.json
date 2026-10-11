@@ -1,0 +1,14 @@
+{
+  "name": "symphony-demo-capture",
+  "private": true,
+  "type": "module",
+  "description": "Régénère documentation/demo.gif à partir d'une démo en marche",
+  "scripts": {
+    "capture": "node capture.mjs ${SYMPHONY_URL:-http://localhost:8080} ${CHROME:?chemin de Chrome/Chromium} ../../documentation/demo.gif ${PNG_DIR:-/tmp}"
+  },
+  "dependencies": {
+    "gifenc": "1.0.3",
+    "playwright-core": "1.58.2",
+    "pngjs": "7.0.0"
+  }
+}
