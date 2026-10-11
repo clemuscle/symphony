@@ -58,13 +58,8 @@ func main() {
 
 	// Catalogue + GitOps syncer
 	store := catalogue.NewStore()
-	syncer := gitops.NewSyncer(
-		providers,
-		store,
-		cfg.Catalogue.Repo,
-		getEnv("CATALOGUE_BRANCH", "main"),
-		cfg.Catalogue.Path,
-	)
+	catRepo, catBranch, catDir := catalogueSource(cfg)
+	syncer := gitops.NewSyncer(providers, store, catRepo, catBranch, catDir)
 	go syncer.Start()
 
 	// Golden paths : rechargés depuis le repo de templates

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/clemuscle/symphony/internal/catalogue"
+	"github.com/clemuscle/symphony/internal/config"
 	"github.com/clemuscle/symphony/internal/gitops"
 )
 
@@ -146,4 +147,18 @@ catalogue:
 	content = []byte(v1)
 	w.check()
 	assertSCM("gitlab-a")
+}
+
+func TestCatalogueSource(t *testing.T) {
+	cfg, err := config.Parse([]byte("catalogue:\n  repo: root/c\n  branch: dev\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repo, branch, dir := catalogueSource(cfg); repo != "root/c" || branch != "dev" || dir != "services" {
+		t.Errorf("catalogueSource = %s %s %s", repo, branch, dir)
+	}
+	t.Setenv("CATALOGUE_BRANCH", "hotfix")
+	if _, branch, _ := catalogueSource(cfg); branch != "hotfix" {
+		t.Errorf("CATALOGUE_BRANCH ignoré : %s", branch)
+	}
 }
