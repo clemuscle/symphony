@@ -9,7 +9,9 @@ import (
 
 	"github.com/clemuscle/symphony/internal/config"
 	"github.com/clemuscle/symphony/internal/gitops"
+	"github.com/clemuscle/symphony/internal/metrics"
 	"github.com/clemuscle/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/provider/instrumented"
 )
 
 // configSource lit la configuration : dans le repo Git désigné par le
@@ -45,6 +47,7 @@ func newConfigSource(path string) (*configSource, error) {
 	if err != nil {
 		return nil, fmt.Errorf("config_source.scm: %w", err)
 	}
+	scm = instrumented.SCM(scm)
 	repo, branch, file := src.Repo, orDefault(src.Branch, "main"), orDefault(src.Path, "symphony.yaml")
 	return &configSource{
 		desc: []any{"bootstrap", path, "repo", repo, "branch", branch, "path", file},
@@ -115,6 +118,7 @@ type configWatcher struct {
 	interval  time.Duration
 
 	last    []byte // dernier contenu traité (appliqué ou refusé)
+	refused bool   // le dernier contenu traité a été refusé
 	lastErr string // dernière erreur de lecture, pour ne la journaliser qu'une fois
 }
 
@@ -129,6 +133,7 @@ func (w *configWatcher) check() {
 	cfg, raw, err := w.source.load()
 	if raw == nil {
 		// Lecture impossible (GitLab injoignable…) : on réessaiera
+		metrics.Reload("config", "error")
 		if err.Error() != w.lastErr {
 			w.lastErr = err.Error()
 			slog.Warn("configuration illisible, configuration en place conservée", "error", err)
@@ -136,17 +141,23 @@ func (w *configWatcher) check() {
 		return
 	}
 	w.lastErr = ""
-	if bytes.Equal(raw, w.last) {
-		return
-	}
-	w.last = raw
 
-	if err == nil {
-		err = w.apply(cfg)
+	if !bytes.Equal(raw, w.last) {
+		w.last = raw
+		if err == nil {
+			err = w.apply(cfg)
+		}
+		w.refused = err != nil
+		if err != nil {
+			slog.Error("configuration refusée, configuration en place conservée", "error", err)
+		}
 	}
-	if err != nil {
-		slog.Error("configuration refusée, configuration en place conservée", "error", err)
-		return
+	// Tant qu'une version refusée reste dans Git, la configuration en place
+	// n'est pas la dernière : on continue de le compter
+	if w.refused {
+		metrics.Reload("config", "refused")
+	} else {
+		metrics.Reload("config", "ok")
 	}
 }
 

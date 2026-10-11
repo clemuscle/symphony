@@ -8,6 +8,7 @@ import (
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/gitops"
+	"github.com/clemuscle/symphony/internal/metrics"
 	"github.com/clemuscle/symphony/internal/provider"
 	"github.com/clemuscle/symphony/internal/web"
 	"github.com/go-chi/chi/v5"
@@ -41,11 +42,13 @@ func NewServer(
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(requestLogger)
+	r.Use(metrics.Middleware) // avant Recoverer : une panique rattrapée compte comme un 500
 	r.Use(middleware.Recoverer)
 	r.Use(corsMiddleware)
 
-	// Health
+	// Health et métriques Prometheus
 	r.Get("/healthz", s.healthz)
+	r.Handle("/metrics", metrics.Handler())
 
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {

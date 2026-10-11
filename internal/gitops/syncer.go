@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/clemuscle/symphony/internal/catalogue"
+	"github.com/clemuscle/symphony/internal/metrics"
 	"github.com/clemuscle/symphony/internal/provider"
 	"gopkg.in/yaml.v3"
 )
@@ -122,11 +123,13 @@ func (s *Syncer) sync() {
 	scm, src, err := s.current()
 	if err != nil {
 		slog.Warn("gitops sync: provider SCM", "error", err)
+		metrics.Reload("catalogue", "error")
 		return
 	}
 	files, err := scm.ListFiles(src.configRepo, src.branch, src.servicesDir)
 	if err != nil {
 		slog.Warn("gitops sync: liste fichiers", "error", err)
+		metrics.Reload("catalogue", "error")
 		return
 	}
 
@@ -157,6 +160,8 @@ func (s *Syncer) sync() {
 
 	before := s.store.Count()
 	s.store.Replace(services)
+	metrics.Reload("catalogue", "ok")
+	metrics.CatalogueServices.Set(float64(len(services)))
 	after := s.store.Count()
 
 	if before != after {
