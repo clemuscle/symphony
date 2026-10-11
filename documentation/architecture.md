@@ -24,7 +24,7 @@ dit ce qui en a été repris, adapté ou écarté.
 4. **Aucun secret dans la configuration.** Les fichiers ne contiennent que des noms de
    variables d'environnement (`token_env`).
 5. **Rester léger.** Pas de SDK lourd (l'API Docker est appelée directement sur le socket),
-   pas d'ORM, un seul binaire et PostgreSQL.
+   pas d'ORM, un seul binaire (front embarqué, image d'environ 10 Mo) et PostgreSQL.
 
 ## Vue d'ensemble
 
@@ -71,6 +71,7 @@ redémarrage, comme l'`app-config` de Backstage.
 | `internal/catalogue` | Store en mémoire des services (`kind: Service`) |
 | `internal/database` | PostgreSQL via `database/sql` : `projects`, `pipelines`, `deployments`, `audit_log` ; migrations embarquées |
 | `internal/api` | Routeur chi, handlers par domaine, `/healthz` |
+| `internal/web` | Front compilé embarqué (`go:embed`), avec repli sur `index.html` pour les routes Vue |
 | `frontend/` | Vue 3 + Vite : pages Catalogue, Projets, Déploiements |
 
 ## Flux principaux
@@ -140,7 +141,7 @@ injecter de variables CI arbitraires.
 
 | KoreIDP | Symphony |
 |---|---|
-| Binaire unique avec la SPA embarquée | front servi à part pour l'instant ; embarqué en v0.1 |
+| Binaire unique avec la SPA embarquée | **fait** (`go:embed`, image `scratch`) |
 | Configuration déclarative dans un repo Git | **fait**, avec rechargement à chaud |
 | Drivers Go stricts, pas de plugins | **fait** (4 interfaces, 7 implémentations) |
 | L'IDP n'exécute pas de `kubectl apply` | respecté pour Kubernetes (Argo CD, v0.4) ; le runtime Docker local déploie directement, pour la démo |
