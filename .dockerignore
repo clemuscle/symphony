@@ -1,0 +1,10 @@
+# Jamais de secrets dans le contexte de build
+.env
+.env.*
+.git
+.claude
+*.tar.gz
+frontend/node_modules
+frontend/dist
+internal/web/dist/*
+!internal/web/dist/.gitkeep

@@ -14,7 +14,9 @@ go build ./...                  # -gcflags=-e pour voir toutes les erreurs
 go vet ./...
 go test -race ./...             # tests unitaires (aucun ne demande GitLab ou Docker)
 go run ./cmd/symphony           # depuis la racine du repo
-cd frontend && npm run dev      # front (npm install d'abord) ; npx vite build pour vérifier
+cd frontend && npm run dev      # front en dev (npm install d'abord), API sur :8080
+cd frontend && npm run build    # compile le front dans internal/web/dist, embarqué au prochain go build
+docker build -t symphony .      # image complète (front + binaire), ~10 Mo
 ```
 
 ## Pour lancer le serveur
@@ -28,8 +30,10 @@ cd frontend && npm run dev      # front (npm install d'abord) ; npx vite build p
   `symphony123`), `PORT` (8080), `CATALOGUE_BRANCH` (surcharge `catalogue.branch`).
 - **PostgreSQL** (conteneur `symphony-postgres`), **GitLab** sur `http://gitlab.local:8929`,
   **socket Docker** ; le daemon Docker doit déclarer `gitlab.local:5050` en insecure registry.
-- Front : l'URL de l'API vient de `VITE_API_URL` au build (`frontend/.env.local`, ignoré
-  par git), `http://localhost:8080` par défaut, vide = même origine.
+- Front : servi par le binaire (`internal/web`, `go:embed`) ; sans `npm run build`, `/`
+  affiche une page d'aide. Le build de production appelle l'API sur la même origine ;
+  `npm run dev` l'appelle sur `http://localhost:8080`. `VITE_API_URL`
+  (`frontend/.env.local`) remplace les deux.
 - Le serveur s'arrête si la configuration est illisible au démarrage ou s'il n'y a pas de
   provider SCM par défaut.
 
@@ -42,7 +46,8 @@ cd frontend && npm run dev      # front (npm install d'abord) ; npx vite build p
 - `internal/gitops` : `Syncer` (catalogue, `services/` du repo de config) et
   `TemplateLoader` (golden paths, `templates/<nom>/template.yaml` de `symphony-templates`).
   Format des templates : README de ce repo.
-- `internal/api` : toutes les routes dans `server.go`, un fichier de handlers par domaine.
+- `internal/api` : toutes les routes dans `server.go`, un fichier de handlers par domaine ;
+  ce qui n'est pas une route d'API va au front (`web.Handler`, `index.html` pour les routes Vue).
   Chaque appel de `frontend/src/api.js` a sa route.
 
 ## Pièges

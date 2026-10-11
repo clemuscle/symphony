@@ -9,6 +9,7 @@ import (
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/web"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -82,6 +83,9 @@ func NewServer(
 		r.Post("/sync", handlers.ForceSync(syncer, templates))
 		r.Get("/audit", handlers.ListAudit(db))
 	})
+
+	// Front Vue embarqué : tout ce qui n'est pas une route de l'API
+	r.Handle("/*", web.Handler())
 
 	slog.Info("API server configuré")
 	return r
