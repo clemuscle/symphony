@@ -37,11 +37,16 @@ func jsonError(w http.ResponseWriter, code int, msg string) {
 }
 
 // Authenticate exige un utilisateur reconnu et le place dans le contexte.
-// Authentification désactivée : utilisateur « anonyme » avec le rôle admin.
+// Authentification désactivée : utilisateur « anonyme » avec le rôle admin,
+// mais une page d'un autre site ne peut toujours rien modifier.
 func (h *Holder) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		a := h.get().Auth
 		if a == nil {
+			if !safeMethod(r.Method) && !sameOrigin(r) {
+				jsonError(w, http.StatusForbidden, "origine de la requête refusée")
+				return
+			}
 			next.ServeHTTP(w, r.WithContext(withUser(r.Context(), anonymous)))
 			return
 		}
