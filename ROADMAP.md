@@ -37,7 +37,7 @@ Objectif : un repo propre, une CI verte, un binaire unique observable.
       latence), état des rechargements (catalogue, templates, configuration)
 - [x] `CHANGELOG.md`, tag `v0.1`
 
-Fini quand : la CI passe sur `main`, `docker run ghcr.io/clemuscle/symphony` sert l'UI et
+Fini quand : la CI passe sur `v2`, `docker run ghcr.io/clemuscle/symphony` sert l'UI et
 l'API sur un seul port, `/metrics` répond.
 
 ## v0.2 — Démo
