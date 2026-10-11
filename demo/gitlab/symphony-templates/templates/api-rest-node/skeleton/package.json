@@ -1,0 +1,30 @@
+{
+  "name": "{{SERVICE_NAME}}",
+  "version": "1.0.0",
+  "description": "{{SERVICE_DESCRIPTION}}",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest --coverage",
+    "test:ci": "jest --coverage --ci --forceExit"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "winston": "^3.13.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0",
+    "nodemon": "^3.1.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageThreshold": {
+      "global": {
+        "lines": 70
+      }
+    }
+  }
+}
+

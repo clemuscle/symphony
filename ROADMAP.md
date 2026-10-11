@@ -44,16 +44,16 @@ l'API sur un seul port, `/metrics` répond.
 
 Objectif : comprendre Symphony en 2 minutes, l'essayer en une commande.
 
-- [ ] `docker compose` : GitLab CE, GitLab Runner, PostgreSQL, Symphony (≈ 4 Go de RAM,
+- [x] `docker compose` : GitLab CE, GitLab Runner, PostgreSQL, Symphony (≈ 4 Go de RAM,
       prérequis documentés)
-- [ ] Script d'initialisation : token GitLab, repos `symphony-config` et
+- [x] Script d'initialisation : token GitLab, repos `symphony-config` et
       `symphony-templates` avec les golden paths d'exemple, runner enregistré
-- [ ] README en français : pitch, captures, GIF du parcours complet (golden path → repo →
+- [x] README en français : pitch, captures, GIF du parcours complet (golden path → repo →
       pipeline → déploiement → catalogue), schéma d'architecture, démarrage rapide
-- [ ] Scénario de démo écrit (ce qu'on montre, dans quel ordre)
+- [x] Scénario de démo écrit (ce qu'on montre, dans quel ordre)
 
-Fini quand : sur une machine vierge avec Docker, `docker compose up` puis le script donnent
-une instance où l'on crée et déploie un service depuis l'UI.
+Fini quand : sur une machine avec Docker, `./demo/up.sh` donne une instance où l'on crée et
+déploie un service depuis l'UI.
 
 ## v0.3 — Sécurité
 

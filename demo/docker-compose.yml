@@ -1,0 +1,104 @@
+# Démo Symphony : GitLab CE + Runner + PostgreSQL + Symphony.
+#
+# Ne pas lancer directement : ./demo/up.sh démarre GitLab, l'initialise
+# (token, repos symphony-config et symphony-templates, runner) puis Symphony.
+#
+# Les ports sont réglables (variables d'environnement ou demo/.env) pour
+# cohabiter avec une autre GitLab :
+#   GITLAB_PORT (8929), REGISTRY_PORT (5050), GITLAB_SSH_PORT (2224), SYMPHONY_PORT (8080)
+#
+# GitLab est vu sous deux noms : http://gitlab:<port> depuis les conteneurs
+# (Symphony, runner), http://localhost:<port> depuis la machine (navigateur,
+# jobs CI en réseau hôte, daemon Docker qui tire les images). Le port interne
+# est donc le même que le port publié.
+
+name: symphony-demo
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: symphony
+      POSTGRES_PASSWORD: symphony123
+      POSTGRES_DB: symphony
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U symphony"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gitlab:
+    image: gitlab/gitlab-ce:18.10.0-ce.0
+    hostname: gitlab
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://localhost:${GITLAB_PORT:-8929}'
+        gitlab_rails['gitlab_shell_ssh_port'] = ${GITLAB_SSH_PORT:-2224}
+        # Généré par up.sh (demo/.env), pris en compte au premier démarrage seulement
+        gitlab_rails['initial_root_password'] = '${GITLAB_ROOT_PASSWORD:?lancer ./demo/up.sh}'
+        # Registry sur localhost : le daemon Docker l'accepte en HTTP sans
+        # réglage « insecure-registries »
+        registry_external_url 'http://localhost:${REGISTRY_PORT:-5050}'
+        # Auto DevOps ajouterait ses propres jobs à côté de ceux du golden path
+        # (up.sh le désactive aussi en base : ce réglage seul ne suffit pas)
+        gitlab_rails['auto_devops_enabled'] = false
+        # Allégé pour un laptop
+        puma['worker_processes'] = 2
+        sidekiq['concurrency'] = 5
+        prometheus_monitoring['enable'] = false
+        alertmanager['enable'] = false
+        node_exporter['enable'] = false
+        redis_exporter['enable'] = false
+        postgres_exporter['enable'] = false
+        gitlab_exporter['enable'] = false
+    ports:
+      - "${GITLAB_PORT:-8929}:${GITLAB_PORT:-8929}"
+      - "${REGISTRY_PORT:-5050}:${REGISTRY_PORT:-5050}"
+      - "${GITLAB_SSH_PORT:-2224}:22"
+    volumes:
+      - gitlab_config:/etc/gitlab
+      - gitlab_logs:/var/log/gitlab
+      - gitlab_data:/var/opt/gitlab
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:${GITLAB_PORT:-8929}/users/sign_in"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 180s
+
+  gitlab-runner:
+    image: gitlab/gitlab-runner:v18.11.3
+    volumes:
+      # Les jobs utilisent le daemon Docker de la machine (build et push d'image)
+      - /var/run/docker.sock:/var/run/docker.sock
+      - runner_config:/etc/gitlab-runner
+    restart: unless-stopped
+
+  symphony:
+    # Image publiée par défaut ; SYMPHONY_IMAGE=symphony:local pour tester un build local
+    image: ${SYMPHONY_IMAGE:-ghcr.io/clemuscle/symphony:latest}
+    profiles: ["symphony"] # démarré par up.sh une fois GitLab initialisé
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env # écrit par up.sh (GITLAB_TOKEN)
+    environment:
+      DB_HOST: postgres
+      GITLAB_PORT: ${GITLAB_PORT:-8929}
+      REGISTRY_PORT: ${REGISTRY_PORT:-5050}
+    ports:
+      - "${SYMPHONY_PORT:-8080}:8080"
+    volumes:
+      - ./symphony.yaml:/symphony.yaml:ro
+      # Runtime docker-local : déploie les services sur le daemon de la machine
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  postgres_data:
+  gitlab_config:
+  gitlab_logs:
+  gitlab_data:
+  runner_config:

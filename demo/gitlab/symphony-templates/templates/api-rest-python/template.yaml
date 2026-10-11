@@ -1,0 +1,17 @@
+apiVersion: symphony/v1
+kind: GoldenPath
+metadata:
+  name: api-rest-python
+  title: API REST Python
+  description: API REST avec FastAPI, pytest, logging structuré et métriques Prometheus
+  icon: python
+spec:
+  language: python
+  type: api
+  providers:
+    scm: gitlab-local
+    ci: gitlab-ci
+    registry: gitlab-registry
+    runtime: docker-local
+  skeleton: skeleton
+  ci_template: ci.gitlab-ci.yml

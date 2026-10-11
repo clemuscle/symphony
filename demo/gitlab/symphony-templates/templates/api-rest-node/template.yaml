@@ -1,0 +1,17 @@
+apiVersion: symphony/v1
+kind: GoldenPath
+metadata:
+  name: api-rest-node
+  title: API REST Node.js
+  description: API REST avec Express, Winston, Jest et métriques Prometheus
+  icon: node
+spec:
+  language: node
+  type: api
+  providers:
+    scm: gitlab-local
+    ci: gitlab-ci
+    registry: gitlab-registry
+    runtime: docker-local
+  skeleton: skeleton
+  ci_template: ci.gitlab-ci.yml

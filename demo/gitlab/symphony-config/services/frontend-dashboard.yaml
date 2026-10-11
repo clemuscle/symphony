@@ -1,0 +1,28 @@
+apiVersion: symphony/v1
+kind: Service
+metadata:
+  name: "frontend-dashboard"
+  owner: "team-product"
+  team:
+    slack: "#team-product"
+    email: "product@company.com"
+  tags:
+    - "frontend"
+    - "vue"
+    - "dashboard"
+  tier: "standard"
+  lifecycle: "production"
+spec:
+  type: "frontend"
+  language: "node"
+  version: "3.1.0"
+  links:
+    - title: "Production"
+      url: "https://dashboard.company.com"
+      icon: "web"
+    - title: "Staging"
+      url: "https://staging.dashboard.company.com"
+      icon: "web"
+  slo:
+    availability: "99.5%"
+    latency_p99: "500ms"

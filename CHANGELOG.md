@@ -3,6 +3,23 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
+## v0.2 — Démo
+
+### Ajouté
+- **Démo en une commande** : `./demo/up.sh` démarre GitLab CE, un runner, PostgreSQL et
+  Symphony, puis initialise GitLab (Auto DevOps désactivé, token API, repos
+  `symphony-config` et `symphony-templates` avec 4 golden paths et 4 services d'exemple,
+  runner enregistré). Rejouable ; ports réglables pour cohabiter avec une autre GitLab ;
+  `./demo/down.sh` (`--purge`) arrête ou efface tout, y compris les services déployés.
+- **Scénario de démo** (`demo/SCENARIO.md`) : catalogue, création depuis un golden path,
+  pipeline, déploiement, pilotage par Git, métriques.
+- **README** : pitch, GIF du parcours, schéma d'architecture, choix techniques, démarrage.
+- `demo/capture/` : régénère le GIF du README avec Playwright.
+
+### Corrigé
+- Formulaire de création : le template CI du golden path ne s'affichait plus dans le
+  résumé depuis le nouveau format des templates.
+
 ## v0.1 — Vitrine technique
 
 ### Ajouté

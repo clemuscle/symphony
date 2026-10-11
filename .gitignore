@@ -2,7 +2,7 @@
 go1.22.5.linux-amd64.tar.gz
 *.tar.gz
 .claude/settings.local.json
-frontend/node_modules/
+node_modules/
 frontend/dist/
 internal/web/dist/*
 !internal/web/dist/.gitkeep

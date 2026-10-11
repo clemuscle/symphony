@@ -17,6 +17,7 @@ go run ./cmd/symphony           # depuis la racine du repo
 cd frontend && npm run dev      # front en dev (npm install d'abord), API sur :8080
 cd frontend && npm run build    # compile le front dans internal/web/dist, embarqué au prochain go build
 docker build -t symphony .      # image complète (front + binaire), ~10 Mo
+./demo/up.sh / ./demo/down.sh   # démo complète (GitLab CE + runner + Postgres + Symphony)
 ```
 
 ## Pour lancer le serveur
@@ -48,6 +49,11 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
 - `internal/gitops` : `Syncer` (catalogue, `services/` du repo de config) et
   `TemplateLoader` (golden paths, `templates/<nom>/template.yaml` de `symphony-templates`).
   Format des templates : README de ce repo.
+- `demo/` : `docker-compose.yml`, `up.sh` (démarre et initialise tout, rejouable),
+  `down.sh` (`--purge` efface les données), `SCENARIO.md`. `demo/gitlab/` est le contenu
+  poussé dans la GitLab de démo (`symphony-config`, `symphony-templates`) : le mettre à jour
+  quand on change les golden paths de référence. `demo/capture/` régénère
+  `documentation/demo.gif` (Playwright).
 - `internal/api` : toutes les routes dans `server.go`, un fichier de handlers par domaine ;
   ce qui n'est pas une route d'API va au front (`web.Handler`, `index.html` pour les routes Vue).
   Chaque appel de `frontend/src/api.js` a sa route.
@@ -107,3 +113,8 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
   normal). Déploiements de test : supprimer le conteneur et ses lignes `deployments`.
 - Modifications temporaires d'un repo de config ou de templates : restaurer l'original et
   vérifier qu'il est identique.
+- Démo : la tester sur des ports décalés pour ne pas gêner la GitLab de l'utilisateur
+  (`GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18090`),
+  `SYMPHONY_IMAGE=symphony:local` pour une image construite localement, puis
+  `./demo/down.sh --purge` (~4 Go de RAM). `down.sh` ne supprime que les conteneurs dont
+  l'image vient du registry de la démo.
