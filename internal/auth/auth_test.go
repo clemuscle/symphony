@@ -263,6 +263,14 @@ func TestDisabled(t *testing.T) {
 	if rec.Code != 200 {
 		t.Errorf("authentification désactivée : %d", rec.Code)
 	}
+	// Même sans authentification, une page d'un autre site ne modifie rien
+	req := httptest.NewRequest("POST", "http://localhost:8080/api/v1/sync", nil)
+	req.Header.Set("Origin", "http://evil.test")
+	rec = httptest.NewRecorder()
+	protected(h, RoleAdmin).ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("POST d'un autre site, auth désactivée : %d", rec.Code)
+	}
 }
 
 func TestCORS(t *testing.T) {
