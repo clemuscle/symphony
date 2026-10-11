@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/yourorg/symphony/internal/catalogue"
-	"github.com/yourorg/symphony/internal/config"
 	"github.com/yourorg/symphony/internal/database"
 	"github.com/yourorg/symphony/internal/gitops"
 	"github.com/yourorg/symphony/internal/provider"
@@ -79,19 +78,8 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			return
 		}
 
-		// 1. Créer le repo
-		repo, err := scm.CreateRepo(provider.CreateRepoRequest{
-			Name:        req.Name,
-			Description: req.Description,
-			Namespace:   req.Namespace,
-			Private:     true,
-		})
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "création repo: "+err.Error())
-			return
-		}
-
-		// 2. Récupérer les fichiers de scaffold
+		// 1. Récupérer le skeleton et le template CI avant de créer le repo :
+		// un template cassé ne laisse pas de repo vide derrière lui
 		scaffoldFiles, err := templates.GetScaffoldFiles(*gp)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "scaffold: "+err.Error())
@@ -105,7 +93,7 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			processedFiles[path] = content
 		}
 
-		// 3. Ajouter le template CI au scaffold, à l'emplacement attendu par le provider CI
+		// Ajouter le template CI au scaffold, à l'emplacement attendu par le provider CI
 		ciContent, err := templates.GetCITemplate(*gp)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "ci template: "+err.Error())
@@ -113,7 +101,19 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 		}
 		processedFiles[ci.ConfigFile()] = replacePlaceholders(ciContent, req.Name, req.Description, gp, req.Port)
 
-		// 4. Pousser scaffold + CI en un seul commit : ce push lance la première
+		// 2. Créer le repo
+		repo, err := scm.CreateRepo(provider.CreateRepoRequest{
+			Name:        req.Name,
+			Description: req.Description,
+			Namespace:   req.Namespace,
+			Private:     true,
+		})
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "création repo: "+err.Error())
+			return
+		}
+
+		// 3. Pousser scaffold + CI en un seul commit : ce push lance la première
 		// pipeline, et sur GitLab un premier commit sans .gitlab-ci.yml
 		// déclencherait l'Auto DevOps
 		if err := scm.PushFiles(repo.Path, repo.DefaultBranch, processedFiles,
@@ -122,7 +122,7 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			return
 		}
 
-		// 5. Sauvegarder en DB
+		// 4. Sauvegarder en DB
 		rtProvider := req.RuntimeProvider
 		if rtProvider == "" {
 			rtProvider = gp.RTProvider
@@ -157,7 +157,7 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			return
 		}
 
-		// 6. Enregistrer le service dans le catalogue. Le projet existe déjà :
+		// 5. Enregistrer le service dans le catalogue. Le projet existe déjà :
 		// un échec ici est signalé sans annuler la création.
 		catalogueErr := ""
 		if err := syncer.Register(serviceFromProject(proj, gp, repo, ci)); err != nil {
@@ -186,7 +186,7 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 }
 
 // serviceFromProject construit la fiche catalogue d'un projet nouvellement créé
-func serviceFromProject(proj *database.Project, gp *config.GoldenPath, repo *provider.Repo, ci provider.CIProvider) catalogue.Service {
+func serviceFromProject(proj *database.Project, gp *gitops.GoldenPath, repo *provider.Repo, ci provider.CIProvider) catalogue.Service {
 	return catalogue.Service{
 		APIVersion: "symphony/v1",
 		Kind:       "Service",
@@ -363,7 +363,7 @@ func ListRepos(providers *provider.Registry) http.HandlerFunc {
 	}
 }
 
-func replacePlaceholders(content, name, description string, gp *config.GoldenPath, port int) string {
+func replacePlaceholders(content, name, description string, gp *gitops.GoldenPath, port int) string {
 	replacer := strings.NewReplacer(
 		"{{SERVICE_NAME}}", name,
 		"{{SERVICE_DESCRIPTION}}", description,

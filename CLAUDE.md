@@ -42,7 +42,6 @@ SQL migrations are embedded in the binary with `go:embed`. `symphony.yaml` and `
 | `PORT` | HTTP server | `8080` |
 | `SYMPHONY_CONFIG` | config path | `symphony.yaml` |
 | `CATALOGUE_BRANCH` | catalogue syncer branch | `main` |
-| `TEMPLATES_REPO` | fallback templates repo, used when a golden path has no `repo` | `catalogue.repo` |
 
 `catalogue.branch` in `symphony.yaml` is **ignored**. The branch only comes from `CATALOGUE_BRANCH`.
 
@@ -50,7 +49,7 @@ SQL migrations are embedded in the binary with `go:embed`. `symphony.yaml` and `
 
 ```
 cmd/symphony/main.go        composition root: loads config, reads the providers section of symphony.yaml and registers each one
-internal/config/            symphony.yaml types + loader (providers, catalogue, golden_paths)
+internal/config/            symphony.yaml types + loader (providers, catalogue, templates repo)
 internal/provider/          interfaces.go (SCM, CI, Registry, Runtime) + registry.go (the provider Registry) + implementations:
   scm/gitlab, scm/github
   ci/gitlabci, ci/githubactions
@@ -58,7 +57,7 @@ internal/provider/          interfaces.go (SCM, CI, Registry, Runtime) + registr
   runtime/docker            Docker Engine API over the unix socket (no SDK). Deploy pulls the image first (registry auth via X-Registry-Auth), then replaces the container
   runtime/kubernetes        stub: every method returns "non implémenté"
 internal/catalogue/         in-memory Store + Service types
-internal/gitops/            syncer.go (catalogue poll) + template_loader.go (golden paths, scaffold/CI fetch)
+internal/gitops/            syncer.go (catalogue poll) + template_loader.go (golden paths poll, skeleton/CI fetch)
 internal/database/          database/sql + lib/pq, no ORM; schema in migrations/001_init.sql
 internal/api/               server.go (chi router, all routes, /healthz) + handlers/ (one file per domain)
 internal/auth/              empty: OIDC not implemented
@@ -81,14 +80,14 @@ Replacing a container: the new one is created next to the old one, as `<name>-ne
 
 Tokens are never written in `symphony.yaml`. Each provider has `config.token_env` naming an env var. GitLab SCM falls back to a literal `config.token`. GitLab CI and the GitLab registry try `token_env`, then `<scm_ref>_TOKEN`, then `GITLAB_TOKEN` (`gitlabToken` in `main.go`).
 
-**Service catalogue (GitOps)**: the catalogue is loaded from **GitLab** (`catalogue.repo`/`catalogue.path`, by default `root/symphony-config` → `services/`) by `gitops.Syncer`, through the default SCM provider. It polls every 15s and replaces the in-memory `catalogue.Store`, and `POST /api/v1/sync` forces a reload. It is **not** loaded from the local `config/` directory (`config/services/*.yaml` and `config/integrations.yaml` are leftovers, unused). The catalogue is not stored in Postgres.
+**Service catalogue (GitOps)**: the catalogue is loaded from **GitLab** (`catalogue.repo`/`catalogue.path`, by default `root/symphony-config` → `services/`) by `gitops.Syncer`, through the default SCM provider. It polls every 15s and replaces the in-memory `catalogue.Store`, and `POST /api/v1/sync` forces a reload (of the golden paths too). It is **not** loaded from the local `config/` directory (`config/services/*.yaml` and `config/integrations.yaml` are leftovers, unused). The catalogue is not stored in Postgres.
 
-**Golden paths**: they are defined in `symphony.yaml` under `golden_paths`, not fetched from GitLab. Each one names its SCM/CI/runtime provider ids and points to a `scaffold` directory and a `ci_template` file in `root/symphony-templates` on GitLab (`source: git`, the only supported source). `TemplateLoader` fetches those files through the SCM provider when a project is created.
+**Golden paths**: they are loaded from the **templates repo** (`templates.repo`/`branch`/`path` in `symphony.yaml`, by default `root/symphony-templates` → `templates/`) by `gitops.TemplateLoader`, through the default SCM provider, and reloaded every 15s like the catalogue: adding a golden path means pushing a folder. Each folder `templates/<name>/` holds a `template.yaml` (`kind: GoldenPath`, `metadata.name` must equal the folder name, `spec.providers.{scm,ci,registry,runtime}` with empty = default, `spec.skeleton` (default `skeleton`) and `spec.ci_template`, both relative to the folder and unable to escape it), the CI template and the skeleton. The format is documented in that repo's README. A template that fails to parse (unknown keys are rejected), misses its files, or names an unknown or incompatible provider is skipped with a warning, and the others stay available. If the repo can't be read, the previous list is kept. Warnings are only logged when the result changes. `GET /golden-paths` returns `gitops.GoldenPath` (same JSON keys as before, `skeleton`/`ci_template` are full repo paths). The Projects page has a "Recharger depuis Git" button that calls `POST /sync`.
 
 **Project creation** (`handlers/projects.go`):
-1. Resolve the golden path by id, then its SCM provider (the request's `scm_provider` can override it) and its CI provider. `provider.CheckCompatible` rejects with a 400 a pair whose `Platform()` differs (e.g. a GitHub repo with GitLab CI). `main.go` logs a warning at startup for each golden path that has an unknown or incompatible provider.
-2. `CreateRepo`.
-3. Fetch the scaffold files (recursively) and the CI template, replace placeholders. The CI template is written at `ci.ConfigFile()` (`.gitlab-ci.yml` for GitLab CI, `.github/workflows/ci.yml` for GitHub Actions).
+1. Resolve the golden path by id, then its SCM provider (the request's `scm_provider` can override it) and its CI provider. `provider.CheckCompatible` rejects with a 400 a pair whose `Platform()` differs (e.g. a GitHub repo with GitLab CI); the loader already skips golden paths with an incompatible pair.
+2. Fetch the skeleton files (recursively) and the CI template, replace placeholders, **before** creating the repo, so a broken template doesn't leave an empty repo. The CI template is written at `ci.ConfigFile()` (`.gitlab-ci.yml` for GitLab CI, `.github/workflows/ci.yml` for GitHub Actions).
+3. `CreateRepo`.
 4. `PushFiles` everything in **one** commit. That push starts the first pipeline (Symphony doesn't trigger one itself); on GitLab a first commit without `.gitlab-ci.yml` would trigger Auto DevOps.
 5. Save the project in `projects`.
 6. `syncer.Register` writes `services/<name>.yaml` to the catalogue repo and forces a sync. A failure there doesn't undo the creation; it is logged and returned as `catalogue_error`. (The CI templates no longer have a `register-service` job.)
@@ -98,12 +97,12 @@ The pipelines links (API response and catalogue entry) come from `ci.PipelinesUR
 
 **Persistence**: tables `projects`, `pipelines`, `deployments`, `audit_log` and `schema_migrations`. `Migrate()` applies each migration listed in `db.go` whose version is missing from `schema_migrations`. To add a migration, create `migrations/00N_*.sql`, add a `//go:embed` variable for it, **and** add it to the list in `db.go`. Mutating handlers record an audit entry with `db.LogAudit(action, resource, details)`.
 
-**API ↔ frontend JSON shapes**: every struct the API serializes or decodes has explicit snake_case `json` tags (`catalogue.*`, `config.GoldenPath`, `provider.Repo/Pipeline/Deployment`, `database.*`, request bodies). The frontend reads exactly those keys. Any new API struct needs json tags, otherwise it would serialize with Go field names.
+**API ↔ frontend JSON shapes**: every struct the API serializes or decodes has explicit snake_case `json` tags (`catalogue.*`, `gitops.GoldenPath`, `provider.Repo/Pipeline/Deployment`, `database.*`, request bodies). The frontend reads exactly those keys. Any new API struct needs json tags, otherwise it would serialize with Go field names.
 
 Every call in `frontend/src/api.js` has a matching route in `server.go`. `POST /services/{name}/actions/{action}` (`handlers.TriggerAction`) runs a catalogue action: a POST to `webhook_url`, or a pipeline on the service's `spec.repo` through `ci_provider` (inputs become CI variables, plus `SYMPHONY_SERVICE` / `SYMPHONY_ACTION` / `SYMPHONY_PIPELINE`). An action with neither returns 400. `resolveInputs` validates the body against the declared inputs (defaults, required, integer bounds, options) and **rejects undeclared keys**, so callers can't inject arbitrary CI variables. Services created by Symphony get a default "Relancer la pipeline" action.
 
 **Project deletion** (`DELETE /projects/{name}`) runs in the background and returns 202, because GitLab refuses to delete a project until its container registry purge (asynchronous, often 2–3 min) completes. Order: `DeleteRepo` (purges the registry, then retries), `syncer.Unregister`, then the DB rows (project and its pipelines; the audit log is kept). While it runs, `GET /projects` returns `deleting: true` (an in-memory flag, lost on restart), and a second DELETE returns 409.
 
-Golden paths come from `symphony.yaml` and are only loaded at startup; there is no hot reload.
+Providers come from `symphony.yaml` and are only loaded at startup; there is no hot reload of providers.
 
 The frontend API base URL comes from `VITE_API_URL` at build time (e.g. in `frontend/.env.local`, gitignored), with `http://localhost:8080` as the default. An empty value means same origin. The server sends `Access-Control-Allow-Origin: *`.

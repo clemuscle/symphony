@@ -134,11 +134,15 @@ func main() {
 	)
 	go syncer.Start()
 
-	// Template loader
-	templateRepo := getEnv("TEMPLATES_REPO", cfg.Catalogue.Repo)
-	tmplLoader := gitops.NewTemplateLoader(defaultSCM, templateRepo, "main")
-	tmplLoader.Load(cfg.GoldenPaths)
-	checkGoldenPaths(cfg.GoldenPaths, providers)
+	// Golden paths : rechargés depuis le repo de templates
+	tmplLoader := gitops.NewTemplateLoader(
+		defaultSCM,
+		providers,
+		orDefault(cfg.Templates.Repo, "root/symphony-templates"),
+		orDefault(cfg.Templates.Branch, "main"),
+		orDefault(cfg.Templates.Path, "templates"),
+	)
+	go tmplLoader.Start()
 
 	// Démarrer le serveur
 	addr := ":" + getEnv("PORT", "8080")
@@ -162,29 +166,15 @@ func gitlabToken(def config.ProviderDef) string {
 	return os.Getenv("GITLAB_TOKEN")
 }
 
-// checkGoldenPaths signale au démarrage les golden paths inutilisables :
-// provider inconnu, ou CI incompatible avec le SCM. Ils restent chargés, la
-// création de projet les refusera avec le même message.
-func checkGoldenPaths(goldenPaths []config.GoldenPath, providers *provider.Registry) {
-	for _, gp := range goldenPaths {
-		scm, err := providers.SCM(gp.SCMProvider)
-		if err != nil {
-			slog.Warn("golden path inutilisable", "golden_path", gp.ID, "error", err)
-			continue
-		}
-		ci, err := providers.CI(gp.CIProvider)
-		if err != nil {
-			slog.Warn("golden path inutilisable", "golden_path", gp.ID, "error", err)
-			continue
-		}
-		if err := provider.CheckCompatible(scm, ci); err != nil {
-			slog.Warn("golden path inutilisable", "golden_path", gp.ID, "error", err)
-		}
-	}
-}
-
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func orDefault(v, fallback string) string {
+	if v != "" {
 		return v
 	}
 	return fallback

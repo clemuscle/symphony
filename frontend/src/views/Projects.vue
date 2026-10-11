@@ -17,7 +17,12 @@
 
         <!-- Sélection Golden Path -->
         <div class="gp-section">
-          <div class="section-label">Choisis un Golden Path</div>
+          <div class="section-head">
+            <div class="section-label">Choisis un Golden Path</div>
+            <button class="btn-ghost" :disabled="syncingGP" @click="syncGoldenPaths">
+              {{ syncingGP ? 'Rechargement...' : '↻ Recharger depuis Git' }}
+            </button>
+          </div>
           <div v-if="loadingGP" class="state-sm">Chargement des templates...</div>
           <div class="gp-grid" v-else>
             <div v-for="gp in goldenPaths" :key="gp.id"
@@ -190,6 +195,7 @@ const activeTab = ref('symphony')
 const goldenPaths = ref([])
 const selectedGP = ref(null)
 const loadingGP = ref(true)
+const syncingGP = ref(false)
 const creating = ref(false)
 const createResult = ref(null)
 const createError = ref(null)
@@ -239,6 +245,17 @@ async function loadGoldenPaths() {
     goldenPaths.value = data || []
   } catch { goldenPaths.value = [] }
   finally { loadingGP.value = false }
+}
+
+// Les golden paths sont rechargés depuis Git toutes les 15 s ; ce bouton
+// force le rechargement (asynchrone côté serveur) puis relit la liste
+async function syncGoldenPaths() {
+  syncingGP.value = true
+  try {
+    await api.sync()
+    await new Promise(r => setTimeout(r, 1500))
+    await loadGoldenPaths()
+  } finally { syncingGP.value = false }
 }
 
 async function loadProjects() {
@@ -366,6 +383,7 @@ h2 { font-size: 22px; font-weight: 700; }
 .form-card { background: white; border: 1px solid #e2e2e2; border-radius: 14px; padding: 24px; margin-bottom: 24px; }
 h3 { font-size: 17px; font-weight: 700; margin-bottom: 20px; }
 .gp-section { margin-bottom: 24px; }
+.section-head { display: flex; justify-content: space-between; align-items: baseline; }
 .section-label { font-size: 13px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 12px; }
 .state-sm { color: #888; font-size: 13px; padding: 12px 0; }
 .gp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }

@@ -3,7 +3,6 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/yourorg/symphony/internal/config"
 	"github.com/yourorg/symphony/internal/database"
 	"github.com/yourorg/symphony/internal/gitops"
 	"github.com/yourorg/symphony/internal/provider"
@@ -13,7 +12,7 @@ func ListGoldenPaths(templates *gitops.TemplateLoader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gps := templates.GetGoldenPaths()
 		if gps == nil {
-			gps = []config.GoldenPath{}
+			gps = []gitops.GoldenPath{}
 		}
 		respond(w, http.StatusOK, gps)
 	}
@@ -30,9 +29,11 @@ func ListProviders(providers *provider.Registry) http.HandlerFunc {
 	}
 }
 
-func ForceSync(syncer *gitops.Syncer) http.HandlerFunc {
+// ForceSync recharge le catalogue et les golden paths depuis Git
+func ForceSync(syncer *gitops.Syncer, templates *gitops.TemplateLoader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		go syncer.ForceSync()
+		go templates.Reload()
 		respond(w, http.StatusOK, map[string]string{"status": "sync déclenché"})
 	}
 }
