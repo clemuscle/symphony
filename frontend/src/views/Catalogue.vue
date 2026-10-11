@@ -166,7 +166,7 @@
                 v-model="vals[action.name + input.id]"
                 :placeholder="input.default || input.id" />
             </div>
-            <button class="btn" :disabled="busy[action.name]" @click="trigger(action)">
+            <button class="btn" v-if="can('developer')" :disabled="busy[action.name]" @click="trigger(action)">
               {{ busy[action.name] ? '⏳ Envoi...' : 'Déclencher' }}
             </button>
             <div v-if="feedback[action.name]"
@@ -184,6 +184,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../api'
+import { can } from '../stores/session'
 
 const services = ref([])
 const loading = ref(true)
