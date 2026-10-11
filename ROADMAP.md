@@ -35,7 +35,7 @@ Objectif : un repo propre, une CI verte, un binaire unique observable.
       (même origine, plus besoin de `VITE_API_URL` en production)
 - [x] `/metrics` Prometheus : requêtes HTTP (latence, codes), appels aux providers (erreurs,
       latence), état des rechargements (catalogue, templates, configuration)
-- [ ] `CHANGELOG.md`, tag `v0.1`
+- [ ] `CHANGELOG.md` (fait), tag `v0.1`
 
 Fini quand : la CI passe sur `main`, `docker run ghcr.io/clemuscle/symphony` sert l'UI et
 l'API sur un seul port, `/metrics` répond.
