@@ -18,7 +18,8 @@ import (
 const TemplateFile = "template.yaml"
 
 // GoldenPath est un template de projet chargé depuis le repo de templates.
-// Skeleton et CITemplate sont des chemins complets dans ce repo.
+// Skeleton et CITemplate sont des chemins complets dans le repo Repo, sur la
+// branche Branch : ceux d'où il a été chargé, même si la configuration change.
 type GoldenPath struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
@@ -30,6 +31,8 @@ type GoldenPath struct {
 	CIProvider  string `json:"ci_provider"`
 	RegProvider string `json:"registry_provider"`
 	RTProvider  string `json:"runtime_provider"`
+	Repo        string `json:"repo"`
+	Branch      string `json:"branch"`
 	Skeleton    string `json:"skeleton"`
 	CITemplate  string `json:"ci_template"`
 }
@@ -157,33 +160,48 @@ func checkProviders(gp GoldenPath, providers *provider.Registry) error {
 
 // TemplateLoader charge les golden paths depuis le repo de templates
 // (<dir>/<nom>/template.yaml) et les recharge périodiquement : ajouter un
-// golden path revient à pousser un dossier, sans redémarrer Symphony.
+// golden path revient à pousser un dossier, sans redémarrer Symphony. Le SCM
+// par défaut est résolu à chaque appel, pour suivre les rechargements de
+// configuration.
 type TemplateLoader struct {
-	scm       provider.SCMProvider
 	providers *provider.Registry
-	repo      string
-	branch    string
-	dir       string
 	interval  time.Duration
 
+	reloadMu sync.Mutex // un rechargement à la fois, sinon un ancien pourrait écraser un récent
+
 	mu          sync.RWMutex
+	source      templateSource
 	goldenPaths []GoldenPath
 	lastReport  string // pour ne journaliser que les changements
 }
 
-func NewTemplateLoader(scm provider.SCMProvider, providers *provider.Registry, repo, branch, dir string) *TemplateLoader {
+type templateSource struct {
+	repo   string
+	branch string
+	dir    string
+}
+
+func NewTemplateLoader(providers *provider.Registry, repo, branch, dir string) *TemplateLoader {
 	return &TemplateLoader{
-		scm:       scm,
 		providers: providers,
-		repo:      repo,
-		branch:    branch,
-		dir:       strings.Trim(dir, "/"),
+		source:    templateSource{repo, branch, strings.Trim(dir, "/")},
 		interval:  15 * time.Second,
 	}
 }
 
+// SetSource change le repo de templates (rechargement de configuration) ;
+// le rechargement suivant lit le nouveau repo
+func (l *TemplateLoader) SetSource(repo, branch, dir string) {
+	l.mu.Lock()
+	l.source = templateSource{repo, branch, strings.Trim(dir, "/")}
+	l.mu.Unlock()
+}
+
 func (l *TemplateLoader) Start() {
-	slog.Info("template loader démarré", "repo", l.repo, "branch", l.branch, "path", l.dir, "interval", l.interval)
+	l.mu.RLock()
+	src := l.source
+	l.mu.RUnlock()
+	slog.Info("template loader démarré", "repo", src.repo, "branch", src.branch, "path", src.dir, "interval", l.interval)
 	l.Reload()
 	ticker := time.NewTicker(l.interval)
 	for range ticker.C {
@@ -194,9 +212,21 @@ func (l *TemplateLoader) Start() {
 // Reload relit les golden paths. Un template invalide est ignoré, les autres
 // sont chargés ; si le repo est illisible, la liste précédente est conservée.
 func (l *TemplateLoader) Reload() {
-	files, err := l.scm.ListFiles(l.repo, l.branch, l.dir)
+	l.reloadMu.Lock()
+	defer l.reloadMu.Unlock()
+
+	l.mu.RLock()
+	src := l.source
+	l.mu.RUnlock()
+
+	scm, err := l.providers.SCM("")
 	if err != nil {
-		slog.Warn("templates: liste fichiers, liste précédente conservée", "repo", l.repo, "error", err)
+		slog.Warn("templates: provider SCM, liste précédente conservée", "error", err)
+		return
+	}
+	files, err := scm.ListFiles(src.repo, src.branch, src.dir)
+	if err != nil {
+		slog.Warn("templates: liste fichiers, liste précédente conservée", "repo", src.repo, "error", err)
 		return
 	}
 
@@ -213,16 +243,17 @@ func (l *TemplateLoader) Reload() {
 		// Seulement <dir>/<nom>/template.yaml : pas ceux d'un skeleton
 		dir, file := path.Split(filePath)
 		dir = strings.TrimSuffix(dir, "/")
-		if file != TemplateFile || path.Dir(dir) != l.dirOrDot() {
+		if file != TemplateFile || path.Dir(dir) != src.dirOrDot() {
 			continue
 		}
 
-		content, err := l.scm.GetFileContent(l.repo, l.branch, filePath)
+		content, err := scm.GetFileContent(src.repo, src.branch, filePath)
 		if err != nil {
 			slog.Warn("templates: lecture, liste précédente conservée", "path", filePath, "error", err)
 			return
 		}
 		gp, err := parseTemplate(dir, content)
+		gp.Repo, gp.Branch = src.repo, src.branch
 		if err == nil {
 			err = checkFiles(gp, exists)
 		}
@@ -273,11 +304,11 @@ func checkFiles(gp GoldenPath, exists map[string]bool) error {
 
 // dirOrDot : path.Dir d'un dossier de premier niveau vaut "." quand le
 // dossier des templates est la racine du repo
-func (l *TemplateLoader) dirOrDot() string {
-	if l.dir == "" {
+func (s templateSource) dirOrDot() string {
+	if s.dir == "" {
 		return "."
 	}
-	return l.dir
+	return s.dir
 }
 
 func (l *TemplateLoader) GetGoldenPaths() []GoldenPath {
@@ -300,14 +331,18 @@ func (l *TemplateLoader) GetGoldenPath(id string) (*GoldenPath, error) {
 // GetScaffoldFiles récupère les fichiers du skeleton, avec leur chemin relatif
 // au skeleton (= chemin dans le repo créé)
 func (l *TemplateLoader) GetScaffoldFiles(gp GoldenPath) (map[string]string, error) {
-	files, err := l.scm.ListFiles(l.repo, l.branch, gp.Skeleton)
+	scm, err := l.providers.SCM("")
+	if err != nil {
+		return nil, err
+	}
+	files, err := scm.ListFiles(gp.Repo, gp.Branch, gp.Skeleton)
 	if err != nil {
 		return nil, fmt.Errorf("liste skeleton %s: %w", gp.Skeleton, err)
 	}
 
 	result := make(map[string]string, len(files))
 	for _, filePath := range files {
-		content, err := l.scm.GetFileContent(l.repo, l.branch, filePath)
+		content, err := scm.GetFileContent(gp.Repo, gp.Branch, filePath)
 		if err != nil {
 			return nil, fmt.Errorf("lecture skeleton %s: %w", filePath, err)
 		}
@@ -318,7 +353,11 @@ func (l *TemplateLoader) GetScaffoldFiles(gp GoldenPath) (map[string]string, err
 
 // GetCITemplate récupère le template CI du golden path
 func (l *TemplateLoader) GetCITemplate(gp GoldenPath) (string, error) {
-	content, err := l.scm.GetFileContent(l.repo, l.branch, gp.CITemplate)
+	scm, err := l.providers.SCM("")
+	if err != nil {
+		return "", err
+	}
+	content, err := scm.GetFileContent(gp.Repo, gp.Branch, gp.CITemplate)
 	if err != nil {
 		return "", fmt.Errorf("lecture ci_template %s: %w", gp.CITemplate, err)
 	}

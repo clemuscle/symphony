@@ -20,6 +20,9 @@ type fakeSCM struct {
 	err   error
 }
 
+func (f *fakeSCM) ID() string       { return "fake" }
+func (f *fakeSCM) Platform() string { return "gitlab" }
+
 func (f *fakeSCM) ListFiles(repo, branch, dir string) ([]string, error) {
 	if f.err != nil {
 		return nil, f.err
@@ -42,9 +45,12 @@ func (f *fakeSCM) GetFileContent(repo, branch, filePath string) (string, error) 
 	return content, nil
 }
 
-func testProviders() *provider.Registry {
+// testProviders : scm est le SCM par défaut (celui qui lit les templates),
+// gitlab-local celui que les templates désignent
+func testProviders(scm provider.SCMProvider) *provider.Registry {
 	r := provider.NewRegistry()
-	r.RegisterSCM(gitlabscm.New("gitlab-local", "http://gitlab.local", ""), true)
+	r.RegisterSCM(scm, true)
+	r.RegisterSCM(gitlabscm.New("gitlab-local", "http://gitlab.local", ""), false)
 	r.RegisterCI(gitlabci.New("gitlab-ci", "http://gitlab.local", ""), true)
 	r.RegisterCI(githubci.New("github-actions", ""), false)
 	r.RegisterRuntime(k8srt.New("k8s"), true)
@@ -118,7 +124,7 @@ func TestReload(t *testing.T) {
 		"templates/sans-skeleton/template.yaml":    strings.Replace(goTemplate, "api-rest-go", "sans-skeleton", 1),
 		"templates/sans-skeleton/ci.gitlab-ci.yml": "x",
 	}}
-	l := NewTemplateLoader(scm, testProviders(), "root/symphony-templates", "main", "templates")
+	l := NewTemplateLoader(testProviders(scm), "root/symphony-templates", "main", "templates")
 
 	l.Reload()
 	gps := l.GetGoldenPaths()
@@ -150,5 +156,34 @@ func TestReload(t *testing.T) {
 	l.Reload()
 	if gps := l.GetGoldenPaths(); len(gps) != 0 {
 		t.Errorf("golden paths = %+v, attendu aucun", gps)
+	}
+}
+
+// Changement de repo de templates (rechargement de configuration) : les
+// golden paths déjà chargés restent lus dans leur repo d'origine
+func TestSetSource(t *testing.T) {
+	scm := &fakeSCM{files: map[string]string{
+		"templates/api-rest-go/template.yaml":    goTemplate,
+		"templates/api-rest-go/ci.gitlab-ci.yml": "ancien",
+		"templates/api-rest-go/skeleton/go.mod":  "x",
+		"autre/api-rest-go/template.yaml":        goTemplate,
+		"autre/api-rest-go/ci.gitlab-ci.yml":     "nouveau",
+		"autre/api-rest-go/skeleton/go.mod":      "x",
+	}}
+	l := NewTemplateLoader(testProviders(scm), "root/symphony-templates", "main", "templates")
+	l.Reload()
+	old, err := l.GetGoldenPath("api-rest-go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	l.SetSource("root/symphony-templates", "main", "autre")
+	l.Reload()
+	gp, _ := l.GetGoldenPath("api-rest-go")
+	if ci, _ := l.GetCITemplate(*gp); ci != "nouveau" {
+		t.Errorf("après SetSource, ci = %q, attendu nouveau", ci)
+	}
+	if ci, _ := l.GetCITemplate(*old); ci != "ancien" {
+		t.Errorf("golden path chargé avant SetSource, ci = %q, attendu ancien", ci)
 	}
 }

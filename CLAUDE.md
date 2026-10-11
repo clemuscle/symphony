@@ -24,7 +24,7 @@ go test ./internal/api/handlers -run TestResolveInputs
 
 ## Runtime dependencies
 
-- **`symphony.yaml`** at the repo root (override the path with `SYMPHONY_CONFIG`) is only a **bootstrap**: its `config_source` section (an SCM definition in the provider format, plus `repo`/`branch`/`path`) says where to read the real configuration, `root/symphony-config` → `symphony.yaml` on GitLab. `loadConfig` in `main.go` fetches it with a dedicated SCM client (not registered) before any provider exists. The remote file may not contain `config_source` itself, and if it can't be read the process exits. Without `config_source`, the local file is read as a full configuration (offline dev). In both files `${VAR}` references are expanded with `os.ExpandEnv` before parsing. "`symphony.yaml`" below means the configuration, wherever it comes from.
+- **`symphony.yaml`** at the repo root (override the path with `SYMPHONY_CONFIG`) is only a **bootstrap**: its `config_source` section (an SCM definition in the provider format, plus `repo`/`branch`/`path`) says where to read the real configuration, `root/symphony-config` → `symphony.yaml` on GitLab. `newConfigSource` (`cmd/symphony/config.go`) fetches it with a dedicated SCM client (not registered) before any provider exists. The remote file may not contain `config_source` itself and must have `catalogue.repo`; if it can't be read at startup the process exits. The bootstrap is only read at startup. Without `config_source`, the local file is read as a full configuration (offline dev). In both files `${VAR}` references are expanded with `os.ExpandEnv` before parsing. "`symphony.yaml`" below means the configuration, wherever it comes from.
 - **`.env`** at the repo root, loaded by godotenv. If it's missing, the server logs a warning and uses the process environment.
 - **PostgreSQL**, e.g. the local `symphony-postgres` container, configured via `DB_*` env vars.
 - **GitLab** at `http://gitlab.local:8929` (the URL comes from the bootstrap and from the configuration). The default SCM provider must work at startup, because the catalogue syncer and the template loader both use it. The process exits if no default SCM provider is registered.
@@ -48,7 +48,7 @@ SQL migrations are embedded in the binary with `go:embed`. The bootstrap `sympho
 ## Architecture
 
 ```
-cmd/symphony/main.go        composition root: loads the bootstrap then the config from Git (`loadConfig`), reads its providers section and registers each one
+cmd/symphony/               main.go (composition root), config.go (bootstrap, config source, hot-reload `configWatcher`), providers.go (`buildProviders`: config → provider Registry)
 internal/config/            symphony.yaml types (bootstrap `config_source`, providers, catalogue, templates repo) + `Load`/`Parse`
 internal/provider/          interfaces.go (SCM, CI, Registry, Runtime) + registry.go (the provider Registry) + implementations:
   scm/gitlab, scm/github
@@ -64,7 +64,7 @@ internal/auth/              empty: OIDC not implemented
 frontend/                   Vue 3 + Vite + vue-router + axios
 ```
 
-**Provider wiring**: `main.go` loops over `cfg.Providers.{SCM,CI,Registry,Runtime}` and switches on `type` (`gitlab`, `github`, `gitlab_ci`, `github_actions`, `gitlab_registry`, `docker`, `kubernetes`). It creates each provider and calls `providers.Register*(p, def.Default)`. To add a provider type, implement the interface in `internal/provider/interfaces.go` and add a `case` in `main.go`. Handlers look providers up by id with `providers.SCM(id)`, `CI(id)` or `Runtime(id)`. An empty id returns the default one.
+**Provider wiring**: `buildProviders` (`cmd/symphony/providers.go`) loops over `cfg.Providers.{SCM,CI,Registry,Runtime}` and switches on `type` (`gitlab`, `github`, `gitlab_ci`, `github_actions`, `gitlab_registry`, `docker`, `kubernetes`), creating each provider into a **new** Registry with `Register*(p, def.Default)`. An unknown type is skipped with a warning; no default SCM rejects the config. To add a provider type, implement the interface in `internal/provider/interfaces.go` and add a `case` in `providers.go`. Handlers look providers up by id with `providers.SCM(id)`, `CI(id)` or `Runtime(id)`. An empty id returns the default one.
 
 Two different things are both called "registry", so don't mix them up:
 - `provider.Registry` (`registry.go`) is the container of all providers.
@@ -103,6 +103,6 @@ Every call in `frontend/src/api.js` has a matching route in `server.go`. `POST /
 
 **Project deletion** (`DELETE /projects/{name}`) runs in the background and returns 202, because GitLab refuses to delete a project until its container registry purge (asynchronous, often 2–3 min) completes. Order: `DeleteRepo` (purges the registry, then retries), `syncer.Unregister`, then the DB rows (project and its pipelines; the audit log is kept). While it runs, `GET /projects` returns `deleting: true` (an in-memory flag, lost on restart), and a second DELETE returns 409.
 
-The configuration (providers, catalogue and templates repos) is only loaded at startup: changing `symphony-config/symphony.yaml` needs a restart. Only the catalogue and the golden paths are hot-reloaded.
+**Configuration hot reload**: `configWatcher` re-reads the configuration every 15s. When the content changed, it builds a new Registry and swaps it in with `providers.Replace(next)` (the `*provider.Registry` pointer shared by handlers stays the same; a request sees either the old or the new set), points the syncer and the template loader at the new repos (`SetSource`), and reloads both. An unreadable, unparsable or invalid config (no default SCM, no `catalogue.repo`, `config_source` inside) is refused and the running one is kept; each problem is logged once. That's why `Syncer` and `TemplateLoader` hold the Registry and resolve `providers.SCM("")` on each call rather than keeping an SCM. A loaded `GoldenPath` keeps its `repo`/`branch`, so it is still read from where it came from. `sync()` and `Reload()` are serialized so an older run can't overwrite a newer one. Changing the bootstrap needs a restart.
 
 The frontend API base URL comes from `VITE_API_URL` at build time (e.g. in `frontend/.env.local`, gitignored), with `http://localhost:8080` as the default. An empty value means same origin. The server sends `Access-Control-Allow-Origin: *`.
