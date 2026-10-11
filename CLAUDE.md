@@ -92,7 +92,11 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
   le catalogue, les templates ou la config, en plus des tests unitaires.
 - Mettre à jour ce fichier, `documentation/architecture.md` et `ROADMAP.md` (cocher les
   cases) avec le code.
-- Commits locaux sur `main` ; pousser seulement quand c'est demandé.
+- Commits locaux sur `main` ; pousser seulement quand c'est demandé. Sur GitHub, ce `main`
+  local va dans la branche **`v2`** (`origin/main` est un autre historique du projet, sans
+  ancêtre commun : ne jamais pousser dessus sans accord).
+- Release : cocher la roadmap, compléter `CHANGELOG.md`, tag annoté `vX.Y` poussé (la CI
+  publie `ghcr.io/clemuscle/symphony:X.Y` et `:latest`), puis `gh release create`.
 
 ## Conventions de test de bout en bout
 
