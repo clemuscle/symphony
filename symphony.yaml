@@ -1,62 +1,14 @@
-providers:
+# Bootstrap de Symphony : comment joindre le repo qui contient la configuration
+# (providers, catalogue, templates). Le reste est dans root/symphony-config.
+#
+# Sans config_source, ce fichier est lu comme une configuration complète
+# (format de root/symphony-config/symphony.yaml), pour travailler hors ligne.
+config_source:
   scm:
-    - id: gitlab-local
-      type: gitlab
-      default: true
-      config:
-        url: http://gitlab.local:8929
-        token_env: GITLAB_TOKEN
-
-    - id: github
-      type: github
-      default: false
-      config:
-        token_env: GITHUB_TOKEN
-        org: ""  # laisser vide pour les repos personnels
-
-  ci:
-    - id: gitlab-ci
-      type: gitlab_ci
-      default: true
-      config:
-        url: http://gitlab.local:8929
-        scm_ref: gitlab-local
-
-    - id: github-actions
-      type: github_actions
-      default: false
-      config:
-        token_env: GITHUB_TOKEN
-
-  registry:
-    - id: gitlab-registry
-      type: gitlab_registry
-      default: true
-      config:
-        url: http://gitlab.local:8929
-        registry_host: gitlab.local:5050
-        scm_ref: gitlab-local
-
-  runtime:
-    - id: docker-local
-      type: docker
-      default: true
-      config:
-        socket: /var/run/docker.sock
-
-    - id: kubernetes
-      type: kubernetes
-      default: false
-      config: {}
-
-catalogue:
+    type: gitlab
+    config:
+      url: http://gitlab.local:8929
+      token_env: GITLAB_TOKEN
   repo: root/symphony-config
   branch: main
-  path: services
-
-# Golden paths : un dossier par template dans le repo (templates/<nom>/template.yaml
-# + skeleton/ + template CI), rechargés toutes les 15 s, sans redémarrage
-templates:
-  repo: root/symphony-templates
-  branch: main
-  path: templates
+  path: symphony.yaml

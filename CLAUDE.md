@@ -24,13 +24,13 @@ go test ./internal/api/handlers -run TestResolveInputs
 
 ## Runtime dependencies
 
-- **`symphony.yaml`** at the repo root (override the path with `SYMPHONY_CONFIG`). `${VAR}` references in it are expanded with `os.ExpandEnv` before parsing.
+- **`symphony.yaml`** at the repo root (override the path with `SYMPHONY_CONFIG`) is only a **bootstrap**: its `config_source` section (an SCM definition in the provider format, plus `repo`/`branch`/`path`) says where to read the real configuration, `root/symphony-config` → `symphony.yaml` on GitLab. `loadConfig` in `main.go` fetches it with a dedicated SCM client (not registered) before any provider exists. The remote file may not contain `config_source` itself, and if it can't be read the process exits. Without `config_source`, the local file is read as a full configuration (offline dev). In both files `${VAR}` references are expanded with `os.ExpandEnv` before parsing. "`symphony.yaml`" below means the configuration, wherever it comes from.
 - **`.env`** at the repo root, loaded by godotenv. If it's missing, the server logs a warning and uses the process environment.
 - **PostgreSQL**, e.g. the local `symphony-postgres` container, configured via `DB_*` env vars.
-- **GitLab** at `http://gitlab.local:8929` (the URL comes from `symphony.yaml`). The default SCM provider must work at startup, because the catalogue syncer and the template loader both use it. The process exits if no default SCM provider is registered.
+- **GitLab** at `http://gitlab.local:8929` (the URL comes from the bootstrap and from the configuration). The default SCM provider must work at startup, because the catalogue syncer and the template loader both use it. The process exits if no default SCM provider is registered.
 - **Docker socket** at `/var/run/docker.sock`, set per runtime provider in `symphony.yaml`.
 
-SQL migrations are embedded in the binary with `go:embed`. `symphony.yaml` and `.env` are still read from the working directory.
+SQL migrations are embedded in the binary with `go:embed`. The bootstrap `symphony.yaml` and `.env` are still read from the working directory.
 
 ### Environment variables
 
@@ -48,8 +48,8 @@ SQL migrations are embedded in the binary with `go:embed`. `symphony.yaml` and `
 ## Architecture
 
 ```
-cmd/symphony/main.go        composition root: loads config, reads the providers section of symphony.yaml and registers each one
-internal/config/            symphony.yaml types + loader (providers, catalogue, templates repo)
+cmd/symphony/main.go        composition root: loads the bootstrap then the config from Git (`loadConfig`), reads its providers section and registers each one
+internal/config/            symphony.yaml types (bootstrap `config_source`, providers, catalogue, templates repo) + `Load`/`Parse`
 internal/provider/          interfaces.go (SCM, CI, Registry, Runtime) + registry.go (the provider Registry) + implementations:
   scm/gitlab, scm/github
   ci/gitlabci, ci/githubactions
@@ -103,6 +103,6 @@ Every call in `frontend/src/api.js` has a matching route in `server.go`. `POST /
 
 **Project deletion** (`DELETE /projects/{name}`) runs in the background and returns 202, because GitLab refuses to delete a project until its container registry purge (asynchronous, often 2–3 min) completes. Order: `DeleteRepo` (purges the registry, then retries), `syncer.Unregister`, then the DB rows (project and its pipelines; the audit log is kept). While it runs, `GET /projects` returns `deleting: true` (an in-memory flag, lost on restart), and a second DELETE returns 409.
 
-Providers come from `symphony.yaml` and are only loaded at startup; there is no hot reload of providers.
+The configuration (providers, catalogue and templates repos) is only loaded at startup: changing `symphony-config/symphony.yaml` needs a restart. Only the catalogue and the golden paths are hot-reloaded.
 
 The frontend API base URL comes from `VITE_API_URL` at build time (e.g. in `frontend/.env.local`, gitignored), with `http://localhost:8080` as the default. An empty value means same origin. The server sends `Access-Control-Allow-Origin: *`.
