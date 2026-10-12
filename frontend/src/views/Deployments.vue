@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2>Déploiements</h2>
-        <p class="subtitle">Containers Docker actifs sur cet environnement</p>
+        <p class="subtitle">Services déployés, sur tous les runtimes (Docker, Kubernetes via Argo CD)</p>
       </div>
       <button class="btn-refresh" @click="load">↻ Rafraîchir</button>
     </div>
@@ -36,12 +36,15 @@
           <input v-model.number="form.port" type="number" placeholder="8080" />
         </div>
         <div class="field">
-          <label>Port hôte</label>
+          <label>Port hôte (docker)</label>
           <input v-model.number="form.host_port" type="number" placeholder="auto" />
         </div>
         <div class="field">
-          <label>Runtime provider</label>
-          <input v-model="form.runtime_provider" placeholder="docker-local" />
+          <label>Runtime</label>
+          <select v-model="form.runtime_provider">
+            <option value="">celui du projet</option>
+            <option v-for="rt in runtimes" :key="rt" :value="rt">{{ rt }}</option>
+          </select>
         </div>
       </div>
       <button class="btn-primary" type="submit"
@@ -59,20 +62,27 @@
     <div v-if="loading" class="state">Chargement...</div>
 
     <div class="grid" v-else>
-      <div class="deploy-card" v-for="d in deployments" :key="d.id">
+      <div class="deploy-card" v-for="d in deployments" :key="d.provider + '/' + d.id">
         <div class="deploy-header">
           <span class="deploy-name">{{ d.name || d.id }}</span>
           <span :class="['status', d.status]">{{ d.status }}</span>
         </div>
-        <div class="deploy-image">🐳 {{ d.image }}</div>
+        <div class="deploy-runtime">
+          <span class="runtime">{{ d.provider }}</span>
+          <!-- Runtime GitOps : synchronisation avec Git et santé vues par Argo CD -->
+          <span v-if="d.sync" :class="['gitops', d.sync]" title="Synchronisation avec Git (Argo CD)">{{ d.sync }}</span>
+          <span v-if="d.health" :class="['gitops', d.health]" title="Santé (Argo CD)">{{ d.health }}</span>
+        </div>
+        <div class="deploy-image">{{ d.sync ? '☸️' : '🐳' }} {{ d.image || '—' }}</div>
         <a v-if="d.url" :href="d.url" target="_blank" class="deploy-url">{{ d.url }} ↗</a>
-        <div class="deploy-footer">
-          <button class="btn-stop" v-if="can('developer')" @click="stop(d.id)">⏹ Stop</button>
+        <div class="deploy-footer" v-if="can('developer')">
+          <button class="btn-stop" v-if="isUp(d)" @click="stop(d)">⏹ Stop</button>
+          <button class="btn-restart" @click="restart(d)">↻ {{ isUp(d) ? 'Redémarrer' : 'Relancer' }}</button>
         </div>
       </div>
       <div class="empty" v-if="!deployments.length">
         <div class="empty-icon">🐳</div>
-        <div>Aucun container actif</div>
+        <div>Aucun déploiement</div>
         <div class="empty-sub">Crée et déploie un projet depuis l'onglet Projets</div>
       </div>
     </div>
@@ -80,7 +90,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 import { can } from '../stores/session'
 
@@ -91,8 +101,9 @@ const deployResult = ref(null)
 const deployError = ref(null)
 
 const form = ref({
-  project_name: '', image: '', tag: 'latest', port: 8080, host_port: null, runtime_provider: 'docker-local',
+  project_name: '', image: '', tag: 'latest', port: 8080, host_port: null, runtime_provider: '',
 })
+const runtimes = ref([])
 
 const projects = ref([])
 const tags = ref([])
@@ -102,7 +113,19 @@ let autoImage = '' // dernière image préremplie : écrasée seulement si l'uti
 onMounted(() => {
   load()
   api.listProjects().then(({ data }) => { projects.value = data || [] }).catch(() => {})
+  api.getProviders().then(({ data }) => { runtimes.value = data.runtime || [] }).catch(() => {})
 })
+
+// Tant qu'un déploiement est en cours (Argo CD synchronise, pods qui
+// démarrent), la liste se rafraîchit seule
+let timer = null
+watch(deployments, (list) => {
+  clearTimeout(timer)
+  if (list.some(d => d.status === 'deploying')) timer = setTimeout(() => load(true), 3000)
+})
+onUnmounted(() => clearTimeout(timer))
+
+const isUp = (d) => ['running', 'deploying'].includes(d.status)
 
 // Projet connu : préremplir image, tags, port et runtime depuis son registry
 watch(() => form.value.project_name, async (name) => {
@@ -140,16 +163,22 @@ async function deploy() {
   } finally { deploying.value = false }
 }
 
-async function load() {
-  loading.value = true
+// quiet : rafraîchissement automatique, sans repasser par « Chargement... »
+async function load(quiet = false) {
+  if (!quiet) loading.value = true
   try { const { data } = await api.listDeployments(); deployments.value = data || [] }
-  catch { deployments.value = [] }
+  catch { if (!quiet) deployments.value = [] }
   finally { loading.value = false }
 }
 
-async function stop(id) {
-  if (!confirm(`Stopper le container ${id} ?`)) return
-  try { await api.stopDeployment(id); await load() }
+async function stop(d) {
+  if (!confirm(`Arrêter ${d.name || d.id} (${d.provider}) ?`)) return
+  try { await api.stopDeployment(d.id, d.provider); await load() }
+  catch (e) { alert(e.response?.data?.error || e.message) }
+}
+
+async function restart(d) {
+  try { await api.restartDeployment(d.id, d.provider); await load() }
   catch (e) { alert(e.response?.data?.error || e.message) }
 }
 </script>
@@ -167,12 +196,21 @@ h2 { font-size: 22px; font-weight: 700; }
 .status { font-size: 12px; padding: 3px 10px; border-radius: 20px; font-weight: 500; }
 .status.running { background: #f0fff4; color: #276749; }
 .status.exited { background: #f4f4f4; color: #888; }
-.status.paused { background: #fffbeb; color: #92400e; }
+.status.paused, .status.deploying { background: #fffbeb; color: #92400e; }
+.status.stopped { background: #f4f4f4; color: #888; }
+.status.error { background: #fff5f5; color: #c53030; }
+.deploy-runtime { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.runtime, .gitops { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: #f4f4f8; color: #555; }
+.gitops.Synced, .gitops.Healthy { background: #f0fff4; color: #276749; }
+.gitops.OutOfSync, .gitops.Progressing, .gitops.Missing { background: #fffbeb; color: #92400e; }
+.gitops.Degraded, .gitops.Unknown { background: #fff5f5; color: #c53030; }
 .deploy-image { font-size: 13px; color: #666; margin-bottom: 8px; }
 .deploy-url { display: block; font-size: 13px; color: #667eea; text-decoration: none; margin-bottom: 12px; }
 .deploy-footer { border-top: 1px solid #f0f0f0; padding-top: 12px; }
 .btn-stop { padding: 6px 14px; background: #fff5f5; color: #c53030; border: 1px solid #fed7d7; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .btn-stop:hover { background: #fed7d7; }
+.btn-restart { padding: 6px 14px; background: white; color: #555; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 13px; margin-left: 6px; }
+.btn-restart:hover { background: #f4f4f8; }
 .empty { color: #888; text-align: center; padding: 60px; grid-column: 1/-1; }
 .empty-icon { font-size: 48px; margin-bottom: 12px; }
 .empty-sub { font-size: 13px; margin-top: 6px; }
@@ -181,7 +219,8 @@ h2 { font-size: 22px; font-weight: 700; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field label { font-size: 13px; font-weight: 500; color: #555; }
-.field input { padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+.field input, .field select { padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+.field select { background: white; }
 .hint { font-size: 12px; color: #888; }
 .field input:focus { outline: none; border-color: #667eea; }
 .btn-primary { padding: 9px 20px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; }

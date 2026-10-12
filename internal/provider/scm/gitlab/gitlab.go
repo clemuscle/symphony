@@ -130,40 +130,68 @@ func (p *Provider) PushFile(repoPath, branch, filePath, content, commitMsg strin
 	return nil
 }
 
+// PushFiles pousse les fichiers en un seul commit (API commits). Chaque
+// fichier est d'abord créé ; si certains existent déjà (GitLab répond 400), le
+// commit est refait en les mettant à jour : un redéploiement reste un commit.
 func (p *Provider) PushFiles(repoPath, branch string, files map[string]string, commitMsg string) error {
-	// Utilise l'API commits pour pousser plusieurs fichiers en un seul commit
-	encoded := url.PathEscape(repoPath)
+	data, status, err := p.commitFiles(repoPath, branch, files, commitMsg, nil)
+	if err != nil {
+		return err
+	}
+	if status == 400 {
+		existing := make(map[string]bool, len(files))
+		for path := range files {
+			ok, err := p.fileExists(repoPath, branch, path)
+			if err != nil {
+				return err
+			}
+			existing[path] = ok
+		}
+		data, status, err = p.commitFiles(repoPath, branch, files, commitMsg, existing)
+		if err != nil {
+			return err
+		}
+	}
+	if status != 201 {
+		return fmt.Errorf("pushFiles: status %d — %s", status, string(data))
+	}
+	return nil
+}
 
+// commitFiles crée un commit : action update pour les fichiers de existing, create pour les autres
+func (p *Provider) commitFiles(repoPath, branch string, files map[string]string, commitMsg string, existing map[string]bool) ([]byte, int, error) {
 	actions := make([]map[string]string, 0, len(files))
 	for path, content := range files {
+		action := "create"
+		if existing[path] {
+			action = "update"
+		}
 		actions = append(actions, map[string]string{
-			"action":    "create",
+			"action":    action,
 			"file_path": path,
 			"content":   content,
 		})
 	}
-
-	payload := map[string]any{
+	return p.api("POST", fmt.Sprintf("/projects/%s/repository/commits", url.PathEscape(repoPath)), map[string]any{
 		"branch":         branch,
 		"commit_message": commitMsg,
 		"actions":        actions,
-	}
+	})
+}
 
-	_, status, err := p.api("POST",
-		fmt.Sprintf("/projects/%s/repository/commits", encoded),
-		payload)
+func (p *Provider) fileExists(repoPath, branch, filePath string) (bool, error) {
+	_, status, err := p.api("HEAD", fmt.Sprintf("/projects/%s/repository/files/%s?ref=%s",
+		url.PathEscape(repoPath), url.PathEscape(filePath), url.QueryEscape(branch)), nil)
 	if err != nil {
-		return err
+		return false, err
 	}
-	if status != 201 {
-		// Fallback: pousser fichier par fichier
-		for path, content := range files {
-			if err := p.PushFile(repoPath, branch, path, content, commitMsg); err != nil {
-				return fmt.Errorf("pushFile %s: %w", path, err)
-			}
-		}
+	switch status {
+	case 200:
+		return true, nil
+	case 404:
+		return false, nil
 	}
-	return nil
+	return false, fmt.Errorf("fichier %s: status %d", filePath, status)
 }
 
 func (p *Provider) ListRepos() ([]provider.Repo, error) {
@@ -206,6 +234,9 @@ func (p *Provider) GetFileContent(repoPath, branch, filePath string) (string, er
 		nil)
 	if err != nil {
 		return "", err
+	}
+	if status == 404 {
+		return "", fmt.Errorf("getFile %s: %w", filePath, provider.ErrNotFound)
 	}
 	if status != 200 {
 		return "", fmt.Errorf("getFile %s: status %d", filePath, status)

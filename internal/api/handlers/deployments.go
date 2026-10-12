@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -10,21 +11,31 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// ListDeployments liste les déploiements de tous les runtimes (ou du seul
+// runtime ?provider=). Un runtime injoignable est journalisé et sauté : les
+// autres restent visibles.
 func ListDeployments(providers *provider.Registry, db *database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rtID := r.URL.Query().Get("provider")
-		rt, err := providers.Runtime(rtID)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, err.Error())
-			return
+		ids := providers.ListRuntimes()
+		if rtID := r.URL.Query().Get("provider"); rtID != "" {
+			ids = []string{rtID}
 		}
-		deployments, err := rt.List()
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if deployments == nil {
-			deployments = []provider.Deployment{}
+		deployments := []provider.Deployment{}
+		for _, id := range ids {
+			rt, err := providers.Runtime(id)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			list, err := rt.List()
+			if err != nil {
+				slog.Warn("liste des déploiements", "runtime", id, "error", err)
+				continue
+			}
+			for _, d := range list {
+				d.Provider = rt.ID()
+				deployments = append(deployments, d)
+			}
 		}
 		respond(w, http.StatusOK, deployments)
 	}
@@ -50,7 +61,15 @@ func Deploy(providers *provider.Registry, db *database.DB) http.HandlerFunc {
 			return
 		}
 
-		rt, err := providers.Runtime(req.RuntimeProvider)
+		// Runtime : demandé, sinon celui du projet (choisi par son golden path),
+		// sinon le runtime par défaut
+		rtID := req.RuntimeProvider
+		if rtID == "" {
+			if proj, err := db.GetProjectByName(req.ProjectName); err == nil {
+				rtID = proj.RTProvider
+			}
+		}
+		rt, err := providers.Runtime(rtID)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "runtime provider: "+err.Error())
 			return
@@ -69,6 +88,7 @@ func Deploy(providers *provider.Registry, db *database.DB) http.HandlerFunc {
 			respondError(w, http.StatusInternalServerError, "deploy: "+err.Error())
 			return
 		}
+		deployment.Provider = rt.ID()
 
 		db.CreateDeployment(&database.Deployment{
 			ProjectName:  req.ProjectName,

@@ -11,8 +11,8 @@ import (
 	gitlabci "github.com/clemuscle/symphony/internal/provider/ci/gitlabci"
 	"github.com/clemuscle/symphony/internal/provider/instrumented"
 	gitlabregistry "github.com/clemuscle/symphony/internal/provider/registry/gitlabregistry"
+	argocdrt "github.com/clemuscle/symphony/internal/provider/runtime/argocd"
 	dockerrt "github.com/clemuscle/symphony/internal/provider/runtime/docker"
-	k8srt "github.com/clemuscle/symphony/internal/provider/runtime/kubernetes"
 	githubscm "github.com/clemuscle/symphony/internal/provider/scm/github"
 	gitlabscm "github.com/clemuscle/symphony/internal/provider/scm/gitlab"
 )
@@ -60,8 +60,13 @@ func buildProviders(cfg *config.Config) (*provider.Registry, error) {
 				socket = "/var/run/docker.sock"
 			}
 			providers.RegisterRuntime(instrumented.Runtime(dockerrt.New(def.ID, socket)), def.Default)
-		case "kubernetes":
-			providers.RegisterRuntime(instrumented.Runtime(k8srt.New(def.ID)), def.Default) // stub
+		case "argocd":
+			rt, err := newArgoCD(def, providers)
+			if err != nil {
+				slog.Warn("provider runtime ignoré", "id", def.ID, "error", err)
+				continue
+			}
+			providers.RegisterRuntime(instrumented.Runtime(rt), def.Default)
 		default:
 			slog.Warn("provider runtime ignoré", "id", def.ID, "error", fmt.Sprintf("type %q inconnu", def.Type))
 		}
@@ -96,6 +101,35 @@ func newSCM(def config.ProviderDef) (provider.SCMProvider, error) {
 		return githubscm.New(def.ID, os.Getenv(def.Config["token_env"]), def.Config["org"]), nil
 	}
 	return nil, fmt.Errorf("type de provider SCM %q inconnu", def.Type)
+}
+
+// newArgoCD crée le runtime Argo CD. Il écrit dans le repo de déploiement avec
+// le SCM scm_ref (défaut : SCM par défaut) de la même configuration.
+func newArgoCD(def config.ProviderDef, providers *provider.Registry) (*argocdrt.Provider, error) {
+	scm, err := providers.SCM(def.Config["scm_ref"])
+	if err != nil {
+		return nil, err
+	}
+	tokenEnv := def.Config["token_env"]
+	if tokenEnv == "" {
+		tokenEnv = "ARGOCD_TOKEN"
+	}
+	c := def.Config
+	return argocdrt.New(def.ID, scm, argocdrt.Config{
+		URL:           c["url"],
+		Token:         os.Getenv(tokenEnv),
+		Insecure:      c["insecure"] == "true",
+		Repo:          c["repo"],
+		Branch:        c["branch"],
+		Path:          c["path"],
+		RepoURL:       c["repo_url"],
+		Project:       c["project"],
+		Cluster:       c["cluster"],
+		Namespace:     c["namespace"],
+		IngressDomain: c["ingress_domain"],
+		IngressClass:  c["ingress_class"],
+		IngressPort:   c["ingress_port"],
+	})
 }
 
 // gitlabToken : token_env, sinon <scm_ref>_TOKEN, sinon GITLAB_TOKEN

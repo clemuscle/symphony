@@ -49,7 +49,14 @@ export const api = {
   // Déploiements
   listDeployments: () => http.get('/api/v1/deployments'),
   deploy: (data) => http.post('/api/v1/deployments', data),
-  stopDeployment: (id) => http.delete(`/api/v1/deployments/${id}`),
+  // provider : runtime qui porte le déploiement (champ provider de la liste)
+  stopDeployment: (id, provider) =>
+    http.delete(`/api/v1/deployments/${id}`, { params: { provider } }),
+  restartDeployment: (id, provider) =>
+    http.post(`/api/v1/deployments/${id}/restart`, null, { params: { provider } }),
+
+  // Providers configurés (id par type)
+  getProviders: () => http.get('/api/v1/providers'),
 
   // Audit
   listAudit: () => http.get('/api/v1/audit'),
