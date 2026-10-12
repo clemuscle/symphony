@@ -283,6 +283,12 @@ func (p *Provider) DeleteFile(repoPath, branch, filePath, commitMsg string) erro
 	return nil
 }
 
+// CreateWebhook : Symphony ne reçoit pas encore les webhooks de GitHub ; les
+// tâches suivent les workflows par sondage
+func (p *Provider) CreateWebhook(repoPath, url, secret string) error {
+	return provider.ErrUnsupported
+}
+
 // DeleteRepo nécessite un token avec le scope delete_repo
 func (p *Provider) DeleteRepo(repoPath string) error {
 	data, status, err := p.api("DELETE", "/repos/"+repoPath, nil)

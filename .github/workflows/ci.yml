@@ -13,6 +13,17 @@ jobs:
   go:
     name: Go (format, vet, tests, build)
     runs-on: ubuntu-latest
+    # PostgreSQL jetable : les tests de internal/database (SYMPHONY_TEST_DB=1)
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: symphony
+          POSTGRES_PASSWORD: symphony123
+          POSTGRES_DB: symphony
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U symphony" --health-interval 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -26,6 +37,8 @@ jobs:
           fi
       - run: go vet ./...
       - run: go test -race ./...
+        env:
+          SYMPHONY_TEST_DB: "1"
       - run: go build ./cmd/symphony
 
   front:

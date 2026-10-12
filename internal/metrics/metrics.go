@@ -1,5 +1,5 @@
 // Package metrics expose les métriques Prometheus de Symphony sur /metrics :
-// API HTTP, appels aux providers, rechargements depuis Git.
+// API HTTP, appels aux providers, rechargements depuis Git, tâches et webhooks.
 package metrics
 
 import (
@@ -60,6 +60,22 @@ var (
 		Name: "symphony_golden_paths",
 		Help: "Golden paths chargés (valides).",
 	})
+
+	tasksFinished = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "symphony_tasks_finished_total",
+		Help: "Tâches terminées, par type et statut (SUCCESS, FAILED).",
+	}, []string{"kind", "status"})
+
+	taskDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "symphony_task_duration_seconds",
+		Help:    "Durée des tâches, de leur création à leur fin (attente de pipeline comprise).",
+		Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600, 1800, 3600},
+	}, []string{"kind"})
+
+	webhooks = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "symphony_webhooks_total",
+		Help: "Webhooks reçus, par source, événement et résultat (ok, refused, ignored, error).",
+	}, []string{"source", "event", "result"})
 )
 
 func init() {
@@ -70,6 +86,7 @@ func init() {
 		providerCalls, providerDuration,
 		reloads, lastReload,
 		CatalogueServices, GoldenPaths,
+		tasksFinished, taskDuration, webhooks,
 	)
 }
 
@@ -116,4 +133,15 @@ func Reload(source, result string) {
 	if result == "ok" {
 		lastReload.WithLabelValues(source).SetToCurrentTime()
 	}
+}
+
+// TaskFinished compte une tâche terminée
+func TaskFinished(kind, status string, duration time.Duration) {
+	tasksFinished.WithLabelValues(kind, status).Inc()
+	taskDuration.WithLabelValues(kind).Observe(duration.Seconds())
+}
+
+// Webhook compte un webhook reçu
+func Webhook(source, event, result string) {
+	webhooks.WithLabelValues(source, event, result).Inc()
 }
