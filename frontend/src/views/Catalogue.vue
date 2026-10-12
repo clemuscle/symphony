@@ -169,10 +169,11 @@
             <button class="btn" v-if="can('developer')" :disabled="busy[action.name]" @click="trigger(action)">
               {{ busy[action.name] ? '⏳ Envoi...' : 'Déclencher' }}
             </button>
-            <div v-if="feedback[action.name]"
+            <TaskProgress class="action-task" v-if="feedback[action.name]?.taskId && taskStore.byId[feedback[action.name].taskId]"
+              :task="taskStore.byId[feedback[action.name].taskId]" />
+            <div v-else-if="feedback[action.name]"
               :class="['feedback', feedback[action.name].ok ? 'ok' : 'err']">
               {{ feedback[action.name].msg }}
-              <a v-if="feedback[action.name].url" :href="feedback[action.name].url" target="_blank">Voir ↗</a>
             </div>
           </div>
         </section>
@@ -185,6 +186,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../api'
 import { can } from '../stores/session'
+import TaskProgress from '../components/TaskProgress.vue'
+import { taskStore, trackTask } from '../stores/tasks'
 
 const services = ref([])
 const loading = ref(true)
@@ -236,12 +239,9 @@ async function trigger(action) {
   busy.value[action.name] = true
   feedback.value[action.name] = null
   try {
+    // 202 : l'action est une tâche, suivie en direct jusqu'à la fin de sa pipeline
     const { data } = await api.triggerAction(selected.value.metadata.name, action.name, inputs)
-    feedback.value[action.name] = {
-      ok: true,
-      msg: data.pipeline ? `✅ Pipeline #${data.pipeline.id} lancée` : '✅ Action déclenchée',
-      url: data.pipeline?.web_url,
-    }
+    feedback.value[action.name] = { ok: true, taskId: trackTask(data) }
   } catch (e) {
     feedback.value[action.name] = { ok: false, msg: '❌ ' + (e.response?.data?.error || e.message) }
   } finally { busy.value[action.name] = false }
@@ -308,6 +308,7 @@ h4 { font-size: 11px; text-transform: uppercase; color: #aaa; letter-spacing: .0
 .field input { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
 .btn { width: 100%; padding: 9px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; margin-top: 6px; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
+.action-task { margin-top: 8px; }
 .feedback { margin-top: 8px; padding: 8px 12px; border-radius: 6px; font-size: 13px; }
 .feedback.ok { background: #f0fff4; color: #276749; }
 .feedback.err { background: #fff5f5; color: #c53030; }

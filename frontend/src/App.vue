@@ -10,6 +10,9 @@
         <RouterLink to="/" class="nav-link">📦 Catalogue</RouterLink>
         <RouterLink to="/projects" class="nav-link">🗂 Projets</RouterLink>
         <RouterLink to="/deployments" class="nav-link">🚀 Déploiements</RouterLink>
+        <RouterLink to="/tasks" class="nav-link">
+          ⚡ Activité<span class="count" v-if="activeTasks.length">{{ activeTasks.length }}</span>
+        </RouterLink>
       </nav>
       <div class="user" v-if="session.loaded">
         <template v-if="session.authEnabled">
@@ -35,8 +38,13 @@
 <script setup>
 import { onMounted } from 'vue'
 import { session, loadSession } from './stores/session'
+import { connectTasks, activeTasks } from './stores/tasks'
 
-onMounted(loadSession)
+// Le flux des tâches s'ouvre une fois la session connue (et un rôle attribué)
+onMounted(async () => {
+  await loadSession()
+  if (session.user?.role) connectTasks()
+})
 </script>
 
 <style>
@@ -52,6 +60,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #
 .nav-link { color: #aaa; text-decoration: none; padding: 6px 14px; border-radius: 6px; font-size: 14px; transition: all .15s; }
 .nav-link:hover { color: white; background: #ffffff15; }
 .nav-link.router-link-active { color: white; background: #667eea; }
+.count { margin-left: 6px; background: #f6ad55; color: #1a1a2e; border-radius: 10px; padding: 0 7px; font-size: 12px; font-weight: 600; }
 .user { display: flex; align-items: center; gap: 10px; font-size: 13px; }
 .user-name { color: #ddd; }
 .role-badge { padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #ffffff20; color: #ddd; }

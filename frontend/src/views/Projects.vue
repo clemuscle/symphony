@@ -70,44 +70,28 @@
             <div class="summary">
               <div class="summary-title">Ce que Symphony va créer :</div>
               <div class="summary-items">
-                <div class="summary-item">✅ Repo GitLab <code>{{ form.namespace || 'root' }}/{{ form.name || '...' }}</code></div>
-                <div class="summary-item">✅ Pipeline CI <code>{{ selectedGP.ci_template }}</code></div>
-                <div class="summary-item">✅ Pipeline Build/Deploy</div>
+                <div class="summary-item">✅ Repo GitLab <code>{{ form.namespace || 'root' }}/{{ form.name || '...' }}</code>, squelette et CI <code>{{ selectedGP.ci_template }}</code> en un commit</div>
+                <div class="summary-item">✅ Fiche au catalogue et webhook de pipeline (suivi en direct)</div>
+                <div class="summary-item">✅ Première pipeline : tests et image dans le registry</div>
+                <div class="summary-item">✅ Runtime de déploiement : <code>{{ selectedGP.runtime_provider || 'par défaut' }}</code></div>
               </div>
             </div>
 
             <div class="form-footer">
               <button class="btn-primary" :disabled="creating || !form.name || !!nameError"
                 @click="createProject">
-                {{ creating ? '⏳ Création en cours...' : '🚀 Créer le projet' }}
+                {{ creating ? '⏳ Envoi...' : '🚀 Créer le projet' }}
               </button>
             </div>
           </div>
         </Transition>
 
-        <!-- Résultat -->
-        <div class="result-card ok" v-if="createResult">
-          <div class="result-title">✅ Projet créé avec succès</div>
-          <div class="result-row">
-            <span>Repo</span>
-            <a :href="createResult.repo.web_url" target="_blank">{{ createResult.repo.web_url }} ↗</a>
-          </div>
-          <div class="result-row">
-            <span>Pipelines</span>
-            <a :href="createResult.pipeline" target="_blank">Voir les pipelines ↗</a>
-          </div>
-          <div class="result-row">
-            <span>Registry</span>
-            <code>{{ createResult.project.registry_url }}</code>
-          </div>
-          <div class="result-actions">
-            <button class="btn-secondary" @click="triggerPipeline(createResult.repo)">
-              ▶ Déclencher le pipeline test
-            </button>
-          </div>
-          <div class="pipeline-status" v-if="pipelineID">
-            <span>Pipeline #{{ pipelineID }}</span>
-            <span :class="['status-badge', pipelineStatus]">{{ pipelineStatus || 'pending' }}</span>
+        <!-- Avancement de la création, en direct (tâche asynchrone) -->
+        <div class="task-wrap" v-if="createTask">
+          <TaskProgress :task="createTask" />
+          <div class="next" v-if="createTask.status === 'SUCCESS'">
+            Image construite :
+            <RouterLink :to="{ path: '/deployments', query: { project: createTask.resource } }">déployer {{ createTask.resource }} →</RouterLink>
           </div>
         </div>
         <div class="result-card err" v-if="createError">❌ {{ createError }}</div>
@@ -140,11 +124,16 @@
             <span>📁 {{ p.repo_path }}</span>
             <span>🔌 :{{ p.port }}</span>
           </div>
+          <div class="project-task" v-if="activeTaskFor(p.name)">
+            ⚡ {{ kindLabels[activeTaskFor(p.name).kind] }} en cours :
+            {{ activeTaskFor(p.name).steps[activeTaskFor(p.name).step] }}
+            <span v-if="activeTaskFor(p.name).detail">— {{ activeTaskFor(p.name).detail }}</span>
+          </div>
           <div class="project-footer">
             <a :href="p.repo_url" target="_blank" class="btn-ghost">GitLab ↗</a>
             <button class="btn-ghost" v-if="can('developer')" @click="triggerPipelineByPath(p.repo_path)">▶ Pipeline</button>
-            <button class="btn-ghost btn-danger" v-if="can('admin')" :disabled="p.deleting" @click="deleteProject(p)">
-              {{ p.deleting ? 'Suppression…' : 'Supprimer' }}
+            <button class="btn-ghost btn-danger" v-if="can('admin')" :disabled="isDeleting(p)" @click="deleteProject(p)">
+              {{ isDeleting(p) ? 'Suppression…' : 'Supprimer' }}
             </button>
           </div>
           <div class="pipeline-status" v-if="repoPipelines[p.repo_path]">
@@ -187,9 +176,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { api } from '../api'
 import { can } from '../stores/session'
+import TaskProgress from '../components/TaskProgress.vue'
+import { taskStore, trackTask, activeTasks, activeTaskFor, kindLabels } from '../stores/tasks'
 
 const showForm = ref(false)
 const activeTab = ref('symphony')
@@ -198,17 +189,15 @@ const selectedGP = ref(null)
 const loadingGP = ref(true)
 const syncingGP = ref(false)
 const creating = ref(false)
-const createResult = ref(null)
+const createTaskId = ref(null)
+const createTask = computed(() => taskStore.byId[createTaskId.value])
 const createError = ref(null)
 const symphonyProjects = ref([])
 const repos = ref([])
 const loadingProjects = ref(true)
 const loadingRepos = ref(true)
-const pipelineID = ref(null)
-const pipelineStatus = ref(null)
 const repoPipelines = ref({})
 const nameError = ref('')
-let deletionPoll = null
 
 const form = ref({
   name: '', description: '', namespace: '', port: 8080,
@@ -218,7 +207,16 @@ const langIcon = (lang) => ({
   go: '🐹', python: '🐍', node: '💚', java: '☕', default: '📦'
 })[lang] || '📦'
 
-onUnmounted(() => clearInterval(deletionPoll))
+// Le projet apparaît en base à la 2e étape de sa création, et disparaît à
+// la fin de sa suppression : la liste est relue quand une tâche avance
+watch(() => activeTasks.value.map(t => `${t.id}:${t.step}`).join(), (now, before) => {
+  if (before !== undefined) { loadProjects(); loadRepos() }
+})
+watch(() => createTask.value?.status, (status) => {
+  if (status === 'SUCCESS' || status === 'FAILED') { loadProjects(); loadRepos() }
+})
+
+const isDeleting = (p) => p.deleting || !!activeTaskFor(p.name, 'delete_project')
 
 onMounted(async () => {
   await Promise.all([loadGoldenPaths(), loadProjects(), loadRepos()])
@@ -260,11 +258,10 @@ async function syncGoldenPaths() {
 }
 
 async function loadProjects() {
-  loadingProjects.value = true
+  if (!symphonyProjects.value.length) loadingProjects.value = true
   try {
     const { data } = await api.listProjects()
     symphonyProjects.value = data || []
-    if (symphonyProjects.value.some(p => p.deleting)) watchDeletions()
   } catch { symphonyProjects.value = [] }
   finally { loadingProjects.value = false }
 }
@@ -278,9 +275,11 @@ async function loadRepos() {
   finally { loadingRepos.value = false }
 }
 
+// La création est une tâche : l'API répond tout de suite (202) et la
+// progression arrive en direct par le flux des tâches
 async function createProject() {
   creating.value = true
-  createResult.value = null
+  createTaskId.value = null
   createError.value = null
   try {
     const payload = {
@@ -290,9 +289,7 @@ async function createProject() {
       runtime_provider: selectedGP.value.runtime_provider,
     }
     const { data } = await api.createProject(payload)
-    createResult.value = data
-    await loadProjects()
-    await loadRepos()
+    createTaskId.value = trackTask(data)
   } catch (e) {
     createError.value = e.response?.data?.error || e.message
   } finally { creating.value = false }
@@ -301,34 +298,8 @@ async function createProject() {
 async function deleteProject(p) {
   if (!confirm(`Supprimer définitivement ${p.name} ?\n\nLe repo ${p.repo_path}, ses images et sa fiche catalogue seront supprimés.`)) return
   try {
-    // 202 : la suppression continue côté serveur (purge du registry GitLab)
-    await api.deleteProject(p.name)
-    p.deleting = true
-    watchDeletions()
-  } catch (e) {
-    alert('Erreur: ' + (e.response?.data?.error || e.message))
-  }
-}
-
-// Recharge la liste tant qu'une suppression est en cours
-function watchDeletions() {
-  if (deletionPoll) return
-  deletionPoll = setInterval(async () => {
-    await loadProjects()
-    if (!symphonyProjects.value.some(p => p.deleting)) {
-      clearInterval(deletionPoll)
-      deletionPoll = null
-      await loadRepos()
-    }
-  }, 5000)
-}
-
-async function triggerPipeline(repo) {
-  try {
-    const { data } = await api.triggerPipeline(repo.path, 'main', {})
-    pipelineID.value = data.id
-    pipelineStatus.value = 'pending'
-    pollStatus(repo.path, data.id)
+    const { data } = await api.deleteProject(p.name)
+    trackTask(data)
   } catch (e) {
     alert('Erreur: ' + (e.response?.data?.error || e.message))
   }
@@ -342,18 +313,6 @@ async function triggerPipelineByPath(path) {
   } catch (e) {
     alert('Erreur: ' + (e.response?.data?.error || e.message))
   }
-}
-
-function pollStatus(path, id, attempts = 0) {
-  if (attempts > 30) return
-  setTimeout(async () => {
-    try {
-      const { data } = await api.getPipelineStatus(path, id)
-      pipelineStatus.value = data.status
-      if (!['success', 'failed', 'canceled'].includes(data.status))
-        pollStatus(path, id, attempts + 1)
-    } catch {}
-  }, 5000)
 }
 
 function pollStatusForRepo(path, id, attempts = 0) {
@@ -381,6 +340,10 @@ h2 { font-size: 22px; font-weight: 700; }
 .btn-danger { color: #c53030; border-color: #feb2b2; margin-left: auto; }
 .btn-danger:hover { background: #fff5f5; }
 .btn-danger:disabled { opacity: .6; cursor: wait; }
+.task-wrap { margin-top: 20px; }
+.next { margin-top: 10px; font-size: 14px; }
+.next a { color: #667eea; text-decoration: none; font-weight: 500; }
+.project-task { font-size: 12px; color: #4c51bf; background: #ebf4ff; border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; }
 .form-card { background: white; border: 1px solid #e2e2e2; border-radius: 14px; padding: 24px; margin-bottom: 24px; }
 h3 { font-size: 17px; font-weight: 700; margin-bottom: 20px; }
 .gp-section { margin-bottom: 24px; }
