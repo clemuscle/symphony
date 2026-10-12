@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/clemuscle/symphony/internal/provider"
@@ -18,6 +19,28 @@ type Provider struct {
 	baseURL string
 	token   string
 	client  *http.Client
+
+	// Un commit à la fois par repo : GitLab refuse (400) des commits
+	// simultanés sur une même branche, ce qui arrive quand plusieurs tâches
+	// écrivent dans le repo de config ou de déploiement en même temps
+	writeMu sync.Mutex
+	repoMu  map[string]*sync.Mutex
+}
+
+// lockRepo réserve les écritures dans repoPath ; renvoie la fonction qui libère
+func (p *Provider) lockRepo(repoPath string) func() {
+	p.writeMu.Lock()
+	if p.repoMu == nil {
+		p.repoMu = map[string]*sync.Mutex{}
+	}
+	mu, ok := p.repoMu[repoPath]
+	if !ok {
+		mu = &sync.Mutex{}
+		p.repoMu[repoPath] = mu
+	}
+	p.writeMu.Unlock()
+	mu.Lock()
+	return mu.Unlock
 }
 
 func New(id, baseURL, token string) *Provider {
@@ -25,7 +48,13 @@ func New(id, baseURL, token string) *Provider {
 		id:      id,
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
-		client:  &http.Client{Timeout: 15 * time.Second},
+		client: &http.Client{
+			Timeout: 15 * time.Second,
+			// L'API redirige l'ancien chemin d'un projet renommé (ou planifié
+			// pour suppression) vers son external_url, qui peut être injoignable
+			// d'ici (localhost vu d'un conteneur) : la redirection est rendue telle quelle
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
 	}
 }
 
@@ -98,6 +127,7 @@ func (p *Provider) CreateRepo(req provider.CreateRepoRequest) (*provider.Repo, e
 }
 
 func (p *Provider) PushFile(repoPath, branch, filePath, content, commitMsg string) error {
+	defer p.lockRepo(repoPath)()
 	encoded := url.PathEscape(repoPath)
 	fileEncoded := url.PathEscape(filePath)
 
@@ -134,6 +164,7 @@ func (p *Provider) PushFile(repoPath, branch, filePath, content, commitMsg strin
 // fichier est d'abord créé ; si certains existent déjà (GitLab répond 400), le
 // commit est refait en les mettant à jour : un redéploiement reste un commit.
 func (p *Provider) PushFiles(repoPath, branch string, files map[string]string, commitMsg string) error {
+	defer p.lockRepo(repoPath)()
 	data, status, err := p.commitFiles(repoPath, branch, files, commitMsg, nil)
 	if err != nil {
 		return err
@@ -301,7 +332,8 @@ func (p *Provider) resolveNamespace(name string) (int, error) {
 }
 
 func (p *Provider) DeleteFile(repoPath, branch, filePath, commitMsg string) error {
-	_, status, err := p.api("DELETE",
+	defer p.lockRepo(repoPath)()
+	data, status, err := p.api("DELETE",
 		fmt.Sprintf("/projects/%s/repository/files/%s", url.PathEscape(repoPath), url.PathEscape(filePath)),
 		map[string]any{"branch": branch, "commit_message": commitMsg})
 	if err != nil {
@@ -312,9 +344,52 @@ func (p *Provider) DeleteFile(repoPath, branch, filePath, commitMsg string) erro
 		return nil
 	case 404:
 		return provider.ErrNotFound
-	default:
-		return fmt.Errorf("deleteFile %s: status %d", filePath, status)
+	case 400:
+		// Fichier absent : GitLab répond 400, pas 404
+		if strings.Contains(string(data), "doesn't exist") {
+			return provider.ErrNotFound
+		}
 	}
+	return fmt.Errorf("deleteFile %s: status %d — %s", filePath, status, strings.TrimSpace(string(data)))
+}
+
+// CreateWebhook ajoute un webhook de projet sur les événements de pipeline,
+// sauf si un webhook vers url existe déjà
+func (p *Provider) CreateWebhook(repoPath, hookURL, secret string) error {
+	hooks := "/projects/" + url.PathEscape(repoPath) + "/hooks"
+	data, status, err := p.api("GET", hooks, nil)
+	if err != nil {
+		return err
+	}
+	if status == 404 {
+		return provider.ErrNotFound
+	}
+	if status != 200 {
+		return fmt.Errorf("liste des webhooks: status %d — %s", status, string(data))
+	}
+	var existing []struct {
+		URL string `json:"url"`
+	}
+	json.Unmarshal(data, &existing)
+	for _, h := range existing {
+		if h.URL == hookURL {
+			return nil
+		}
+	}
+	data, status, err = p.api("POST", hooks, map[string]any{
+		"url":                     hookURL,
+		"token":                   secret, // renvoyé dans l'en-tête X-Gitlab-Token
+		"pipeline_events":         true,
+		"push_events":             false,
+		"enable_ssl_verification": strings.HasPrefix(hookURL, "https://"),
+	})
+	if err != nil {
+		return err
+	}
+	if status != 201 {
+		return fmt.Errorf("création du webhook: status %d — %s", status, string(data))
+	}
+	return nil
 }
 
 // DeleteRepo supprime le projet. GitLab refuse tant que le container registry
@@ -327,7 +402,9 @@ func (p *Provider) DeleteRepo(repoPath string) error {
 	if err != nil {
 		return err
 	}
-	if status == 404 {
+	// 404 : absent ; redirection : le chemin ne désigne plus ce projet (renommé
+	// en -deletion_scheduled- par une suppression déjà faite)
+	if status == 404 || (status >= 300 && status < 400) {
 		return provider.ErrNotFound
 	}
 	if status == 200 {
