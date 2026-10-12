@@ -39,7 +39,8 @@ dit ce qui en a été repris, adapté ou écarté.
 │ Symphony (Go)                                                        │
 │                                                                      │
 │  api/ (chi, handlers)   gitops/Syncer      gitops/TemplateLoader     │
-│                         catalogue (15 s)   golden paths (15 s)       │
+│  tasks/Runner ◄── webhooks GitLab          golden paths (15 s)       │
+│  (tâches, SSE)          catalogue (15 s)                             │
 │  configWatcher (15 s)   catalogue.Store    database (PostgreSQL)     │
 │                                                                      │
 │  provider.Registry : SCM │ CI │ Registry │ Runtime                   │
@@ -71,7 +72,9 @@ redémarrage, comme l'`app-config` de Backstage.
 | `internal/provider` | Interfaces, `Registry` (providers par id, remplaçable d'un bloc) et implémentations : `scm/gitlab`, `scm/github`, `ci/gitlabci`, `ci/githubactions`, `registry/gitlabregistry`, `runtime/docker`, `runtime/argocd` |
 | `internal/gitops` | `Syncer` (catalogue) et `TemplateLoader` (golden paths) |
 | `internal/catalogue` | Store en mémoire des services (`kind: Service`) |
-| `internal/database` | PostgreSQL via `database/sql` : `projects`, `pipelines`, `deployments`, `audit_log` ; migrations embarquées |
+| `internal/tasks` | Moteur de tâches : étapes enregistrées en base, attente de pipelines (webhook ou sondage), reprise au démarrage, diffusion des changements (`Hub`, pour le SSE) |
+| `internal/webhook` | Réception des événements de pipeline GitLab (`/webhooks/gitlab`, secret partagé) |
+| `internal/database` | PostgreSQL via `database/sql` : `projects`, `pipelines`, `deployments`, `tasks`, `audit_log` ; migrations embarquées |
 | `internal/api` | Routeur chi, handlers par domaine, `/healthz` |
 | `internal/metrics` | Métriques Prometheus sur `/metrics` ; `internal/provider/instrumented` enveloppe chaque provider pour mesurer ses appels |
 | `internal/auth` | OIDC (connexion, retour, déconnexion), cookie de session signé, rôles, CSRF, CORS ; `Holder` remplacé d'un bloc au rechargement de la config |
@@ -80,16 +83,49 @@ redémarrage, comme l'`app-config` de Backstage.
 
 ## Flux principaux
 
+### Tâches asynchrones
+
+Créer un projet, déployer, supprimer et lancer une action Day-2 prennent de quelques
+secondes à plusieurs minutes (pipeline, purge du registry, synchronisation Argo CD).
+L'API valide la demande, enregistre une **tâche** et répond `202` avec elle ; le moteur
+(`internal/tasks`) l'exécute en arrière-plan.
+
+```
+PENDING ──► RUNNING ──► SUCCESS
+               │   ▲
+               │   └── pipeline terminée (webhook GitLab, ou sondage du provider CI)
+               ▼
+            FAILED
+```
+
+- Une tâche est une suite d'**étapes**. L'étape en cours et les résultats intermédiaires
+  (`Exec.Set` : repo créé, pipeline lancée…) sont écrits en base à chaque pas. Au
+  démarrage, Symphony relance les tâches non terminées à leur étape ; une étape rejouée
+  saute ce que ses résultats disent déjà fait (pas de second repo).
+- Une étape peut **attendre une pipeline** sans occuper de goroutine : la tâche est mise
+  en attente (`wait` en base). Le webhook de GitLab la fait avancer à chaque changement
+  d'état ; un sondage toutes les 15 s rattrape un webhook perdu et suffit seul pour une CI
+  sans webhook (GitHub Actions). Au-delà d'une heure, la tâche échoue.
+- Une seule tâche à la fois par projet ou service (`409` sinon).
+- Chaque changement est diffusé en **Server-Sent Events** (`/api/v1/tasks/events`) :
+  l'UI suit l'avancement sans recharger ni sonder. À la reconnexion, le front relit la
+  liste : une coupure ne fait rien manquer.
+- Les paramètres d'une tâche (qui peuvent contenir des variables d'environnement) ne
+  sortent jamais de l'API ; les résultats ne contiennent pas de secret. Les identifiants
+  du registry sont lus au moment du déploiement, jamais enregistrés.
+
 ### Créer un projet depuis un golden path
 
-1. Résoudre le golden path, son SCM et son CI ; refuser un CI qui ne tourne pas sur ce SCM
-   (`CheckCompatible` : pas de GitLab CI sur un repo GitHub).
-2. Lire le skeleton et le template CI **avant** de créer le repo, et remplacer les
-   placeholders (`{{SERVICE_NAME}}`, `{{PORT}}`…).
-3. Créer le repo, puis pousser skeleton et CI en **un seul commit** : ce push lance la
-   première pipeline (build, tests, image dans le registry).
-4. Enregistrer le projet en base, écrire sa fiche dans `symphony-config/services/` (le
-   catalogue le voit aussitôt), journaliser dans l'audit.
+Tâche `create_project`, après validation (nom DNS, golden path, compatibilité SCM/CI,
+projet inexistant) :
+
+1. **Repo et squelette** : lire le skeleton et le template CI **avant** de créer le repo
+   (un template cassé ne laisse pas de repo vide), remplacer les placeholders, créer le
+   repo, puis pousser skeleton et CI en **un seul commit**, qui lance la première pipeline.
+2. **Projet, catalogue et webhook** : enregistrer le projet, écrire sa fiche dans
+   `symphony-config/services/`, abonner Symphony aux événements de pipeline du repo.
+3. **Première pipeline** : attendre sa fin. Quand la tâche réussit, l'image du service est
+   dans le registry : le projet est prêt à déployer.
 
 ### Recharger la configuration à chaud
 
@@ -101,6 +137,9 @@ providers, soit le nouveau. Le syncer et le template loader sont repointés
 précédente reste en place.
 
 ### Déployer
+
+Tâche `deploy` : le runtime déploie, puis la tâche attend que le service tourne (Argo CD
+synchronisé et pods prêts, ou conteneur démarré), 5 min au plus.
 
 1. L'UI préremplit l'image et les tags depuis le registry du projet.
 2. Le runtime Docker **tire l'image d'abord** (avec l'auth du registry, envoyée seulement
@@ -164,6 +203,8 @@ injecter de variables CI arbitraires.
 | `symphony_provider_calls_total`, `symphony_provider_call_duration_seconds` | `kind`, `provider`, `method`, `result` | santé et lenteur de GitLab, GitHub, Docker… |
 | `symphony_reloads_total`, `symphony_last_successful_reload_timestamp_seconds` | `source` (catalogue, templates, config), `result` (ok, error, refused) | un repo illisible, une config refusée, une synchro arrêtée |
 | `symphony_catalogue_services`, `symphony_golden_paths` | — | ce qui est chargé |
+| `symphony_tasks_finished_total`, `symphony_task_duration_seconds` | `kind`, `status` | tâches réussies ou échouées, et leur durée (pipeline comprise) |
+| `symphony_webhooks_total` | `source`, `event`, `result` (ok, refused, ignored, error) | webhooks reçus, secrets invalides |
 
 Plus les métriques du runtime Go et du processus. Les routes sont étiquetées par leur motif
 (`/api/v1/projects/{name}`), jamais par le chemin, pour garder un nombre de séries borné.
@@ -182,6 +223,7 @@ implémentations n'en savent rien.
 | Argo CD | compte de service à jeton (`apiKey`), limité aux Applications du projet `default` et à leurs journaux | — |
 | Fuite de token | l'auth du registry n'est envoyée qu'au registry qui héberge l'image | — |
 | Injection CI | entrées d'action validées, clés inconnues refusées | — |
+| Webhooks entrants | secret partagé (16 caractères min.), comparé en temps constant ; route hors `/api/v1`, sans session | — |
 | Configuration | une config invalide est refusée, la précédente reste en place | — |
 | Traçabilité | `audit_log` des actions mutantes, avec l'utilisateur OIDC et son adresse | — |
 | `/metrics` | public | à protéger au niveau réseau |
@@ -193,7 +235,10 @@ implémentations n'en savent rien.
 | IDP maison en Go plutôt que Backstage | léger, un binaire, code maîtrisé de bout en bout ; Backstage demande un monorepo TypeScript à recompiler à chaque plugin | Backstage, SaaS (Port, Cycloid) |
 | Golden paths en dossiers autonomes dans Git (`template.yaml` + `skeleton/`) | ajouter un template = pousser un dossier ; même modèle que les templates Backstage | golden paths dans la config, figés au démarrage |
 | Config dans Git, bootstrap local minimal | la plateforme se pilote par commits ; le bootstrap règle le problème de poule et d'œuf | tout en local ; tout dans Git sans bootstrap (impossible) |
-| Rechargement par polling (15 s) | simple, sans webhook entrant à exposer | webhooks Git (prévus pour la CI en v0.5) |
+| Rechargement de la config par polling (15 s) | simple, sans webhook entrant à exposer pour les repos de la plateforme | webhooks Git |
+| Tâches en base, étapes rejouables | une opération longue survit à un redémarrage ; pas de file externe à opérer | Redis, NATS, Temporal (une brique de plus pour un seul binaire) |
+| Webhooks de pipeline + sondage de secours | l'avancement arrive en direct, sans dépendre d'un webhook qui peut se perdre ou ne pas exister (GitHub en local) | sondage seul (lent), webhooks seuls (fragile) |
+| Server-Sent Events plutôt que WebSocket | flux serveur → navigateur seulement, HTTP simple, cookie de session et reconnexion natifs | WebSocket, sondage par le front |
 | `Registry.Replace` plutôt que redémarrer | pas de coupure ; les requêtes en cours finissent avec leurs providers | redémarrage du processus |
 | API Docker sur le socket, sans SDK | quelques appels HTTP suffisent, pas de dépendance lourde | SDK Docker |
 | Catalogue en mémoire, source dans Git | Git est la source de vérité, la base ne garde que l'état propre à Symphony | catalogue en base |
@@ -215,8 +260,8 @@ implémentations n'en savent rien.
 | L'IDP n'exécute pas de `kubectl apply` | **fait** pour Kubernetes (runtime `argocd`) ; le runtime Docker local déploie directement, pour la démo |
 | OIDC exclusif, RBAC par groupes | **fait** (Keycloak en démo, tout fournisseur OIDC ; sans section `auth`, mode développement) |
 | Vault pour les secrets | prévu en v0.6 |
-| Tâches asynchrones PENDING → RUNNING → SUCCESS via webhooks CI | prévu en v0.5 |
+| Tâches asynchrones PENDING → RUNNING → SUCCESS via webhooks CI | **fait** : tâches en base, webhooks GitLab, sondage de secours, SSE |
 | `/metrics` Prometheus | **fait** (API, providers, rechargements) |
 | Repos d'infra séparés des repos applicatifs | **fait** pour Kubernetes : manifests dans `symphony-deployments` |
 | Harbor, Jenkins, Terraform | hors périmètre : registry GitLab, GitLab CI / GitHub Actions |
-| Haute disponibilité multi-réplicas | hors périmètre : l'état en mémoire (catalogue, suppressions en cours) suppose une instance |
+| Haute disponibilité multi-réplicas | hors périmètre : le catalogue en mémoire et l'exécution des tâches (un seul runner, abonnés SSE locaux) supposent une instance |

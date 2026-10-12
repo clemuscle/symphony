@@ -49,6 +49,10 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
   `/auth/logout`), session en cookie signé, rôles, CSRF, CORS. Le `Holder` porte la
   politique courante et est remplacé au rechargement de la config (`buildPolicy`).
 - `internal/metrics` : métriques Prometheus (`/metrics`, middleware HTTP, `Reload`).
+- `internal/tasks` : moteur de tâches (étapes, `Exec.Set` pour les résultats repris au
+  redémarrage, `WaitPipeline`, sondage, `Hub` SSE). Les types de tâches et leurs étapes
+  sont dans `internal/api/handlers/tasks.go` (`RegisterTasks`) ; les handlers valident puis
+  `submit` (202). `internal/webhook` : `/webhooks/gitlab`.
 - `internal/gitops` : `Syncer` (catalogue, `services/` du repo de config) et
   `TemplateLoader` (golden paths, `templates/<nom>/template.yaml` de `symphony-templates`).
   Format des templates : README de ce repo.
@@ -89,6 +93,11 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
   `http://k3s:<port>` via le relais `gitlab-proxy`), `repo` le chemin pour le SCM. Aucun
   identifiant de registry dans Git : le cluster a les siens (`demo/k3s/registries.yaml`).
   Argo CD répond 403 (et non 404) pour une Application absente.
+- Une étape de tâche peut être **rejouée** après un redémarrage : la rendre idempotente
+  (tester `x.Get(...)` avant d'agir, `x.Set(...)` juste après). Pas de secret dans
+  `x.Set` (renvoyé par l'API) ; `Params` n'est jamais renvoyé.
+- Webhooks : `webhooks.url` = Symphony vu par GitLab ; GitLab doit autoriser les requêtes
+  vers le réseau local (`up.sh` le fait). Sans section `webhooks`, sondage seul (15 s).
 - `ListDeployments` agrège tous les runtimes ; chaque déploiement porte `provider`, que le
   front renvoie (`?provider=`) pour Stop/Restart/Logs.
 - Port d'un déploiement : `port` = port de l'appli **dans** le conteneur, `host_port` = port

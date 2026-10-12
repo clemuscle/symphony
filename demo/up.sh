@@ -56,6 +56,7 @@ random() { head -c 64 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c "$1";
 GITLAB_ROOT_PASSWORD=${GITLAB_ROOT_PASSWORD:-Sy-$(random 20)}
 KEYCLOAK_ADMIN_PASSWORD=$(saved KEYCLOAK_ADMIN_PASSWORD); KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-$(random 20)}
 SESSION_SECRET=$(saved SESSION_SECRET); SESSION_SECRET=${SESSION_SECRET:-$(random 48)}
+WEBHOOK_SECRET=$(saved WEBHOOK_SECRET); WEBHOOK_SECRET=${WEBHOOK_SECRET:-$(random 32)}
 
 GITLAB_URL="http://localhost:${GITLAB_PORT}"
 SYMPHONY_URL="http://localhost:${SYMPHONY_PORT}"
@@ -76,6 +77,7 @@ K8S_API_PORT=${K8S_API_PORT}
 SYMPHONY_IMAGE=${SYMPHONY_IMAGE}
 KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
 SESSION_SECRET=${SESSION_SECRET}
+WEBHOOK_SECRET=${WEBHOOK_SECRET}
 GITLAB_ROOT_PASSWORD=${GITLAB_ROOT_PASSWORD}
 GITLAB_TOKEN=${GITLAB_TOKEN}
 K8S_GITLAB_TOKEN=${K8S_GITLAB_TOKEN}
@@ -148,6 +150,13 @@ else
   write_env
   ok "Token API créé (dans demo/.env)"
 fi
+
+# Webhooks vers Symphony (http://symphony:8080, adresse privée) : GitLab les
+# refuse par défaut
+api -X PUT "$GITLAB_URL/api/v4/application/settings" \
+  -d "allow_local_requests_from_web_hooks_and_services=true" | jq -e .id >/dev/null \
+  || fail "réglage des webhooks de GitLab impossible"
+ok "Webhooks de GitLab vers Symphony autorisés"
 
 # Pousse le contenu de demo/gitlab/<repo>/ dans root/<repo>, en un commit
 seed_repo() {

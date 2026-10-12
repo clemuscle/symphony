@@ -22,6 +22,9 @@ existants (GitLab ou GitHub, leur CI, un registry, Docker, Argo CD) au lieu de l
   dérives, et l'UI affiche son état (Synced, Healthy). Symphony n'a aucun accès au cluster.
 - **Déploiement Docker** pour aller vite en local : port stable d'une version à l'autre,
   bascule avec retour automatique à l'ancienne version si la nouvelle ne démarre pas.
+- **Opérations suivies en direct** : création, déploiement, suppression et actions Day-2
+  sont des tâches qui survivent à un redémarrage ; l'UI montre chaque étape en temps réel
+  (Server-Sent Events), poussée par les webhooks de pipeline de GitLab.
 - **Plateforme pilotée par Git** : la configuration elle-même (providers, repos) est lue
   dans Git et appliquée à chaud ; une version invalide est refusée et l'ancienne reste en
   place.
@@ -86,6 +89,7 @@ implémenter une interface. Détails, flux et décisions :
 | Authentification | Backend-for-Frontend : Symphony fait le flux OIDC (code + PKCE) et ne donne au navigateur qu'un cookie signé `HttpOnly` ; rôle recalculé à chaque requête depuis les groupes, CSRF bloqué par contrôle d'origine. Jetons `Bearer` pour les scripts. |
 | Sécurité des actions | Les entrées d'une action Day-2 sont validées contre leur déclaration ; une clé non déclarée est refusée (pas d'injection de variables CI). Les identifiants du registry ne partent que vers le registry qui héberge l'image. |
 | Dépendances | API Docker appelée directement sur le socket (pas de SDK), `database/sql` sans ORM, front embarqué avec `go:embed`, image `scratch`. |
+| Tâches | Étapes enregistrées en base et rejouables : une création interrompue par un redémarrage reprend sans recréer le repo. L'attente d'une pipeline ne bloque aucun thread : un webhook (ou le sondage de secours) relance la tâche. |
 | Métriques | Routes étiquetées par motif chi (séries bornées) ; appels aux providers mesurés par des décorateurs, sans toucher aux implémentations. |
 
 ## Développer
@@ -102,8 +106,8 @@ sans section `config_source`, il est lu comme une configuration complète (hors 
 ## Feuille de route
 
 Fait : v0.1 (binaire unique, `/metrics`, CI et image publiée), v0.2 (démo), v0.3 (OIDC,
-rôles, audit), v0.4 (Kubernetes en GitOps avec Argo CD). À venir : opérations Day-2
-asynchrones, Vault. Détail : [ROADMAP.md](ROADMAP.md) et
+rôles, audit), v0.4 (Kubernetes en GitOps avec Argo CD), v0.5 (tâches asynchrones,
+webhooks, temps réel). À venir : golden path GitHub de bout en bout, Vault. Détail : [ROADMAP.md](ROADMAP.md) et
 [CHANGELOG.md](CHANGELOG.md).
 
 **Stack** : Go 1.22+, chi, go-oidc, PostgreSQL, Prometheus client, Vue 3 + Vite, GitLab CE,

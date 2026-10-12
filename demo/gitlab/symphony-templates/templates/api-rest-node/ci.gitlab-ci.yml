@@ -7,7 +7,7 @@ stages:
 test:
   stage: test
   script:
-    - npm ci
+    - npm install --no-audit --no-fund # pas de package-lock.json dans le squelette
     - npm run test:ci
   coverage: '/Lines\s*:\s*([0-9.]+)%/'
   only:
