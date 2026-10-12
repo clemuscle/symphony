@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 Symphony est une Internal Developer Platform : backend Go, SPA Vue 3, au-dessus de GitLab
-(ou GitHub), de leur CI, du registry GitLab et de Docker. Projet de **portfolio** visant des
-recruteurs tech et des leads DevOps.
+(ou GitHub), de leur CI, du registry GitLab, de Docker et d'Argo CD (Kubernetes en
+GitOps). Projet de **portfolio** visant des recruteurs tech et des leads DevOps.
 
 - Architecture et décisions : [documentation/architecture.md](documentation/architecture.md)
 - Plan par versions (où on en est, ce qui vient) : [ROADMAP.md](ROADMAP.md)
@@ -17,7 +17,7 @@ go run ./cmd/symphony           # depuis la racine du repo
 cd frontend && npm run dev      # front en dev (npm install d'abord), API sur :8080
 cd frontend && npm run build    # compile le front dans internal/web/dist, embarqué au prochain go build
 docker build -t symphony .      # image complète (front + binaire), ~10 Mo
-./demo/up.sh / ./demo/down.sh   # démo complète (GitLab CE + runner + Postgres + Symphony)
+./demo/up.sh / ./demo/down.sh   # démo complète (GitLab CE, runner, Postgres, Keycloak, k3s + Argo CD, Symphony)
 ```
 
 ## Pour lancer le serveur
@@ -52,9 +52,15 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
 - `internal/gitops` : `Syncer` (catalogue, `services/` du repo de config) et
   `TemplateLoader` (golden paths, `templates/<nom>/template.yaml` de `symphony-templates`).
   Format des templates : README de ce repo.
-- `demo/` : `docker-compose.yml`, `up.sh` (démarre et initialise tout, rejouable),
+- `internal/provider/runtime/argocd` : runtime Kubernetes GitOps. Commite
+  `apps/<service>/` (Deployment, Service, Ingress, `kustomization.yaml`) dans le repo de
+  déploiement via le SCM `scm_ref`, upsert de l'`Application` Argo CD, refresh ; Stop et
+  Restart réécrivent `kustomization.yaml`. Jamais d'appel à l'API Kubernetes.
+- `demo/` : `docker-compose.yml`, `up.sh` (démarre et initialise tout, rejouable,
+  `--no-k8s` sans k3s ni Argo CD),
   `down.sh` (`--purge` efface les données), `SCENARIO.md`. `demo/gitlab/` est le contenu
-  poussé dans la GitLab de démo (`symphony-config`, `symphony-templates`) : le mettre à jour
+  poussé dans la GitLab de démo (`symphony-config`, `symphony-templates`,
+  `symphony-deployments`) : le mettre à jour
   quand on change les golden paths de référence. `demo/capture/` régénère
   `documentation/demo.gif` (Playwright).
 - `internal/api` : toutes les routes dans `server.go`, chacune avec son rôle minimum
@@ -79,6 +85,12 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
   appel (`providers.SCM("")`), comme `Syncer` et `TemplateLoader`.
 - Un `GoldenPath` chargé garde son `repo`/`branch` : on lit son skeleton là d'où il vient,
   même si la config a changé de repo de templates.
+- Runtime `argocd` : `repo_url` est l'URL de clone **vue par Argo CD** (en démo
+  `http://k3s:<port>` via le relais `gitlab-proxy`), `repo` le chemin pour le SCM. Aucun
+  identifiant de registry dans Git : le cluster a les siens (`demo/k3s/registries.yaml`).
+  Argo CD répond 403 (et non 404) pour une Application absente.
+- `ListDeployments` agrège tous les runtimes ; chaque déploiement porte `provider`, que le
+  front renvoie (`?provider=`) pour Stop/Restart/Logs.
 - Port d'un déploiement : `port` = port de l'appli **dans** le conteneur, `host_port` = port
   publié (0 = celui du conteneur remplacé, sinon un port libre).
 - Suppression de projet asynchrone (202) : GitLab refuse de supprimer un projet tant que la
@@ -128,8 +140,9 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
   vérifier qu'il est identique.
 - Démo : la tester sur des ports décalés pour ne pas gêner la GitLab de l'utilisateur
   (`GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18090
-  KEYCLOAK_PORT=18180`). Jeton pour l'API : grant `password` du client `symphony` sur
+  KEYCLOAK_PORT=18180 K8S_HTTP_PORT=18081 ARGOCD_PORT=18088 K8S_API_PORT=16443`).
+  Jeton pour l'API : grant `password` du client `symphony` sur
   Keycloak (`username=bob&password=bob`) ; parcours navigateur avec Playwright,
   `SYMPHONY_IMAGE=symphony:local` pour une image construite localement, puis
-  `./demo/down.sh --purge` (~4 Go de RAM). `down.sh` ne supprime que les conteneurs dont
+  `./demo/down.sh --purge` (~5,5 Go de RAM avec k3s). `down.sh` ne supprime que les conteneurs dont
   l'image vient du registry de la démo.

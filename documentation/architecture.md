@@ -2,7 +2,7 @@
 
 Symphony est une **Internal Developer Platform** (IDP) : un backend Go et une SPA Vue 3 qui
 s'appuient sur les outils existants (GitLab ou GitHub, leur CI, un registry d'images, un
-runtime de conteneurs) pour qu'un développeur crée un service prêt à déployer en un clic,
+runtime : Docker ou Kubernetes via Argo CD) pour qu'un développeur crée un service prêt à déployer en un clic,
 depuis un *golden path* validé par l'équipe plateforme.
 
 Ce document décrit l'architecture actuelle et les décisions qui la fondent. Ce qui reste à
@@ -19,8 +19,9 @@ dit ce qui en a été repris, adapté ou écarté.
    stricte (`SCMProvider`, `CIProvider`, `RegistryProvider`, `RuntimeProvider`). Pas de
    chargement dynamique : ajouter un outil, c'est implémenter une interface.
 3. **Déléguer l'exécution.** Symphony n'exécute pas les builds : il pousse un fichier CI et
-   laisse la CI de la plateforme travailler. Le déploiement Docker local est l'exception
-   assumée (voir les écarts) ; le déploiement Kubernetes passera par Argo CD.
+   laisse la CI de la plateforme travailler. Sur Kubernetes, il ne déploie pas non plus : il
+   commite des manifests, Argo CD les applique. Le runtime Docker local est l'exception
+   assumée (voir les écarts).
 4. **Aucun secret dans la configuration.** Les fichiers ne contiennent que des noms de
    variables d'environnement (`token_env`).
 5. **Rester léger.** Pas de SDK lourd (l'API Docker est appelée directement sur le socket),
@@ -42,19 +43,20 @@ dit ce qui en a été repris, adapté ou écarté.
 │  configWatcher (15 s)   catalogue.Store    database (PostgreSQL)     │
 │                                                                      │
 │  provider.Registry : SCM │ CI │ Registry │ Runtime                   │
-└──────┬──────────────┬───────────┬──────────────┬─────────────────────┘
-       ▼              ▼           ▼              ▼
-  GitLab / GitHub  GitLab CI /  Registry      Docker Engine
-  (repos)          Actions      GitLab        (socket unix)
+└──────┬──────────────┬───────────┬──────────────┬──────────┬──────────┘
+       ▼              ▼           ▼              ▼          ▼
+  GitLab / GitHub  GitLab CI /  Registry      Docker     Argo CD ──► Kubernetes
+  (repos)          Actions      GitLab        (socket)   (API)       (k3s en démo)
 ```
 
-### Les trois repos Git
+### Les repos Git
 
 | Repo | Contenu | Relu |
 |---|---|---|
 | `root/symphony-config` | `symphony.yaml` (providers, catalogue, templates) et `services/` (catalogue) | toutes les 15 s, appliqué à chaud |
 | `root/symphony-templates` | `templates/<nom>/` : `template.yaml`, template CI, `skeleton/` | toutes les 15 s |
 | un repo par service créé | le code du service, généré depuis le golden path | — |
+| `root/symphony-deployments` | `apps/<service>/` : manifests Kubernetes écrits par Symphony (runtime `argocd`) | par Argo CD |
 
 Le `symphony.yaml` local n'est qu'un **bootstrap** (section `config_source`) : comment
 joindre GitLab et où lire la configuration. C'est le seul fichier qui demande un
@@ -66,7 +68,7 @@ redémarrage, comme l'`app-config` de Backstage.
 |---|---|
 | `cmd/symphony` | Composition : bootstrap et source de config (`config.go`), construction des providers (`providers.go`), assemblage (`main.go`) |
 | `internal/config` | Types de `symphony.yaml` et décodage (`${VAR}` remplacées par l'environnement) |
-| `internal/provider` | Interfaces, `Registry` (providers par id, remplaçable d'un bloc) et implémentations : `scm/gitlab`, `scm/github`, `ci/gitlabci`, `ci/githubactions`, `registry/gitlabregistry`, `runtime/docker`, `runtime/kubernetes` (stub) |
+| `internal/provider` | Interfaces, `Registry` (providers par id, remplaçable d'un bloc) et implémentations : `scm/gitlab`, `scm/github`, `ci/gitlabci`, `ci/githubactions`, `registry/gitlabregistry`, `runtime/docker`, `runtime/argocd` |
 | `internal/gitops` | `Syncer` (catalogue) et `TemplateLoader` (golden paths) |
 | `internal/catalogue` | Store en mémoire des services (`kind: Service`) |
 | `internal/database` | PostgreSQL via `database/sql` : `projects`, `pipelines`, `deployments`, `audit_log` ; migrations embarquées |
@@ -106,6 +108,30 @@ précédente reste en place.
 3. Bascule avec rollback : le nouveau conteneur démarre à côté (`<nom>-next`), l'ancien est
    arrêté ; si le nouveau tourne encore après 3 s il remplace l'ancien, sinon l'ancien
    redémarre et l'erreur contient les derniers logs du nouveau.
+
+### Déployer sur Kubernetes (runtime `argocd`, GitOps)
+
+Le runtime d'un projet vient de son golden path (`spec.providers.runtime`) ; le formulaire
+de déploiement peut le changer. Avec `argocd`, Symphony ne touche jamais au cluster :
+
+1. Il écrit les manifests du service dans le repo de déploiement, en **un commit** :
+   `apps/<service>/deployment.yaml`, `service.yaml`, `ingress.yaml` et
+   `kustomization.yaml`, qui porte ce qui change d'un déploiement à l'autre (tag de
+   l'image, réplicas, annotation de redémarrage). L'historique Git est l'historique des
+   déploiements ; un retour arrière est un `git revert`.
+2. Il crée ou met à jour l'`Application` Argo CD du service (API REST d'Argo CD, `upsert`) :
+   source = ce dossier, synchronisation automatique avec `prune` et `selfHeal`.
+3. Il demande un rafraîchissement à Argo CD, qui applique le commit en quelques secondes
+   au lieu d'attendre sa scrutation (3 min).
+4. L'état affiché (Synced/OutOfSync, Healthy/Progressing/Degraded) est celui de
+   l'`Application`. Arrêter un service le passe à 0 réplica, le relancer change
+   l'annotation de redémarrage : toujours par un commit. Les journaux passent par l'API
+   d'Argo CD.
+
+Les identifiants du registry ne sont jamais écrits dans Git : le cluster tire les images
+avec les siens (en démo, `registries.yaml` de k3s avec un jeton `read_registry`). Le
+compte Argo CD de Symphony n'a droit qu'aux Applications du projet `default` et à leurs
+journaux.
 
 ### Se connecter (OIDC, Backend-for-Frontend)
 
@@ -152,7 +178,8 @@ implémentations n'en savent rien.
 | Autorisations | rôles `viewer` < `developer` < `admin` déduits des groupes OIDC (configuration), vérifiés par route | rôles par projet |
 | CSRF | requête modifiante avec cookie : `Origin` (ou `Sec-Fetch-Site`) doit être Symphony | — |
 | CORS | aucune origine tierce par défaut ; liste `cors_origins`, sans cookies | — |
-| Secrets | variables d'environnement, jamais dans les fichiers | Vault — v0.6 |
+| Secrets | variables d'environnement, jamais dans les fichiers ni dans le repo de déploiement | Vault — v0.6 |
+| Argo CD | compte de service à jeton (`apiKey`), limité aux Applications du projet `default` et à leurs journaux | — |
 | Fuite de token | l'auth du registry n'est envoyée qu'au registry qui héberge l'image | — |
 | Injection CI | entrées d'action validées, clés inconnues refusées | — |
 | Configuration | une config invalide est refusée, la précédente reste en place | — |
@@ -173,7 +200,10 @@ implémentations n'en savent rien.
 | Backend-for-Frontend pour l'OIDC | le navigateur ne détient aucun jeton (pas de vol par XSS), le front n'a pas de bibliothèque OIDC ; recommandé par l'IETF pour les applications navigateur | jetons gérés par la SPA (oidc-client) |
 | Session dans un cookie signé, rôle recalculé à chaque requête | pas de stockage de sessions ; un changement de groupes → rôles dans la config s'applique sans reconnexion | sessions en base |
 | Découverte OIDC paresseuse et retentée | Symphony démarre même si l'IdP est absent ; `discovery_url` sépare l'URL interne de l'issuer vu par le navigateur | découverte au démarrage, bloquante |
-| Kubernetes via Argo CD (prévu) | Symphony écrit des manifests, Argo CD applique : fidèle au principe de délégation | appels directs à l'API Kubernetes |
+| Kubernetes via Argo CD | Symphony écrit des manifests, Argo CD applique et corrige les dérives : fidèle au principe de délégation, et Symphony n'a aucun droit sur le cluster | appels directs à l'API Kubernetes (client-go) |
+| Un repo de déploiement, un dossier par service | un seul endroit à brancher sur Argo CD, un historique de tous les déploiements | un repo par service, ou les manifests dans le repo du code (un commit de déploiement relancerait la CI) |
+| Kustomize pour ce qui change | arrêter ou relancer modifie un petit fichier typé, relu puis réécrit ; les autres manifests restent tels qu'écrits | Helm (un chart pour quatre fichiers), réécriture complète à chaque action |
+| k3s dans le `docker compose` de la démo | la distribution qu'utilise k3d, sans outil de plus à installer ; un relais (`gitlab-proxy`) partage le réseau de k3s pour que containerd et Argo CD joignent GitLab aux mêmes adresses que le reste de la démo | k3d (un CLI de plus, réseau séparé de GitLab) |
 
 ## Écarts avec la proposition KoreIDP
 
@@ -182,11 +212,11 @@ implémentations n'en savent rien.
 | Binaire unique avec la SPA embarquée | **fait** (`go:embed`, image `scratch`) |
 | Configuration déclarative dans un repo Git | **fait**, avec rechargement à chaud |
 | Drivers Go stricts, pas de plugins | **fait** (4 interfaces, 7 implémentations) |
-| L'IDP n'exécute pas de `kubectl apply` | respecté pour Kubernetes (Argo CD, v0.4) ; le runtime Docker local déploie directement, pour la démo |
+| L'IDP n'exécute pas de `kubectl apply` | **fait** pour Kubernetes (runtime `argocd`) ; le runtime Docker local déploie directement, pour la démo |
 | OIDC exclusif, RBAC par groupes | **fait** (Keycloak en démo, tout fournisseur OIDC ; sans section `auth`, mode développement) |
 | Vault pour les secrets | prévu en v0.6 |
 | Tâches asynchrones PENDING → RUNNING → SUCCESS via webhooks CI | prévu en v0.5 |
 | `/metrics` Prometheus | **fait** (API, providers, rechargements) |
-| Repos d'infra séparés des repos applicatifs | repris pour Kubernetes : manifests dans un repo de déploiement (v0.4) |
+| Repos d'infra séparés des repos applicatifs | **fait** pour Kubernetes : manifests dans `symphony-deployments` |
 | Harbor, Jenkins, Terraform | hors périmètre : registry GitLab, GitLab CI / GitHub Actions |
 | Haute disponibilité multi-réplicas | hors périmètre : l'état en mémoire (catalogue, suppressions en cours) suppose une instance |

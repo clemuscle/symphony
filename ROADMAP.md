@@ -74,14 +74,17 @@ l'audit montre qui a fait quoi.
 
 Objectif : déployer sur Kubernetes sans que Symphony applique quoi que ce soit lui-même.
 
-- [ ] Cluster local k3d et Argo CD (script ou `docker compose`)
-- [ ] Runtime `argocd` : Symphony écrit les manifests (Deployment, Service) dans un repo de
-      déploiement séparé du code, crée l'`Application` Argo CD, lit son état de synchro et
-      de santé
-- [ ] Choix du runtime par golden path (`docker-local` ou `argocd`)
-- [ ] Le runtime `kubernetes` (stub) est retiré ou remplacé
+- [x] Cluster local et Argo CD dans le `docker compose` de la démo : k3s (la distribution
+      qu'utilise k3d, sans outil de plus à installer), Argo CD v3 installé par `up.sh`
+      (`--no-k8s` pour s'en passer)
+- [x] Runtime `argocd` : Symphony écrit les manifests (Deployment, Service, Ingress,
+      Kustomize) dans un repo de déploiement séparé du code, crée l'`Application` Argo CD,
+      lit son état de synchro et de santé ; arrêt et relance passent aussi par Git
+- [x] Choix du runtime par golden path (`docker-local` ou `argocd-k3s`), modifiable au
+      déploiement ; la page Déploiements montre tous les runtimes
+- [x] Le runtime `kubernetes` (stub) est retiré
 
-Fini quand : un service créé avec un golden path `argocd` tourne dans k3d, et son état
+Fini quand : un service créé avec un golden path `argocd` tourne dans k3s, et son état
 Argo CD (Synced/Healthy) est visible dans l'UI.
 
 ## v0.5 — Day-2 asynchrone

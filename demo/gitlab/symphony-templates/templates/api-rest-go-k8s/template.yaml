@@ -1,0 +1,17 @@
+apiVersion: symphony/v1
+kind: GoldenPath
+metadata:
+  name: api-rest-go-k8s
+  title: API REST Go (Kubernetes)
+  description: La même API Go, déployée sur Kubernetes en GitOps avec Argo CD
+  icon: go
+spec:
+  language: go
+  type: api
+  providers:
+    scm: gitlab-local
+    ci: gitlab-ci
+    registry: gitlab-registry
+    runtime: argocd-k3s
+  skeleton: skeleton
+  ci_template: ci.gitlab-ci.yml

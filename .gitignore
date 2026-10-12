@@ -7,3 +7,6 @@ frontend/dist/
 internal/web/dist/*
 !internal/web/dist/.gitkeep
 demo/keycloak/import/
+demo/k3s/registries.yaml
+demo/k3s/output/
+demo/k3s/kubeconfig.yaml

@@ -37,6 +37,24 @@ providers:
       config:
         socket: /var/run/docker.sock
 
+    # Kubernetes en GitOps : Symphony commite les manifests de chaque service
+    # dans root/symphony-deployments, Argo CD (dans k3s) les applique
+    - id: argocd-k3s
+      type: argocd
+      config:
+        url: http://k3s:30080
+        token_env: ARGOCD_TOKEN
+        scm_ref: gitlab-local
+        repo: root/symphony-deployments
+        branch: main
+        path: apps
+        # Le même repo vu par Argo CD, depuis un pod (relais gitlab-proxy)
+        repo_url: http://k3s:${GITLAB_PORT}/root/symphony-deployments.git
+        namespace: symphony-apps
+        # Chaque service répond sur http://<service>.localhost:<K8S_HTTP_PORT>
+        ingress_domain: localhost
+        ingress_port: ${K8S_HTTP_PORT}
+
 catalogue:
   repo: root/symphony-config
   branch: main
