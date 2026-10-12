@@ -196,6 +196,9 @@ func (p *Provider) GetFileContent(repoPath, branch, filePath string) (string, er
 	if err != nil {
 		return "", err
 	}
+	if status == 404 {
+		return "", fmt.Errorf("getFile %s: %w", filePath, provider.ErrNotFound)
+	}
 	if status != 200 {
 		return "", fmt.Errorf("getFile %s: status %d", filePath, status)
 	}

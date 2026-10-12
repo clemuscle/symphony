@@ -61,23 +61,6 @@ func (p *Provider) docker(method, path string, body any) ([]byte, int, error) {
 	return data, resp.StatusCode, nil
 }
 
-// splitImage sépare le dépôt et le tag d'une image. Le tag explicite
-// l'emporte sur celui de l'image ; par défaut "latest". Le ":" d'un port de
-// registry (gitlab.local:5050/...) n'est pas un tag.
-func splitImage(image, tag string) (string, string) {
-	repo := image
-	if i := strings.LastIndex(image, ":"); i > strings.LastIndex(image, "/") {
-		repo = image[:i]
-		if tag == "" {
-			tag = image[i+1:]
-		}
-	}
-	if tag == "" {
-		tag = "latest"
-	}
-	return repo, tag
-}
-
 // pull télécharge l'image. Docker renvoie 200 puis signale une erreur en
 // cours de flux : chaque ligne JSON est lue pour la détecter.
 func (p *Provider) pull(repo, tag string, auth *provider.RegistryAuth) error {
@@ -123,7 +106,7 @@ func (p *Provider) pull(repo, tag string, auth *provider.RegistryAuth) error {
 }
 
 func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, error) {
-	repo, tag := splitImage(req.Image, req.Tag)
+	repo, tag := provider.SplitImage(req.Image, req.Tag)
 	image := repo + ":" + tag
 
 	// Pull avant de toucher au container en place : si l'image est

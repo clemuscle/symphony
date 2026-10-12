@@ -92,7 +92,7 @@ type RegistryAuth struct {
 
 type RuntimeProvider interface {
 	ID() string
-	Type() string // "docker", "kubernetes"
+	Type() string // "docker", "argocd"
 	Deploy(req DeployRequest) (*Deployment, error)
 	Stop(deploymentID string) error
 	Restart(deploymentID string) error
@@ -117,8 +117,13 @@ type Deployment struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Image     string    `json:"image"`
-	Status    string    `json:"status"` // running, stopped, error
+	Status    string    `json:"status"` // running, deploying, stopped, error
 	URL       string    `json:"url"`
 	Port      int       `json:"port"` // port publié côté hôte (celui de l'URL)
 	CreatedAt time.Time `json:"created_at"`
+	// Runtime qui porte le déploiement, renseigné par l'API
+	Provider string `json:"provider"`
+	// État GitOps (runtime argocd) : synchronisation avec Git et santé
+	Sync   string `json:"sync,omitempty"`   // Synced, OutOfSync
+	Health string `json:"health,omitempty"` // Healthy, Progressing, Degraded…
 }

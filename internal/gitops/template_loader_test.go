@@ -9,7 +9,7 @@ import (
 	"github.com/clemuscle/symphony/internal/provider"
 	githubci "github.com/clemuscle/symphony/internal/provider/ci/githubactions"
 	gitlabci "github.com/clemuscle/symphony/internal/provider/ci/gitlabci"
-	k8srt "github.com/clemuscle/symphony/internal/provider/runtime/kubernetes"
+	dockerrt "github.com/clemuscle/symphony/internal/provider/runtime/docker"
 	gitlabscm "github.com/clemuscle/symphony/internal/provider/scm/gitlab"
 )
 
@@ -53,7 +53,7 @@ func testProviders(scm provider.SCMProvider) *provider.Registry {
 	r.RegisterSCM(gitlabscm.New("gitlab-local", "http://gitlab.local", ""), false)
 	r.RegisterCI(gitlabci.New("gitlab-ci", "http://gitlab.local", ""), true)
 	r.RegisterCI(githubci.New("github-actions", ""), false)
-	r.RegisterRuntime(k8srt.New("k8s"), true)
+	r.RegisterRuntime(dockerrt.New("docker-local", "/var/run/docker.sock"), true)
 	return r
 }
 
