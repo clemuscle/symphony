@@ -5,17 +5,31 @@
 #   3. initialise GitLab : Auto DevOps désactivé, token API, repos
 #      root/symphony-config et root/symphony-templates (contenu de demo/gitlab/),
 #      runner enregistré
-#   4. démarre Keycloak (realm symphony : alice admin, bob developer,
+#   4. démarre Kubernetes (k3s) et y installe Argo CD, avec un compte pour
+#      Symphony et l'accès au repo root/symphony-deployments et au registry
+#   5. démarre Keycloak (realm symphony : alice admin, bob developer,
 #      carol viewer, dave sans rôle)
-#   5. démarre Symphony et attend qu'il ait chargé golden paths et catalogue
+#   6. démarre Symphony et attend qu'il ait chargé golden paths et catalogue
 #
 # Rejouable : chaque étape vérifie ce qui existe déjà.
+# --no-k8s : sans Kubernetes (~1,5 Go de RAM en moins) ; le golden path
+#   « API REST Go (Kubernetes) » ne peut alors pas être déployé.
 # Ports réglables : GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 \
-#   SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 ./demo/up.sh
+#   SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 K8S_HTTP_PORT=18081 ARGOCD_PORT=18088 \
+#   K8S_API_PORT=16443 ./demo/up.sh
 # Arrêt : ./demo/down.sh
 
 set -euo pipefail
 cd "$(dirname "$0")"
+
+K8S=true
+for arg in "$@"; do
+  case $arg in
+    --no-k8s) K8S=false ;;
+    *) echo "usage : $0 [--no-k8s]" >&2; exit 2 ;;
+  esac
+done
+ARGOCD_VERSION=v3.1.8
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 info() { echo -e "${BLUE}[démo]${NC} $*"; }
@@ -30,9 +44,14 @@ REGISTRY_PORT=${REGISTRY_PORT:-$(saved REGISTRY_PORT)}; REGISTRY_PORT=${REGISTRY
 GITLAB_SSH_PORT=${GITLAB_SSH_PORT:-$(saved GITLAB_SSH_PORT)}; GITLAB_SSH_PORT=${GITLAB_SSH_PORT:-2224}
 SYMPHONY_PORT=${SYMPHONY_PORT:-$(saved SYMPHONY_PORT)}; SYMPHONY_PORT=${SYMPHONY_PORT:-8080}
 KEYCLOAK_PORT=${KEYCLOAK_PORT:-$(saved KEYCLOAK_PORT)}; KEYCLOAK_PORT=${KEYCLOAK_PORT:-8180}
+K8S_HTTP_PORT=${K8S_HTTP_PORT:-$(saved K8S_HTTP_PORT)}; K8S_HTTP_PORT=${K8S_HTTP_PORT:-8081}
+ARGOCD_PORT=${ARGOCD_PORT:-$(saved ARGOCD_PORT)}; ARGOCD_PORT=${ARGOCD_PORT:-8088}
+K8S_API_PORT=${K8S_API_PORT:-$(saved K8S_API_PORT)}; K8S_API_PORT=${K8S_API_PORT:-6443}
 SYMPHONY_IMAGE=${SYMPHONY_IMAGE:-$(saved SYMPHONY_IMAGE)}; SYMPHONY_IMAGE=${SYMPHONY_IMAGE:-ghcr.io/clemuscle/symphony:latest}
 GITLAB_TOKEN=$(saved GITLAB_TOKEN)
 GITLAB_ROOT_PASSWORD=$(saved GITLAB_ROOT_PASSWORD)
+K8S_GITLAB_TOKEN=$(saved K8S_GITLAB_TOKEN)
+ARGOCD_TOKEN=$(saved ARGOCD_TOKEN)
 random() { head -c 64 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c "$1"; }
 GITLAB_ROOT_PASSWORD=${GITLAB_ROOT_PASSWORD:-Sy-$(random 20)}
 KEYCLOAK_ADMIN_PASSWORD=$(saved KEYCLOAK_ADMIN_PASSWORD); KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-$(random 20)}
@@ -41,6 +60,7 @@ SESSION_SECRET=$(saved SESSION_SECRET); SESSION_SECRET=${SESSION_SECRET:-$(rando
 GITLAB_URL="http://localhost:${GITLAB_PORT}"
 SYMPHONY_URL="http://localhost:${SYMPHONY_PORT}"
 KEYCLOAK_URL="http://localhost:${KEYCLOAK_PORT}"
+ARGOCD_URL="http://localhost:${ARGOCD_PORT}"
 
 write_env() {
   cat > .env <<EOF
@@ -50,11 +70,16 @@ REGISTRY_PORT=${REGISTRY_PORT}
 GITLAB_SSH_PORT=${GITLAB_SSH_PORT}
 SYMPHONY_PORT=${SYMPHONY_PORT}
 KEYCLOAK_PORT=${KEYCLOAK_PORT}
+K8S_HTTP_PORT=${K8S_HTTP_PORT}
+ARGOCD_PORT=${ARGOCD_PORT}
+K8S_API_PORT=${K8S_API_PORT}
 SYMPHONY_IMAGE=${SYMPHONY_IMAGE}
 KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
 SESSION_SECRET=${SESSION_SECRET}
 GITLAB_ROOT_PASSWORD=${GITLAB_ROOT_PASSWORD}
 GITLAB_TOKEN=${GITLAB_TOKEN}
+K8S_GITLAB_TOKEN=${K8S_GITLAB_TOKEN}
+ARGOCD_TOKEN=${ARGOCD_TOKEN}
 EOF
   chmod 600 .env
 }
@@ -77,9 +102,11 @@ fi
 # Un port pris par autre chose que la démo elle-même = conflit
 running=$($COMPOSE ps --services --status running 2>/dev/null || true)
 if [ -z "$running" ] && command -v ss >/dev/null 2>&1; then
-  for p in "$GITLAB_PORT" "$REGISTRY_PORT" "$GITLAB_SSH_PORT" "$SYMPHONY_PORT" "$KEYCLOAK_PORT"; do
+  ports="$GITLAB_PORT $REGISTRY_PORT $GITLAB_SSH_PORT $SYMPHONY_PORT $KEYCLOAK_PORT"
+  [ "$K8S" = true ] && ports="$ports $K8S_HTTP_PORT $ARGOCD_PORT $K8S_API_PORT"
+  for p in $ports; do
     ss -ltn | awk '{print $4}' | grep -q ":${p}\$" \
-      && fail "port ${p} déjà utilisé ; choisir d'autres ports, ex. GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 ./demo/up.sh"
+      && fail "port ${p} déjà utilisé ; choisir d'autres ports, ex. GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 K8S_HTTP_PORT=18081 ARGOCD_PORT=18088 K8S_API_PORT=16443 ./demo/up.sh"
   done
 fi
 
@@ -144,6 +171,7 @@ seed_repo() {
 }
 seed_repo symphony-config
 seed_repo symphony-templates
+seed_repo symphony-deployments
 
 if [ "$(api "$GITLAB_URL/api/v4/runners/all" | jq 'any(.[]?; .online)')" = true ]; then
   ok "Runner déjà enregistré"
@@ -163,7 +191,99 @@ else
   ok "Runner enregistré"
 fi
 
-# ── 4. Keycloak ───────────────────────────────────────────────────────────────
+# ── 4. Kubernetes : k3s et Argo CD ────────────────────────────────────────────
+
+kube() { $COMPOSE exec -T k3s kubectl "$@"; }
+
+if [ "$K8S" = true ]; then
+  # Jeton en lecture seule pour le cluster : containerd tire les images du
+  # registry, Argo CD lit root/symphony-deployments
+  if [ -n "$K8S_GITLAB_TOKEN" ] && curl -sf -o /dev/null -u "root:$K8S_GITLAB_TOKEN" \
+      "$GITLAB_URL/root/symphony-deployments.git/info/refs?service=git-upload-pack"; then
+    ok "Jeton de lecture du cluster déjà en place"
+  else
+    root_id=$(api "$GITLAB_URL/api/v4/user" | jq -r .id)
+    K8S_GITLAB_TOKEN=$(api -X POST "$GITLAB_URL/api/v4/users/$root_id/personal_access_tokens" \
+      -d "name=symphony-k8s" -d "scopes[]=read_registry" -d "scopes[]=read_repository" \
+      -d "expires_at=$(date -d '+364 days' +%F)" | jq -r '.token // empty')
+    [ -n "$K8S_GITLAB_TOKEN" ] || fail "création du jeton de lecture du cluster impossible"
+    write_env
+    ok "Jeton de lecture du cluster créé (read_registry, read_repository)"
+  fi
+
+  # Registry de GitLab vu par containerd : en HTTP, avec ce jeton
+  mkdir -p k3s/output
+  registries="# Écrit par demo/up.sh — ne pas versionner (contient un jeton)
+mirrors:
+  \"localhost:${REGISTRY_PORT}\":
+    endpoint: [\"http://localhost:${REGISTRY_PORT}\"]
+configs:
+  \"localhost:${REGISTRY_PORT}\":
+    auth:
+      username: root
+      password: ${K8S_GITLAB_TOKEN}"
+  restart_k3s=false
+  if [ "$(cat k3s/registries.yaml 2>/dev/null)" != "$registries" ]; then
+    echo "$registries" > k3s/registries.yaml
+    chmod 600 k3s/registries.yaml
+    restart_k3s=true
+  fi
+
+  info "Démarrage de Kubernetes (k3s)…"
+  $COMPOSE --profile k8s up -d k3s gitlab-proxy >/dev/null
+  [ "$restart_k3s" = true ] && $COMPOSE --profile k8s restart k3s >/dev/null
+  for i in $(seq 60); do
+    kube get --raw=/readyz >/dev/null 2>&1 && break
+    [ "$i" = 60 ] && fail "k3s ne répond pas : $COMPOSE logs k3s"
+    sleep 3
+  done
+  sed "s|https://127.0.0.1:6443|https://localhost:${K8S_API_PORT}|" k3s/output/kubeconfig.yaml > k3s/kubeconfig.yaml
+  ok "Kubernetes prêt (KUBECONFIG=demo/k3s/kubeconfig.yaml)"
+
+  info "Installation d'Argo CD ${ARGOCD_VERSION} (1 à 2 min)…"
+  kube create namespace argocd --dry-run=client -o yaml | kube apply -f - >/dev/null
+  curl -sfL "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml" \
+    | kube apply -n argocd --server-side --force-conflicts -f - >/dev/null \
+    || fail "installation d'Argo CD impossible"
+  kube apply --server-side --force-conflicts --field-manager=symphony-demo -f - < k3s/argocd-config.yaml >/dev/null
+  # Accès au repo de déploiement (le jeton reste dans le cluster, pas dans Git)
+  kube -n argocd create secret generic symphony-deployments-repo \
+    --from-literal=type=git \
+    --from-literal=url="http://k3s:${GITLAB_PORT}/root/symphony-deployments.git" \
+    --from-literal=username=root --from-literal=password="$K8S_GITLAB_TOKEN" \
+    --dry-run=client -o yaml \
+    | kube label --local -f - argocd.argoproj.io/secret-type=repository -o yaml \
+    | kube apply -f - >/dev/null
+  # server.insecure n'est lu qu'au démarrage
+  kube -n argocd rollout restart deployment/argocd-server >/dev/null
+  for d in deployment/argocd-server deployment/argocd-repo-server statefulset/argocd-application-controller; do
+    kube -n argocd rollout status "$d" --timeout=300s >/dev/null || fail "Argo CD ne démarre pas ($d)"
+  done
+  for i in $(seq 60); do
+    curl -sf -o /dev/null "$ARGOCD_URL/healthz" && break
+    [ "$i" = 60 ] && fail "Argo CD ne répond pas sur $ARGOCD_URL"
+    sleep 2
+  done
+
+  if [ -n "$ARGOCD_TOKEN" ] && curl -sf -o /dev/null -H "Authorization: Bearer $ARGOCD_TOKEN" "$ARGOCD_URL/api/v1/applications"; then
+    ok "Jeton Argo CD de Symphony déjà en place"
+  else
+    admin_pw=$(kube -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)
+    session=$(jq -n --arg p "$admin_pw" '{username: "admin", password: $p}' \
+      | curl -sf -H "Content-Type: application/json" --data @- "$ARGOCD_URL/api/v1/session" | jq -r '.token // empty')
+    [ -n "$session" ] || fail "connexion admin à Argo CD impossible"
+    ARGOCD_TOKEN=$(curl -sf -X POST -H "Authorization: Bearer $session" -H "Content-Type: application/json" \
+      -d '{"id": "symphony-demo"}' "$ARGOCD_URL/api/v1/account/symphony/token" | jq -r '.token // empty')
+    [ -n "$ARGOCD_TOKEN" ] || fail "création du jeton Argo CD de Symphony impossible"
+    write_env
+    ok "Compte Argo CD de Symphony et son jeton créés"
+  fi
+  ok "Argo CD prêt : $ARGOCD_URL"
+else
+  warn "Sans Kubernetes (--no-k8s) : seul le runtime docker-local est utilisable"
+fi
+
+# ── 5. Keycloak ───────────────────────────────────────────────────────────────
 
 for i in $(seq 60); do
   curl -sf -o /dev/null "$KEYCLOAK_URL/realms/symphony/.well-known/openid-configuration" && break
@@ -172,7 +292,7 @@ for i in $(seq 60); do
 done
 ok "Keycloak prêt : $KEYCLOAK_URL (realm symphony)"
 
-# ── 5. Symphony ───────────────────────────────────────────────────────────────
+# ── 6. Symphony ───────────────────────────────────────────────────────────────
 
 info "Démarrage de Symphony ($SYMPHONY_IMAGE)…"
 $COMPOSE --profile symphony up -d symphony >/dev/null
@@ -198,6 +318,15 @@ $(echo -e "${GREEN}Démo prête${NC}")
              mot de passe = identifiant
   GitLab     $GITLAB_URL   (root / $GITLAB_ROOT_PASSWORD)
   Keycloak   $KEYCLOAK_URL/admin   (admin / $KEYCLOAK_ADMIN_PASSWORD)
+EOF
+if [ "$K8S" = true ]; then
+  cat <<EOF
+  Argo CD    $ARGOCD_URL   (admin / $(kube -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d))
+  Services   http://<service>.localhost:$K8S_HTTP_PORT   (runtime argocd-k3s)
+  kubectl    KUBECONFIG=demo/k3s/kubeconfig.yaml kubectl get pods -n symphony-apps
+EOF
+fi
+cat <<EOF
   Métriques  $SYMPHONY_URL/metrics
 
   Scénario : demo/SCENARIO.md      Arrêt : ./demo/down.sh

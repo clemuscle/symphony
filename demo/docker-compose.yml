@@ -1,4 +1,5 @@
-# Démo Symphony : GitLab CE + Runner + PostgreSQL + Symphony.
+# Démo Symphony : GitLab CE + Runner + PostgreSQL + Keycloak + Symphony, et
+# Kubernetes (k3s + Argo CD) pour le runtime GitOps.
 #
 # Ne pas lancer directement : ./demo/up.sh démarre GitLab, l'initialise
 # (token, repos symphony-config et symphony-templates, runner) puis Symphony.
@@ -6,7 +7,7 @@
 # Les ports sont réglables (variables d'environnement ou demo/.env) pour
 # cohabiter avec une autre GitLab :
 #   GITLAB_PORT (8929), REGISTRY_PORT (5050), GITLAB_SSH_PORT (2224), SYMPHONY_PORT (8080),
-#   KEYCLOAK_PORT (8180)
+#   KEYCLOAK_PORT (8180), K8S_HTTP_PORT (8081), ARGOCD_PORT (8088), K8S_API_PORT (6443)
 #
 # GitLab est vu sous deux noms : http://gitlab:<port> depuis les conteneurs
 # (Symphony, runner), http://localhost:<port> depuis la machine (navigateur,
@@ -111,6 +112,9 @@ services:
       GITLAB_PORT: ${GITLAB_PORT:-8929}
       REGISTRY_PORT: ${REGISTRY_PORT:-5050}
       KEYCLOAK_PORT: ${KEYCLOAK_PORT:-8180}
+      # Runtime argocd : jeton du compte symphony d'Argo CD, port public de l'Ingress
+      ARGOCD_TOKEN: ${ARGOCD_TOKEN:-}
+      K8S_HTTP_PORT: ${K8S_HTTP_PORT:-8081}
     ports:
       - "${SYMPHONY_PORT:-8080}:8080"
     volumes:
@@ -118,9 +122,50 @@ services:
       # Runtime docker-local : déploie les services sur le daemon de la machine
       - /var/run/docker.sock:/var/run/docker.sock
 
+  # Kubernetes : k3s, la distribution que k3d fait tourner dans Docker ; up.sh
+  # y installe Argo CD. Les services déployés en GitOps répondent sur
+  # http://<service>.localhost:<K8S_HTTP_PORT> (Ingress Traefik).
+  k3s:
+    image: rancher/k3s:v1.33.4-k3s1
+    profiles: ["k8s"]
+    hostname: k3s # nom du nœud : les pods le résolvent (NodeHosts de CoreDNS)
+    privileged: true
+    command: ["server", "--disable=metrics-server", "--tls-san=localhost"]
+    tmpfs: [/run, /var/run]
+    environment:
+      K3S_KUBECONFIG_OUTPUT: /output/kubeconfig.yaml
+      K3S_KUBECONFIG_MODE: "644"
+    ports:
+      - "${K8S_HTTP_PORT:-8081}:80" # Ingress
+      - "${ARGOCD_PORT:-8088}:30080" # Argo CD (UI et API), NodePort
+      - "${K8S_API_PORT:-6443}:6443" # API Kubernetes (demo/k3s/kubeconfig.yaml)
+    volumes:
+      - k3s_data:/var/lib/rancher/k3s
+      # Généré par up.sh : registry de GitLab en HTTP, avec un jeton read_registry
+      - ./k3s/registries.yaml:/etc/rancher/k3s/registries.yaml:ro
+      - ./k3s/output:/output
+
+  # Relais vers GitLab dans le réseau de k3s. GitLab est configuré sur
+  # localhost (external_url) : le registry renvoie vers
+  # http://localhost:<GITLAB_PORT>/jwt/auth pour les jetons. Avec ce relais,
+  # localhost:<GITLAB_PORT> et localhost:<REGISTRY_PORT> mènent à GitLab pour
+  # containerd, comme pour le daemon Docker de la machine ; les pods (Argo CD)
+  # le joignent sur k3s:<GITLAB_PORT>.
+  gitlab-proxy:
+    image: alpine/socat:1.8.0.3
+    profiles: ["k8s"]
+    network_mode: service:k3s
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        socat TCP-LISTEN:${GITLAB_PORT:-8929},fork,reuseaddr TCP:gitlab:${GITLAB_PORT:-8929} &
+        exec socat TCP-LISTEN:${REGISTRY_PORT:-5050},fork,reuseaddr TCP:gitlab:${REGISTRY_PORT:-5050}
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   gitlab_config:
   gitlab_logs:
   gitlab_data:
   runner_config:
+  k3s_data:

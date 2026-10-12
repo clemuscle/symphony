@@ -1,7 +1,7 @@
 # Scénario de démo
 
 Le parcours complet d'un développeur, puis ce qui se passe côté équipe plateforme.
-Compter 10 minutes, dont 3 à 4 d'attente de pipeline.
+Compter 12 à 15 minutes, dont 3 à 4 d'attente de pipeline.
 
 Prérequis : `./demo/up.sh` a fini et affiche les URL de Symphony et de GitLab. Les exemples
 ci-dessous utilisent les ports par défaut (Symphony sur 8080, GitLab sur 8929).
@@ -41,6 +41,29 @@ avec son URL (`/healthz` répond).
 Redéployer ensuite le même service : la bascule garde le même port et, si le nouveau
 conteneur ne démarre pas, l'ancien est relancé.
 
+## 3 bis. Déployer sur Kubernetes, en GitOps (2 min)
+
+Créer un second service, `hello-k8s`, avec le golden path **API REST Go (Kubernetes)** :
+son runtime est `argocd-k3s`. Pipeline verte, page **Déploiements**, saisir `hello-k8s` :
+image, tags **et runtime** sont préremplis. **Déployer** : la carte passe de
+`OutOfSync / Missing` à `Synced / Healthy` en quelques secondes, et le service répond sur
+http://hello-k8s.localhost:8081/healthz.
+
+Symphony n'a rien appliqué lui-même :
+
+- dans GitLab, `root/symphony-deployments` a reçu un commit
+  `deploy: hello-k8s localhost:5050/root/hello-k8s:<sha>` avec `apps/hello-k8s/` ;
+- dans Argo CD (http://localhost:8088, identifiants affichés par `up.sh`), l'Application
+  `hello-k8s` pointe sur ce dossier.
+
+**Stop** commite `count: 0` dans `kustomization.yaml`, **Relancer** remet un réplica.
+Modifier le cluster à la main ne tient pas : Argo CD le ramène à l'état de Git.
+
+```bash
+export KUBECONFIG=demo/k3s/kubeconfig.yaml
+kubectl -n symphony-apps scale deploy hello-k8s --replicas=3   # revient à 1 en quelques secondes
+```
+
 ## 4. Côté plateforme : tout se pilote par Git (2 min)
 
 **Ajouter un golden path sans redémarrer.** Dans GitLab, `root/symphony-templates`,
@@ -66,7 +89,7 @@ par `bob@demo.symphony`.
 
 ## 6. Observer (30 s)
 
-http://localhost:8080/metrics : requêtes de l'API par route, appels à GitLab et à Docker par
+http://localhost:8080/metrics : requêtes de l'API par route, appels à GitLab, Docker et Argo CD par
 méthode (durée, erreurs), rechargements du catalogue, des templates et de la configuration.
 
 ## Nettoyer

@@ -5,6 +5,7 @@
 #
 # Les services déployés par la démo (images du registry de la démo) sont
 # supprimés ; les déploiements d'une autre instance de Symphony ne sont pas touchés.
+# Ceux du runtime argocd vivent dans k3s : arrêtés avec lui, effacés par --purge.
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -17,10 +18,10 @@ docker ps -a --filter label=symphony=true --format '{{.ID}} {{.Image}}' \
   | xargs -r docker rm -f >/dev/null
 
 if [ "${1:-}" = "--purge" ]; then
-  docker compose --profile symphony down -v
-  rm -f .env
+  docker compose --profile symphony --profile k8s down -v
+  rm -rf .env k3s/output k3s/registries.yaml k3s/kubeconfig.yaml
   echo "Démo supprimée (volumes compris)."
 else
-  docker compose --profile symphony down
+  docker compose --profile symphony --profile k8s down
   echo "Démo arrêtée ; ./demo/up.sh la relance avec ses données."
 fi

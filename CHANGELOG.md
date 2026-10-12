@@ -3,6 +3,33 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
+## v0.4 — Kubernetes en GitOps
+
+### Ajouté
+- **Runtime `argocd`** : déployer sur Kubernetes sans que Symphony touche au cluster. Il
+  commite les manifests du service (`Deployment`, `Service`, `Ingress`,
+  `kustomization.yaml`) dans un repo de déploiement, en un commit, crée ou met à jour
+  l'`Application` Argo CD (synchronisation automatique, `prune`, `selfHeal`) et lit son état.
+  Arrêt (0 réplica) et relance sont aussi des commits ; les journaux passent par l'API
+  d'Argo CD. Aucun identifiant de registry n'est écrit dans Git.
+- **Kubernetes dans la démo** : k3s et Argo CD v3.1.8 installés par `./demo/up.sh`, repo
+  `root/symphony-deployments`, compte Argo CD de Symphony aux droits limités, golden path
+  « API REST Go (Kubernetes) » ; les services répondent sur
+  `http://<service>.localhost:8081`. `--no-k8s` pour une démo plus légère.
+- Page Déploiements : tous les runtimes à la fois, état Synced/Healthy d'Argo CD,
+  relance, rafraîchissement automatique pendant un déploiement ; runtime choisi dans une
+  liste (par défaut celui du projet).
+
+### Modifié
+- Un déploiement sans runtime précisé utilise celui du projet (donc de son golden path),
+  plus le runtime par défaut.
+- GitLab : pousser des fichiers qui existent déjà fait un seul commit (création et mise à
+  jour mêlées) au lieu d'un commit par fichier.
+- Lire un fichier absent d'un repo renvoie `ErrNotFound` (GitLab et GitHub).
+
+### Retiré
+- Le runtime `kubernetes`, qui n'était qu'un stub.
+
 ## v0.3 — Sécurité
 
 ### Ajouté

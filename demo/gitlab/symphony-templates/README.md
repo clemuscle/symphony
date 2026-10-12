@@ -28,7 +28,7 @@ spec:
     scm: gitlab-local
     ci: gitlab-ci
     registry: gitlab-registry  # optionnel
-    runtime: docker-local
+    runtime: docker-local    # ou argocd-k3s : Kubernetes en GitOps (Argo CD)
   skeleton: skeleton         # dossier, relatif au template (défaut : skeleton)
   ci_template: ci.gitlab-ci.yml
 ```

@@ -6,7 +6,7 @@
 **Une Internal Developer Platform en Go** : un développeur crée un service prêt pour la
 production en un clic, à partir d'un *golden path* validé par l'équipe plateforme. Repo,
 code, CI, image, déploiement et fiche de catalogue : Symphony s'appuie sur les outils
-existants (GitLab ou GitHub, leur CI, un registry, Docker) au lieu de les remplacer.
+existants (GitLab ou GitHub, leur CI, un registry, Docker, Argo CD) au lieu de les remplacer.
 
 ![Démo : du golden path au service déployé](documentation/demo.gif)
 
@@ -17,9 +17,11 @@ existants (GitLab ou GitHub, leur CI, un registry, Docker) au lieu de les rempla
   dossier dans un repo Git : il est disponible en moins de 15 s, sans redémarrage.
 - **Catalogue de services** : équipe, criticité, SLO, liens et actions Day-2 de chaque
   service, versionnés dans Git.
-- **Déploiement** : image tirée du registry du projet avec ses identifiants, port stable
-  d'une version à l'autre, bascule avec retour automatique à l'ancienne version si la
-  nouvelle ne démarre pas.
+- **Déploiement sur Kubernetes en GitOps** : Symphony commite les manifests du service dans
+  un repo de déploiement et crée l'`Application` Argo CD ; Argo CD applique, corrige les
+  dérives, et l'UI affiche son état (Synced, Healthy). Symphony n'a aucun accès au cluster.
+- **Déploiement Docker** pour aller vite en local : port stable d'une version à l'autre,
+  bascule avec retour automatique à l'ancienne version si la nouvelle ne démarre pas.
 - **Plateforme pilotée par Git** : la configuration elle-même (providers, repos) est lue
   dans Git et appliquée à chaud ; une version invalide est refusée et l'ancienne reste en
   place.
@@ -31,17 +33,18 @@ existants (GitLab ou GitHub, leur CI, un registry, Docker) au lieu de les rempla
 
 ## Essayer
 
-Prérequis : Docker avec Compose v2, `curl`, `jq`, ~5 Go de RAM libres (GitLab, Keycloak).
+Prérequis : Docker avec Compose v2, `curl`, `jq`, ~6 Go de RAM libres (GitLab, Keycloak,
+k3s et Argo CD ; `--no-k8s` en économise 1,5 Go).
 
 ```bash
 git clone https://github.com/clemuscle/symphony.git && cd symphony
-./demo/up.sh        # GitLab CE + runner + Keycloak + PostgreSQL + Symphony (5 à 10 min la 1re fois)
+./demo/up.sh        # GitLab CE, runner, Keycloak, PostgreSQL, k3s + Argo CD, Symphony (5 à 10 min la 1re fois)
 ```
 
 Le script affiche les URL et identifiants. Comptes de démo (mot de passe = identifiant) :
 `alice` (admin), `bob` (developer), `carol` (viewer), `dave` (sans rôle). Suivre ensuite le
 [scénario de démo](demo/SCENARIO.md) (10 min). Ports déjà pris ?
-`GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 ./demo/up.sh`.
+`GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 K8S_HTTP_PORT=18081 ARGOCD_PORT=18088 K8S_API_PORT=16443 ./demo/up.sh`.
 Arrêt : `./demo/down.sh` (`--purge` pour tout effacer).
 
 ## Architecture
@@ -61,6 +64,7 @@ flowchart LR
   REG --> CI[GitLab CI / Actions]
   REG --> IMG[Registry d'images]
   REG --> RT[Docker]
+  REG --> ARGO[Argo CD] --> K8S[Kubernetes]
   W -. 15 s .-> CFG[(symphony-config<br/>symphony.yaml)]
   S -. 15 s .-> SVC[(symphony-config<br/>services/)]
   T -. 15 s .-> TPL[(symphony-templates<br/>templates/)]
@@ -98,9 +102,9 @@ sans section `config_source`, il est lu comme une configuration complète (hors 
 ## Feuille de route
 
 Fait : v0.1 (binaire unique, `/metrics`, CI et image publiée), v0.2 (démo), v0.3 (OIDC,
-rôles, audit). À venir : Kubernetes en GitOps (k3d + Argo CD), opérations Day-2
+rôles, audit), v0.4 (Kubernetes en GitOps avec Argo CD). À venir : opérations Day-2
 asynchrones, Vault. Détail : [ROADMAP.md](ROADMAP.md) et
 [CHANGELOG.md](CHANGELOG.md).
 
 **Stack** : Go 1.22+, chi, go-oidc, PostgreSQL, Prometheus client, Vue 3 + Vite, GitLab CE,
-Keycloak, Docker.
+Keycloak, Docker, k3s, Argo CD.
