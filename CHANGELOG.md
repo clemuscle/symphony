@@ -3,6 +3,44 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
+## v0.5 — Day-2 asynchrone
+
+### Ajouté
+- **Tâches** : créer un projet, déployer, supprimer un projet et lancer une action Day-2
+  sont des tâches suivies (`PENDING → RUNNING → SUCCESS | FAILED`), enregistrées en base
+  étape par étape. L'API répond `202` avec la tâche ; une tâche interrompue par un
+  redémarrage de Symphony reprend à son étape.
+- La création d'un projet va jusqu'à la fin de sa **première pipeline** (image dans le
+  registry), le déploiement jusqu'au **service prêt** (Argo CD Synced/Healthy ou
+  conteneur démarré), une action pipeline jusqu'à la fin de sa pipeline.
+- **Webhooks GitLab entrants** (`POST /webhooks/gitlab`) : Symphony abonne chaque repo qu'il
+  crée aux événements de pipeline (section `webhooks` de la configuration, secret
+  `WEBHOOK_SECRET`) ; un sondage toutes les 15 s sert de secours, et suffit seul sans
+  webhooks (GitHub Actions).
+- **Temps réel** : `GET /api/v1/tasks/events` (Server-Sent Events), `GET /api/v1/tasks`,
+  `GET /api/v1/tasks/{id}`. L'UI montre chaque étape en direct, avec liens vers le repo, la
+  pipeline en cours et le service ; nouvelle page **Activité** et compteur de tâches en cours.
+- Métriques `symphony_tasks_finished_total`, `symphony_task_duration_seconds`,
+  `symphony_webhooks_total`.
+
+### Modifié
+- `POST /projects`, `DELETE /projects/{name}`, `POST /deployments` et
+  `POST /services/{name}/actions/{action}` répondent `202` avec une tâche ; `409` si une
+  tâche est déjà en cours sur le même projet ou service.
+- Nom de projet : un nom DNS (minuscules, chiffres, tirets, 63 caractères), utilisable tel
+  quel pour Kubernetes.
+- Échec d'une tâche journalisé dans l'audit (`<type>_failed`).
+
+### Corrigé
+- Golden paths de la démo : les pipelines Python échouaient (`pytest-cov` manquant) et
+  Node aussi (`npm ci` sans `package-lock.json`) ; les quatre golden paths construisent et
+  déploient leur image.
+- GitLab : les écritures dans un même repo sont faites une à une (des commits simultanés,
+  par exemple plusieurs suppressions de fiches catalogue, étaient refusés) ; un fichier
+  ou un projet déjà supprimé n'est plus une erreur ; les redirections de l'API ne sont plus
+  suivies vers une `external_url` injoignable.
+- Déploiements : le formulaire se préremplit quand on arrive avec `?project=`.
+
 ## v0.4 — Kubernetes en GitOps
 
 ### Ajouté

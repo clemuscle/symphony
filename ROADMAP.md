@@ -91,11 +91,14 @@ Argo CD (Synced/Healthy) est visible dans l'UI.
 
 Objectif : les opérations longues sont des tâches suivies, pas des requêtes qui attendent.
 
-- [ ] Table `tasks` et machine à états `PENDING → RUNNING → SUCCESS | FAILED`
-- [ ] Webhooks entrants GitLab (événements de pipeline, secret vérifié) qui font avancer
-      les tâches
-- [ ] Création, déploiement, suppression et actions Day-2 deviennent des tâches
-- [ ] Mise à jour de l'UI en temps réel (Server-Sent Events)
+- [x] Table `tasks` et machine à états `PENDING → RUNNING → SUCCESS | FAILED`, étapes
+      enregistrées une à une et reprises au redémarrage
+- [x] Webhooks entrants GitLab (événements de pipeline, secret vérifié) qui font avancer
+      les tâches ; sondage du provider CI en secours
+- [x] Création (jusqu'à la fin de la première pipeline), déploiement (jusqu'au service
+      prêt), suppression et actions Day-2 deviennent des tâches
+- [x] Mise à jour de l'UI en temps réel (Server-Sent Events) : avancement étape par étape,
+      page Activité
 
 Fini quand : l'UI montre l'avancement d'une création ou d'un déploiement sans recharger la
 page, et une tâche survit à un redémarrage de Symphony.
@@ -116,5 +119,5 @@ page, et une tâche survit à un redémarrage de Symphony.
 
 ## Hors périmètre
 
-Haute disponibilité multi-réplicas (le catalogue et les suppressions en cours sont en
-mémoire), Harbor, Jenkins, Terraform. Voir [les écarts avec KoreIDP](documentation/architecture.md#écarts-avec-la-proposition-koreidp).
+Haute disponibilité multi-réplicas (le catalogue est en mémoire, un seul processus
+exécute les tâches), Harbor, Jenkins, Terraform. Voir [les écarts avec KoreIDP](documentation/architecture.md#écarts-avec-la-proposition-koreidp).

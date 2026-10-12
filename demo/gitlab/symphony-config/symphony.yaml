@@ -55,6 +55,12 @@ providers:
         ingress_domain: localhost
         ingress_port: ${K8S_HTTP_PORT}
 
+# Webhooks entrants : chaque repo créé par Symphony le prévient de l'avancement
+# de ses pipelines (sinon, sondage toutes les 15 s)
+webhooks:
+  url: http://symphony:8080 # Symphony vu par GitLab
+  secret_env: WEBHOOK_SECRET
+
 catalogue:
   repo: root/symphony-config
   branch: main
