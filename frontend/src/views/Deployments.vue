@@ -49,12 +49,11 @@
       </div>
       <button class="btn-primary" type="submit"
         :disabled="deploying || !form.project_name || !form.image">
-        {{ deploying ? '⏳ Déploiement...' : '🚀 Déployer' }}
+        {{ deploying ? '⏳ Envoi...' : '🚀 Déployer' }}
       </button>
-      <div class="result-card ok" v-if="deployResult">
-        ✅ Déployé :
-        <a v-if="deployResult.url" :href="deployResult.url" target="_blank">{{ deployResult.url }} ↗</a>
-        <code v-else>{{ deployResult.id }}</code>
+      <!-- Avancement du déploiement, en direct (tâche asynchrone) -->
+      <div class="task-wrap" v-if="deployTask">
+        <TaskProgress :task="deployTask" />
       </div>
       <div class="result-card err" v-if="deployError">❌ {{ deployError }}</div>
     </form>
@@ -90,14 +89,18 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { api } from '../api'
 import { can } from '../stores/session'
+import TaskProgress from '../components/TaskProgress.vue'
+import { taskStore, trackTask } from '../stores/tasks'
 
 const deployments = ref([])
 const loading = ref(true)
 const deploying = ref(false)
-const deployResult = ref(null)
+const deployTaskId = ref(null)
+const deployTask = computed(() => taskStore.byId[deployTaskId.value])
 const deployError = ref(null)
 
 const form = ref({
@@ -110,9 +113,20 @@ const tags = ref([])
 const imageHint = ref('')
 let autoImage = '' // dernière image préremplie : écrasée seulement si l'utilisateur ne l'a pas modifiée
 
+// Chaque étape du déploiement change la liste : on la relit
+watch(() => deployTask.value && `${deployTask.value.step}:${deployTask.value.status}`, (v) => { if (v) load(true) })
+
+// Arrivée depuis la création d'un projet : /deployments?project=<nom>
+const route = useRoute()
+
 onMounted(() => {
   load()
-  api.listProjects().then(({ data }) => { projects.value = data || [] }).catch(() => {})
+  // Le projet de ?project= est saisi une fois la liste connue : c'est elle qui
+  // déclenche le préremplissage de l'image, des tags et du runtime
+  api.listProjects().then(({ data }) => {
+    projects.value = data || []
+    if (route.query.project) form.value.project_name = route.query.project
+  }).catch(() => {})
   api.getProviders().then(({ data }) => { runtimes.value = data.runtime || [] }).catch(() => {})
 })
 
@@ -149,15 +163,15 @@ watch(() => form.value.project_name, async (name) => {
 
 async function deploy() {
   deploying.value = true
-  deployResult.value = null
+  deployTaskId.value = null
   deployError.value = null
   try {
-    // Un champ number vidé vaut "" : l'API attend un entier (0 = défaut)
+    // Un champ number vidé vaut "" : l'API attend un entier (0 = défaut).
+    // Réponse 202 : le déploiement continue en tâche, suivie en direct.
     const { data } = await api.deploy({
       ...form.value, port: form.value.port || 0, host_port: form.value.host_port || 0,
     })
-    deployResult.value = data
-    await load()
+    deployTaskId.value = trackTask(data)
   } catch (e) {
     deployError.value = e.response?.data?.error || e.message
   } finally { deploying.value = false }
@@ -225,6 +239,7 @@ h2 { font-size: 22px; font-weight: 700; }
 .field input:focus { outline: none; border-color: #667eea; }
 .btn-primary { padding: 9px 20px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; }
 .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+.task-wrap { margin-top: 16px; }
 .result-card { padding: 14px 16px; border-radius: 10px; margin-top: 16px; font-size: 14px; }
 .result-card.ok { background: #f0fff4; border: 1px solid #9ae6b4; }
 .result-card.ok a { color: #667eea; text-decoration: none; }
