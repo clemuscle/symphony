@@ -5,16 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/tasks"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -29,7 +29,13 @@ type CreateProjectRequest struct {
 	EnvVars         map[string]string `json:"env_vars"`
 }
 
-func CreateProject(providers *provider.Registry, db *database.DB, templates *gitops.TemplateLoader, syncer *gitops.Syncer) http.HandlerFunc {
+// projectNameRe : nom de repo et de service (DNS : utilisable tel quel comme
+// nom Kubernetes, d'image et d'hôte)
+var projectNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// CreateProject valide la demande puis lance la création en tâche (202) :
+// repo, squelette, fiche catalogue, webhook et première pipeline
+func CreateProject(providers *provider.Registry, db *database.DB, templates *gitops.TemplateLoader, runner *tasks.Runner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req CreateProjectRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -37,24 +43,20 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			return
 		}
 
-		// Validation
-		if req.Name == "" {
-			respondError(w, http.StatusBadRequest, "name requis")
+		req.Name = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(req.Name), " ", "-"))
+		if !projectNameRe.MatchString(req.Name) {
+			respondError(w, http.StatusBadRequest, "name invalide : minuscules, chiffres et tirets, 63 caractères max.")
 			return
 		}
-		req.Name = strings.ToLower(strings.ReplaceAll(req.Name, " ", "-"))
 		if req.Port == 0 {
 			req.Port = 8080
 		}
 
-		// Récupérer le golden path
 		gp, err := templates.GetGoldenPath(req.GoldenPathID)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "golden path introuvable: "+req.GoldenPathID)
 			return
 		}
-
-		// Résoudre le provider SCM
 		scmID := req.SCMProvider
 		if scmID == "" {
 			scmID = gp.SCMProvider
@@ -64,8 +66,6 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			respondError(w, http.StatusBadRequest, "scm provider: "+err.Error())
 			return
 		}
-
-		// Résoudre le provider CI
 		ci, err := providers.CI(gp.CIProvider)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "ci provider: "+err.Error())
@@ -77,111 +77,26 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			respondError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-
-		// 1. Récupérer le skeleton et le template CI avant de créer le repo :
-		// un template cassé ne laisse pas de repo vide derrière lui
-		scaffoldFiles, err := templates.GetScaffoldFiles(*gp)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "scaffold: "+err.Error())
+		if _, err := db.GetProjectByName(req.Name); err == nil {
+			respondError(w, http.StatusConflict, "le projet existe déjà: "+req.Name)
 			return
-		}
-
-		// Remplacer les placeholders dans le scaffold
-		processedFiles := make(map[string]string, len(scaffoldFiles))
-		for path, content := range scaffoldFiles {
-			content = replacePlaceholders(content, req.Name, req.Description, gp, req.Port)
-			processedFiles[path] = content
-		}
-
-		// Ajouter le template CI au scaffold, à l'emplacement attendu par le provider CI
-		ciContent, err := templates.GetCITemplate(*gp)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "ci template: "+err.Error())
-			return
-		}
-		processedFiles[ci.ConfigFile()] = replacePlaceholders(ciContent, req.Name, req.Description, gp, req.Port)
-
-		// 2. Créer le repo
-		repo, err := scm.CreateRepo(provider.CreateRepoRequest{
-			Name:        req.Name,
-			Description: req.Description,
-			Namespace:   req.Namespace,
-			Private:     true,
-		})
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "création repo: "+err.Error())
-			return
-		}
-
-		// 3. Pousser scaffold + CI en un seul commit : ce push lance la première
-		// pipeline, et sur GitLab un premier commit sans .gitlab-ci.yml
-		// déclencherait l'Auto DevOps
-		if err := scm.PushFiles(repo.Path, repo.DefaultBranch, processedFiles,
-			"chore: scaffold initial [symphony]"); err != nil {
-			respondError(w, http.StatusInternalServerError, "push scaffold: "+err.Error())
-			return
-		}
-
-		// 4. Sauvegarder en DB
-		rtProvider := req.RuntimeProvider
-		if rtProvider == "" {
-			rtProvider = gp.RTProvider
-		}
-
-		// Registry : facultatif, un projet sans registry reste déployable avec
-		// une image saisie à la main
-		regProvider, registryURL := gp.RegProvider, ""
-		if reg, err := providers.GetRegistry(gp.RegProvider); err == nil {
-			regProvider, registryURL = reg.ID(), reg.GetImageURL(repo.Path)
-		}
-
-		proj := &database.Project{
-			Name:        req.Name,
-			Description: req.Description,
-			Language:    gp.Language,
-			Type:        gp.Type,
-			Port:        req.Port,
-			Namespace:   req.Namespace,
-			SCMProvider: scm.ID(),
-			CIProvider:  gp.CIProvider,
-			RegProvider: regProvider,
-			RTProvider:  rtProvider,
-			RepoPath:    repo.Path,
-			RepoURL:     repo.HTTPCloneURL,
-			RegistryURL: registryURL,
-			GoldenPath:  req.GoldenPathID,
-			CreatedBy:   userID(r),
-		}
-		if err := db.CreateProject(proj); err != nil {
+		} else if !errors.Is(err, sql.ErrNoRows) {
 			respondError(w, http.StatusInternalServerError, "db: "+err.Error())
 			return
 		}
-
-		// 5. Enregistrer le service dans le catalogue. Le projet existe déjà :
-		// un échec ici est signalé sans annuler la création.
-		catalogueErr := ""
-		if err := syncer.Register(serviceFromProject(proj, gp, repo, ci)); err != nil {
-			slog.Warn("enregistrement catalogue", "project", req.Name, "error", err)
-			catalogueErr = err.Error()
+		if busy(w, runner, req.Name) {
+			return
 		}
 
-		audit(db, r, "create_project", req.Name, map[string]any{
-			"golden_path": req.GoldenPathID,
+		submit(w, r, runner, db, KindCreateProject, req.Name, createParams{
+			CreateProjectRequest: req,
+			SCMProvider:          scm.ID(),
+			CIProvider:           ci.ID(),
+		}, map[string]any{
+			"golden_path": gp.ID,
 			"language":    gp.Language,
 			"scm":         scm.ID(),
-			"repo":        repo.Path,
 		})
-
-		resp := map[string]any{
-			"project":  proj,
-			"repo":     repo,
-			"message":  fmt.Sprintf("Projet %s créé avec succès", req.Name),
-			"pipeline": ci.PipelinesURL(repo.WebURL),
-		}
-		if catalogueErr != "" {
-			resp["catalogue_error"] = catalogueErr
-		}
-		respond(w, http.StatusCreated, resp)
 	}
 }
 
@@ -217,13 +132,10 @@ func serviceFromProject(proj *database.Project, gp *gitops.GoldenPath, repo *pro
 	}
 }
 
-// deletingProjects : projets dont la suppression tourne en arrière-plan
-var deletingProjects sync.Map
-
-// DeleteProject lance la suppression en arrière-plan et répond 202 : GitLab
-// purge le container registry de façon asynchrone, ce qui peut prendre
-// plusieurs minutes. Pendant ce temps, ListProjects marque le projet "deleting".
-func DeleteProject(providers *provider.Registry, db *database.DB, syncer *gitops.Syncer) http.HandlerFunc {
+// DeleteProject lance la suppression en tâche et répond 202 : GitLab purge
+// le container registry de façon asynchrone, ce qui peut prendre plusieurs
+// minutes. Pendant ce temps, ListProjects marque le projet "deleting".
+func DeleteProject(db *database.DB, runner *tasks.Runner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := chi.URLParam(r, "name")
 		proj, err := db.GetProjectByName(name)
@@ -235,59 +147,15 @@ func DeleteProject(providers *provider.Registry, db *database.DB, syncer *gitops
 			respondError(w, http.StatusInternalServerError, "db: "+err.Error())
 			return
 		}
-
-		// Les projets antérieurs à la migration 002 n'ont pas de scm_provider : provider par défaut
-		scm, err := providers.SCM(proj.SCMProvider)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, err.Error())
+		if busy(w, runner, name) {
 			return
 		}
-
-		if _, running := deletingProjects.LoadOrStore(name, true); running {
-			respondError(w, http.StatusConflict, "suppression déjà en cours: "+name)
-			return
-		}
-
-		go func() {
-			defer deletingProjects.Delete(name)
-			if err := deleteProject(proj, scm, db, syncer); err != nil {
-				slog.Error("suppression projet", "project", name, "error", err)
-				audit(db, r, "delete_project_failed", name, map[string]any{
-					"repo":  proj.RepoPath,
-					"error": err.Error(),
-				})
-				return
-			}
-			slog.Info("projet supprimé", "project", name)
-			audit(db, r, "delete_project", name, map[string]any{
-				"scm":  scm.ID(),
-				"repo": proj.RepoPath,
-			})
-		}()
-
-		respond(w, http.StatusAccepted, map[string]string{
-			"message": fmt.Sprintf("Suppression de %s en cours", name),
-		})
+		submit(w, r, runner, db, KindDeleteProject, name, deleteParams{
+			Name:        proj.Name,
+			RepoPath:    proj.RepoPath,
+			SCMProvider: proj.SCMProvider,
+		}, map[string]any{"repo": proj.RepoPath})
 	}
-}
-
-// deleteProject supprime le repo (et ses images de registry), la fiche
-// catalogue, puis le projet en base. Le repo passe en premier : s'il échoue,
-// rien d'autre n'est touché et la suppression peut être relancée. Une
-// ressource déjà absente n'est pas une erreur.
-func deleteProject(proj *database.Project, scm provider.SCMProvider, db *database.DB, syncer *gitops.Syncer) error {
-	if proj.RepoPath != "" {
-		if err := scm.DeleteRepo(proj.RepoPath); err != nil && !errors.Is(err, provider.ErrNotFound) {
-			return fmt.Errorf("suppression repo: %w", err)
-		}
-	}
-	if err := syncer.Unregister(proj.Name); err != nil {
-		return fmt.Errorf("suppression catalogue: %w", err)
-	}
-	if err := db.DeleteProject(proj.Name, proj.RepoPath); err != nil {
-		return fmt.Errorf("db: %w", err)
-	}
-	return nil
 }
 
 func ListProjects(db *database.DB) http.HandlerFunc {
@@ -300,8 +168,20 @@ func ListProjects(db *database.DB) http.HandlerFunc {
 		if projects == nil {
 			projects = []database.Project{}
 		}
+		// Suppressions en cours : tâches delete_project non terminées
+		active, err := db.ListTasks(database.TaskFilter{Unfinished: true, Limit: 1000})
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		deleting := map[string]bool{}
+		for _, t := range active {
+			if t.Kind == KindDeleteProject {
+				deleting[t.Resource] = true
+			}
+		}
 		for i := range projects {
-			_, projects[i].Deleting = deletingProjects.Load(projects[i].Name)
+			projects[i].Deleting = deleting[projects[i].Name]
 		}
 		respond(w, http.StatusOK, projects)
 	}

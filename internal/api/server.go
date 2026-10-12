@@ -11,7 +11,9 @@ import (
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/metrics"
 	"github.com/clemuscle/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/tasks"
 	"github.com/clemuscle/symphony/internal/web"
+	"github.com/clemuscle/symphony/internal/webhook"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -31,6 +33,8 @@ func NewServer(
 	syncer *gitops.Syncer,
 	templates *gitops.TemplateLoader,
 	security *auth.Holder,
+	runner *tasks.Runner,
+	hooks *webhook.Holder,
 ) http.Handler {
 	s := &Server{
 		providers: providers,
@@ -52,6 +56,9 @@ func NewServer(
 	r.Get("/healthz", s.healthz)
 	r.Handle("/metrics", metrics.Handler())
 
+	// Webhooks entrants : hors /api/v1, authentifiés par leur secret partagé
+	r.Post("/webhooks/gitlab", webhook.GitLab(hooks, runner, db))
+
 	// Connexion OIDC (Backend-for-Frontend : le navigateur ne voit pas de jeton)
 	r.Get("/auth/login", security.Login)
 	r.Get("/auth/callback", security.Callback)
@@ -66,15 +73,15 @@ func NewServer(
 		// Catalogue
 		r.With(viewer).Get("/services", handlers.ListServices(store))
 		r.With(viewer).Get("/services/{name}", handlers.GetService(store))
-		r.With(developer).Post("/services/{name}/actions/{action}", handlers.TriggerAction(store, providers, db))
+		r.With(developer).Post("/services/{name}/actions/{action}", handlers.TriggerAction(store, providers, db, runner))
 
 		// Golden Paths
 		r.With(viewer).Get("/golden-paths", handlers.ListGoldenPaths(templates))
 
 		// Projets
 		r.With(viewer).Get("/projects", handlers.ListProjects(db))
-		r.With(developer).Post("/projects", handlers.CreateProject(providers, db, templates, syncer))
-		r.With(admin).Delete("/projects/{name}", handlers.DeleteProject(providers, db, syncer))
+		r.With(developer).Post("/projects", handlers.CreateProject(providers, db, templates, runner))
+		r.With(admin).Delete("/projects/{name}", handlers.DeleteProject(db, runner))
 		r.With(viewer).Get("/projects/{name}/image", handlers.GetProjectImage(providers, db))
 
 		// Repos (liste depuis les SCM providers)
@@ -87,10 +94,15 @@ func NewServer(
 
 		// Déploiements (les logs peuvent contenir des données sensibles : developer)
 		r.With(viewer).Get("/deployments", handlers.ListDeployments(providers, db))
-		r.With(developer).Post("/deployments", handlers.Deploy(providers, db))
+		r.With(developer).Post("/deployments", handlers.Deploy(providers, db, runner))
 		r.With(developer).Delete("/deployments/{id}", handlers.StopDeployment(providers, db))
 		r.With(developer).Get("/deployments/{id}/logs", handlers.GetLogs(providers))
 		r.With(developer).Post("/deployments/{id}/restart", handlers.RestartDeployment(providers, db))
+
+		// Tâches (création, déploiement, suppression, actions) et leur flux SSE
+		r.With(viewer).Get("/tasks", handlers.ListTasks(db))
+		r.With(viewer).Get("/tasks/events", handlers.TaskEvents(runner.Hub()))
+		r.With(viewer).Get("/tasks/{id}", handlers.GetTask(db))
 
 		// Admin
 		r.With(viewer).Get("/providers", handlers.ListProviders(providers))

@@ -16,6 +16,7 @@ import (
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/tasks"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -48,7 +49,7 @@ func GetService(store *catalogue.Store) http.HandlerFunc {
 
 var webhookClient = &http.Client{Timeout: 10 * time.Second}
 
-func TriggerAction(store *catalogue.Store, providers *provider.Registry, db *database.DB) http.HandlerFunc {
+func TriggerAction(store *catalogue.Store, providers *provider.Registry, db *database.DB, runner *tasks.Runner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		svcName := chi.URLParam(r, "name")
 		actionName := chi.URLParam(r, "action")
@@ -83,28 +84,19 @@ func TriggerAction(store *catalogue.Store, providers *provider.Registry, db *dat
 			return
 		}
 
+		// Une action à la fois par service ; elle s'exécute en tâche (202)
+		resource := svcName
+		if busy(w, runner, resource) {
+			return
+		}
 		switch {
 		case action.WebhookURL != "":
-			status, err := callWebhook(action.WebhookURL, map[string]any{
-				"service":      svcName,
-				"action":       actionName,
-				"inputs":       inputs,
-				"triggered_at": time.Now().UTC().Format(time.RFC3339),
-			})
-			if err != nil {
-				respondError(w, http.StatusBadGateway, "webhook: "+err.Error())
-				return
-			}
-			audit(db, r, "trigger_action", svcName+"/"+actionName, map[string]any{
-				"mode":        "webhook",
-				"inputs":      inputs,
-				"http_status": status,
-			})
-			respond(w, http.StatusOK, map[string]any{
-				"status":      "dispatched",
-				"mode":        "webhook",
-				"http_status": status,
-			})
+			submit(w, r, runner, db, KindActionWebhook, resource, actionParams{
+				Service:    svcName,
+				Action:     actionName,
+				Inputs:     inputs,
+				WebhookURL: action.WebhookURL,
+			}, map[string]any{"action": actionName, "mode": "webhook", "inputs": inputs})
 
 		case action.CIProvider != "":
 			repoPath := repoPathFromSpec(svc.Spec.Repo)
@@ -127,24 +119,14 @@ func TriggerAction(store *catalogue.Store, providers *provider.Registry, db *dat
 			if action.Pipeline != "" {
 				vars["SYMPHONY_PIPELINE"] = action.Pipeline
 			}
-
-			pipeline, err := ci.TriggerPipeline(repoPath, "main", vars)
-			if err != nil {
-				respondError(w, http.StatusBadGateway, "pipeline: "+err.Error())
-				return
-			}
-			audit(db, r, "trigger_action", svcName+"/"+actionName, map[string]any{
-				"mode":        "pipeline",
-				"ci_provider": ci.ID(),
-				"repo":        repoPath,
-				"pipeline_id": pipeline.ID,
-				"inputs":      inputs,
-			})
-			respond(w, http.StatusOK, map[string]any{
-				"status":   "dispatched",
-				"mode":     "pipeline",
-				"pipeline": pipeline,
-			})
+			submit(w, r, runner, db, KindActionPipeline, resource, actionParams{
+				Service:    svcName,
+				Action:     actionName,
+				Inputs:     inputs,
+				CIProvider: ci.ID(),
+				Repo:       repoPath,
+				Vars:       vars,
+			}, map[string]any{"action": actionName, "mode": "pipeline", "ci_provider": ci.ID(), "repo": repoPath, "inputs": inputs})
 
 		default:
 			respondError(w, http.StatusBadRequest, "action non configurée : définir webhook_url ou ci_provider")

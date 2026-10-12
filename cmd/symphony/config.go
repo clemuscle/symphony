@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/clemuscle/symphony/internal/auth"
@@ -13,6 +14,7 @@ import (
 	"github.com/clemuscle/symphony/internal/metrics"
 	"github.com/clemuscle/symphony/internal/provider"
 	"github.com/clemuscle/symphony/internal/provider/instrumented"
+	"github.com/clemuscle/symphony/internal/webhook"
 )
 
 // configSource lit la configuration : dans le repo Git désigné par le
@@ -134,6 +136,7 @@ type configWatcher struct {
 	syncer    *gitops.Syncer
 	templates *gitops.TemplateLoader
 	security  *auth.Holder
+	webhooks  *webhook.Holder
 	codec     *auth.Codec
 	interval  time.Duration
 
@@ -192,8 +195,13 @@ func (w *configWatcher) apply(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	hooks, err := buildWebhooks(cfg)
+	if err != nil {
+		return err
+	}
 	w.providers.Replace(next)
 	w.security.Set(policy)
+	w.webhooks.Set(hooks)
 	w.syncer.SetSource(catalogueSource(cfg))
 	w.templates.SetSource(templatesSource(cfg))
 	logProviders("configuration rechargée", w.providers)
@@ -201,4 +209,22 @@ func (w *configWatcher) apply(cfg *config.Config) error {
 	go w.syncer.ForceSync()
 	go w.templates.Reload()
 	return nil
+}
+
+// buildWebhooks : réglages des webhooks entrants. Sans section webhooks, les
+// tâches suivent les pipelines par sondage. Le secret vient de l'environnement
+// (secret_env, défaut WEBHOOK_SECRET) et doit être assez long pour ne pas se deviner.
+func buildWebhooks(cfg *config.Config) (*webhook.Settings, error) {
+	if cfg.Webhooks == nil || cfg.Webhooks.URL == "" {
+		return nil, nil
+	}
+	env := orDefault(cfg.Webhooks.SecretEnv, "WEBHOOK_SECRET")
+	secret := os.Getenv(env)
+	if len(secret) < 16 {
+		return nil, fmt.Errorf("webhooks: %s doit contenir un secret de 16 caractères au moins", env)
+	}
+	return &webhook.Settings{
+		Endpoint: strings.TrimRight(cfg.Webhooks.URL, "/") + "/webhooks/gitlab",
+		Secret:   secret,
+	}, nil
 }

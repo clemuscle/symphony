@@ -8,6 +8,7 @@ import (
 
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/tasks"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -41,7 +42,9 @@ func ListDeployments(providers *provider.Registry, db *database.DB) http.Handler
 	}
 }
 
-func Deploy(providers *provider.Registry, db *database.DB) http.HandlerFunc {
+// Deploy valide la demande puis lance le déploiement en tâche (202) :
+// déploiement par le runtime, puis attente du démarrage du service
+func Deploy(providers *provider.Registry, db *database.DB, runner *tasks.Runner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			ProjectName     string            `json:"project_name"`
@@ -74,41 +77,23 @@ func Deploy(providers *provider.Registry, db *database.DB) http.HandlerFunc {
 			respondError(w, http.StatusBadRequest, "runtime provider: "+err.Error())
 			return
 		}
-
-		deployment, err := rt.Deploy(provider.DeployRequest{
-			Name:         req.ProjectName,
-			Image:        req.Image,
-			Tag:          req.Tag,
-			Port:         req.Port,
-			HostPort:     req.HostPort,
-			EnvVars:      req.EnvVars,
-			RegistryAuth: registryAuth(providers, db, req.ProjectName, req.Image),
-		})
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "deploy: "+err.Error())
+		if busy(w, runner, req.ProjectName) {
 			return
 		}
-		deployment.Provider = rt.ID()
 
-		db.CreateDeployment(&database.Deployment{
-			ProjectName:  req.ProjectName,
-			DeploymentID: deployment.ID,
-			RTProvider:   rt.ID(),
-			Image:        req.Image,
-			Tag:          req.Tag,
-			Port:         deployment.Port,
-			Status:       deployment.Status,
-			URL:          deployment.URL,
-			DeployedBy:   userID(r),
-		})
-
-		audit(db, r, "deploy", req.ProjectName, map[string]any{
+		submit(w, r, runner, db, KindDeploy, req.ProjectName, deployParams{
+			ProjectName: req.ProjectName,
+			Image:       req.Image,
+			Tag:         req.Tag,
+			Port:        req.Port,
+			HostPort:    req.HostPort,
+			Runtime:     rt.ID(),
+			EnvVars:     req.EnvVars,
+		}, map[string]any{
 			"image":    req.Image,
 			"tag":      req.Tag,
 			"provider": rt.ID(),
 		})
-
-		respond(w, http.StatusCreated, deployment)
 	}
 }
 

@@ -14,6 +14,17 @@ type Config struct {
 	// Origines autorisées à appeler l'API depuis un autre site (CORS). Vide :
 	// même origine seulement, le front étant servi par Symphony.
 	CORSOrigins []string `yaml:"cors_origins"`
+
+	// Webhooks entrants (événements de pipeline) ; absent : les tâches suivent
+	// les pipelines par sondage seulement
+	Webhooks *WebhooksConfig `yaml:"webhooks"`
+}
+
+// WebhooksConfig : Symphony abonne les repos qu'il crée à leurs événements de
+// pipeline, reçus sur <url>/webhooks/gitlab
+type WebhooksConfig struct {
+	URL       string `yaml:"url"`        // Symphony vu par GitLab, ex. http://symphony:8080
+	SecretEnv string `yaml:"secret_env"` // variable du secret partagé (défaut WEBHOOK_SECRET)
 }
 
 // AuthConfig : fournisseur OIDC et correspondance groupes → rôles

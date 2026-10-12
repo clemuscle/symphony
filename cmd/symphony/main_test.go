@@ -13,6 +13,7 @@ import (
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/config"
 	"github.com/clemuscle/symphony/internal/gitops"
+	"github.com/clemuscle/symphony/internal/webhook"
 )
 
 // fakeGitLab sert les fichiers bruts d'un repo (chemin → contenu), comme
@@ -112,6 +113,7 @@ catalogue:
 		syncer:    syncer,
 		templates: gitops.NewTemplateLoader(providers, "root/symphony-templates", "main", "templates"),
 		security:  auth.NewHolder(&auth.Policy{}),
+		webhooks:  webhook.NewHolder(nil),
 		codec:     codec,
 		last:      raw,
 	}
@@ -164,5 +166,21 @@ func TestCatalogueSource(t *testing.T) {
 	t.Setenv("CATALOGUE_BRANCH", "hotfix")
 	if _, branch, _ := catalogueSource(cfg); branch != "hotfix" {
 		t.Errorf("CATALOGUE_BRANCH ignoré : %s", branch)
+	}
+}
+
+func TestBuildWebhooks(t *testing.T) {
+	if s, err := buildWebhooks(&config.Config{}); err != nil || s.Enabled() {
+		t.Errorf("sans section webhooks : %+v, %v", s, err)
+	}
+	cfg := &config.Config{Webhooks: &config.WebhooksConfig{URL: "http://symphony:8080/", SecretEnv: "TEST_WEBHOOK_SECRET"}}
+	t.Setenv("TEST_WEBHOOK_SECRET", "court")
+	if _, err := buildWebhooks(cfg); err == nil {
+		t.Error("secret trop court accepté")
+	}
+	t.Setenv("TEST_WEBHOOK_SECRET", "0123456789abcdef")
+	s, err := buildWebhooks(cfg)
+	if err != nil || !s.Enabled() || s.Endpoint != "http://symphony:8080/webhooks/gitlab" {
+		t.Errorf("webhooks : %+v, %v", s, err)
 	}
 }

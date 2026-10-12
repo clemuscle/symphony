@@ -9,6 +9,9 @@ import (
 // ErrNotFound : la ressource n'existe pas (ou plus) chez le provider
 var ErrNotFound = errors.New("introuvable")
 
+// ErrUnsupported : le provider ne sait pas faire cette opération
+var ErrUnsupported = errors.New("non pris en charge par ce provider")
+
 // ─── SCM ──────────────────────────────────────────────────────────────────────
 
 type SCMProvider interface {
@@ -22,6 +25,10 @@ type SCMProvider interface {
 	ListFiles(repoPath, branch, dirPath string) ([]string, error)
 	DeleteFile(repoPath, branch, filePath, commitMsg string) error // ErrNotFound si absent
 	DeleteRepo(repoPath string) error                              // ErrNotFound si absent
+	// CreateWebhook abonne url aux événements de pipeline du repo, avec secret
+	// (vérifié à la réception) ; sans effet si url y est déjà abonnée.
+	// ErrUnsupported si le provider ne sait pas le faire.
+	CreateWebhook(repoPath, url, secret string) error
 }
 
 type CreateRepoRequest struct {

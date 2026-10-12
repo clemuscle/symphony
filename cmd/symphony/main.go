@@ -1,16 +1,20 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/clemuscle/symphony/internal/api"
+	"github.com/clemuscle/symphony/internal/api/handlers"
 	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/gitops"
+	"github.com/clemuscle/symphony/internal/tasks"
+	"github.com/clemuscle/symphony/internal/webhook"
 	"github.com/joho/godotenv"
 )
 
@@ -74,6 +78,17 @@ func main() {
 	}
 	security := auth.NewHolder(policy)
 
+	// Webhooks entrants (événements de pipeline)
+	hookSettings, err := buildWebhooks(cfg)
+	if err != nil {
+		slog.Error("webhooks", "error", err)
+		os.Exit(1)
+	}
+	if !hookSettings.Enabled() {
+		slog.Info("pas de section webhooks : les tâches suivent les pipelines par sondage")
+	}
+	hooks := webhook.NewHolder(hookSettings)
+
 	// Catalogue + GitOps syncer
 	store := catalogue.NewStore()
 	catRepo, catBranch, catDir := catalogueSource(cfg)
@@ -85,6 +100,17 @@ func main() {
 	tmplLoader := gitops.NewTemplateLoader(providers, tmplRepo, tmplBranch, tmplDir)
 	go tmplLoader.Start()
 
+	// Tâches asynchrones : reprises au démarrage là où elles s'étaient arrêtées
+	runner := tasks.NewRunner(db, providers)
+	handlers.RegisterTasks(runner, handlers.TaskDeps{
+		Providers: providers,
+		DB:        db,
+		Templates: tmplLoader,
+		Syncer:    syncer,
+		Webhooks:  hooks,
+	})
+	runner.Start(context.Background(), 4)
+
 	// Configuration rechargée à chaud
 	watcher := &configWatcher{
 		source:    source,
@@ -92,6 +118,7 @@ func main() {
 		syncer:    syncer,
 		templates: tmplLoader,
 		security:  security,
+		webhooks:  hooks,
 		codec:     codec,
 		interval:  15 * time.Second,
 		last:      raw,
@@ -102,7 +129,7 @@ func main() {
 	addr := ":" + getEnv("PORT", "8080")
 	slog.Info("Symphony démarré", "addr", addr)
 
-	if err := http.ListenAndServe(addr, api.NewServer(providers, store, db, syncer, tmplLoader, security)); err != nil {
+	if err := http.ListenAndServe(addr, api.NewServer(providers, store, db, syncer, tmplLoader, security, runner, hooks)); err != nil {
 		slog.Error("serveur HTTP", "error", err)
 		os.Exit(1)
 	}
