@@ -3,6 +3,16 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
+## Non publié
+
+### Modifié
+- **Supprimer un projet supprime vraiment tout** : ses déploiements sur chaque runtime
+  (conteneurs, volumes anonymes et images locales Docker ; Application Argo CD et ses
+  ressources Kubernetes, manifests retirés du repo de déploiement), son historique de
+  déploiements, et le repo GitLab pour de bon : GitLab 18 ne fait sinon que le
+  programmer pour suppression (`-deletion_scheduled-`, gardé plusieurs jours).
+- Les runtimes ont une méthode `Remove`.
+
 ## v0.5 — Day-2 asynchrone
 
 ### Ajouté

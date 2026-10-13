@@ -42,6 +42,32 @@ func (f *fakeSCM) GetFileContent(repo, branch, path string) (string, error) {
 	return c, nil
 }
 
+func (f *fakeSCM) ListFiles(repo, branch, dir string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for p := range f.files {
+		if strings.HasPrefix(p, dir+"/") {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return nil, provider.ErrNotFound
+	}
+	return out, nil
+}
+
+func (f *fakeSCM) DeleteFile(repo, branch, path, msg string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.files[path]; !ok {
+		return provider.ErrNotFound
+	}
+	delete(f.files, path)
+	f.commits = append(f.commits, msg)
+	return nil
+}
+
 // fakeArgo : API Argo CD minimale (Applications en mémoire, journaux fixes)
 type fakeArgo struct {
 	mu       sync.Mutex
@@ -89,6 +115,17 @@ func (a *fakeArgo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"result":{"content":"démarrage","podName":"p"}}`+"\n"+
 			`{"result":{"content":"prêt","podName":"p"}}`+"\n"+
 			`{"result":{"content":"","last":true}}`+"\n")
+	case r.Method == "DELETE":
+		if _, ok := a.apps[name]; !ok {
+			http.Error(w, `{"message":"permission denied"}`, http.StatusForbidden)
+			return
+		}
+		if r.URL.Query().Get("cascade") != "true" {
+			http.Error(w, "cascade attendu", http.StatusBadRequest)
+			return
+		}
+		delete(a.apps, name)
+		io.WriteString(w, "{}")
 	case r.Method == "GET":
 		if r.URL.Query().Get("refresh") != "" {
 			a.refresh = append(a.refresh, name)
@@ -296,5 +333,47 @@ func TestDeploymentStatus(t *testing.T) {
 	}
 	if deploymentStatus("Healthy", true) != "stopped" {
 		t.Error("un service arrêté doit être stopped même Healthy")
+	}
+}
+
+func TestRemove(t *testing.T) {
+	p, scm, argo := newTest(t)
+	for _, name := range []string{"svc", "svc-bis"} {
+		if _, err := p.Deploy(provider.DeployRequest{Name: name, Image: "nginx:1.27"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var autre application
+	autre.Metadata.Name = "autre"
+	argo.apps["autre"] = autre
+
+	if err := p.Remove("svc"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Status("svc"); !errors.Is(err, provider.ErrNotFound) {
+		t.Errorf("Application toujours là : %v", err)
+	}
+	for f := range scm.files {
+		if strings.HasPrefix(f, "apps/svc/") {
+			t.Errorf("manifest restant : %s", f)
+		}
+	}
+	if _, ok := scm.files["apps/svc-bis/kustomization.yaml"]; !ok {
+		t.Error("les manifests de svc-bis ont été supprimés")
+	}
+	if _, ok := argo.apps["svc-bis"]; !ok {
+		t.Error("l'Application svc-bis a été supprimée")
+	}
+
+	// Rejouée : rien à faire, pas d'erreur
+	if err := p.Remove("svc"); err != nil {
+		t.Errorf("Remove rejoué : %v", err)
+	}
+	// Application que Symphony n'a pas créée : laissée en place
+	if err := p.Remove("autre"); err == nil {
+		t.Error("Remove d'une Application non gérée : pas d'erreur")
+	}
+	if _, ok := argo.apps["autre"]; !ok {
+		t.Error("Application non gérée supprimée")
 	}
 }

@@ -55,6 +55,7 @@ func RegisterTasks(r *tasks.Runner, d TaskDeps) {
 		{Label: "Démarrage du service", Run: d.waitRunning},
 	}})
 	r.Register(tasks.Definition{Kind: KindDeleteProject, Steps: []tasks.Step{
+		{Label: "Déploiements", Run: d.deleteDeployments},
 		{Label: "Repo et images", Run: d.deleteRepo},
 		{Label: "Fiche catalogue", Run: d.deleteCatalogue},
 		{Label: "Projet", Run: d.deleteRecord},
@@ -421,6 +422,58 @@ type deleteParams struct {
 	Name        string `json:"name"`
 	RepoPath    string `json:"repo_path"`
 	SCMProvider string `json:"scm_provider"`
+}
+
+// removeTimeout : délai pour qu'un déploiement supprimé ait disparu (Argo CD
+// supprime les ressources du cluster avant l'Application)
+var removeTimeout = 3 * time.Minute
+
+// deleteDeployments supprime le service de chaque runtime (conteneurs et
+// images Docker, Application Argo CD, ses ressources et ses manifests), attend
+// qu'il ait disparu, puis efface ses déploiements de la base. Tous les runtimes
+// sont parcourus : celui d'un ancien déploiement a pu changer depuis.
+func (d TaskDeps) deleteDeployments(ctx context.Context, x *tasks.Exec) error {
+	var p deleteParams
+	if err := x.Params(&p); err != nil {
+		return err
+	}
+	var runtimes []provider.RuntimeProvider
+	for _, id := range d.Providers.ListRuntimes() {
+		rt, err := d.Providers.Runtime(id)
+		if err != nil {
+			return err
+		}
+		x.Progress("suppression de %s sur %s", p.Name, id)
+		if err := rt.Remove(p.Name); err != nil {
+			return fmt.Errorf("runtime %s: %w", id, err)
+		}
+		runtimes = append(runtimes, rt)
+	}
+	deadline := time.Now().Add(removeTimeout)
+	for _, rt := range runtimes {
+		for {
+			_, err := rt.Status(p.Name)
+			if errors.Is(err, provider.ErrNotFound) {
+				break
+			}
+			if err != nil {
+				return fmt.Errorf("runtime %s: %w", rt.ID(), err)
+			}
+			if time.Now().After(deadline) {
+				return fmt.Errorf("runtime %s : %s toujours présent après %s", rt.ID(), p.Name, removeTimeout)
+			}
+			x.Progress("%s : ressources en cours de suppression", rt.ID())
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+		}
+	}
+	if err := d.DB.DeleteDeployments(p.Name); err != nil {
+		return fmt.Errorf("db: %w", err)
+	}
+	return nil
 }
 
 // deleteRepo supprime le repo et ses images. GitLab refuse tant que la purge

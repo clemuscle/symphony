@@ -289,6 +289,9 @@ func (p *Provider) ListFiles(repoPath, branch, dirPath string) ([]string, error)
 		if err != nil {
 			return nil, err
 		}
+		if status == 404 {
+			return nil, fmt.Errorf("listFiles %s: %w", dirPath, provider.ErrNotFound)
+		}
 		if status != 200 {
 			return nil, fmt.Errorf("listFiles %s: status %d — %s", dirPath, status, string(data))
 		}
@@ -353,6 +356,41 @@ func (p *Provider) DeleteFile(repoPath, branch, filePath, commitMsg string) erro
 	return fmt.Errorf("deleteFile %s: status %d — %s", filePath, status, strings.TrimSpace(string(data)))
 }
 
+// removePermanently supprime pour de bon un projet que GitLab n'a fait que
+// programmer pour suppression (suppression différée, par défaut depuis GitLab
+// 18 : le projet est renommé en -deletion_scheduled-<id> et gardé plusieurs
+// jours). La seconde demande doit nommer son nouveau chemin. id : l'id
+// numérique, qui ne change pas avec le renommage.
+func (p *Provider) removePermanently(id int) error {
+	data, status, err := p.api("GET", fmt.Sprintf("/projects/%d", id), nil)
+	if err != nil {
+		return err
+	}
+	if status == 404 {
+		return nil // pas de suppression différée : déjà supprimé
+	}
+	if status != 200 {
+		return fmt.Errorf("deleteRepo: projet %d: status %d — %s", id, status, string(data))
+	}
+	var proj struct {
+		PathWithNamespace   string `json:"path_with_namespace"`
+		MarkedForDeletionOn string `json:"marked_for_deletion_on"`
+	}
+	json.Unmarshal(data, &proj)
+	if proj.MarkedForDeletionOn == "" {
+		return nil
+	}
+	data, status, err = p.api("DELETE", fmt.Sprintf("/projects/%d?permanently_remove=true&full_path=%s",
+		id, url.QueryEscape(proj.PathWithNamespace)), nil)
+	if err != nil {
+		return err
+	}
+	if status != 202 && status != 204 && status != 404 {
+		return fmt.Errorf("suppression définitive de %s: status %d — %s", proj.PathWithNamespace, status, string(data))
+	}
+	return nil
+}
+
 // CreateWebhook ajoute un webhook de projet sur les événements de pipeline,
 // sauf si un webhook vers url existe déjà
 func (p *Provider) CreateWebhook(repoPath, hookURL, secret string) error {
@@ -398,7 +436,7 @@ func (p *Provider) CreateWebhook(repoPath, hookURL, secret string) error {
 func (p *Provider) DeleteRepo(repoPath string) error {
 	encoded := url.PathEscape(repoPath)
 
-	data, status, err := p.api("GET", "/projects/"+encoded+"/registry/repositories", nil)
+	data, status, err := p.api("GET", "/projects/"+encoded, nil)
 	if err != nil {
 		return err
 	}
@@ -406,6 +444,18 @@ func (p *Provider) DeleteRepo(repoPath string) error {
 	// en -deletion_scheduled- par une suppression déjà faite)
 	if status == 404 || (status >= 300 && status < 400) {
 		return provider.ErrNotFound
+	}
+	if status != 200 {
+		return fmt.Errorf("deleteRepo %s: status %d — %s", repoPath, status, string(data))
+	}
+	var proj struct {
+		ID int `json:"id"`
+	}
+	json.Unmarshal(data, &proj)
+
+	data, status, err = p.api("GET", "/projects/"+encoded+"/registry/repositories", nil)
+	if err != nil {
+		return err
 	}
 	if status == 200 {
 		var repos []struct {
@@ -428,7 +478,7 @@ func (p *Provider) DeleteRepo(repoPath string) error {
 		}
 		switch {
 		case status == 202 || status == 204:
-			return nil
+			return p.removePermanently(proj.ID)
 		case status == 404:
 			return provider.ErrNotFound
 		case status == 400 && strings.Contains(string(data), "registry") && time.Now().Before(deadline):

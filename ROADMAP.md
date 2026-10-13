@@ -105,6 +105,9 @@ page, et une tâche survit à un redémarrage de Symphony.
 
 ## v0.6 — Multi-plateforme et robustesse
 
+- [x] Supprimer un projet supprime tout : déploiements sur chaque runtime (conteneurs et
+      images, Application Argo CD, ressources et manifests) et repo GitLab pour de bon
+      (pas seulement programmé pour suppression)
 - [ ] Golden path GitHub + GitHub Actions de bout en bout (workflow avec
       `workflow_dispatch` et entrées `SYMPHONY_*` déclarées)
 - [ ] Bascule Docker : attendre le `HEALTHCHECK` de l'image au lieu de 3 s fixes
