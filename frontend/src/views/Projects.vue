@@ -296,7 +296,7 @@ async function createProject() {
 }
 
 async function deleteProject(p) {
-  if (!confirm(`Supprimer définitivement ${p.name} ?\n\nLe repo ${p.repo_path}, ses images et sa fiche catalogue seront supprimés.`)) return
+  if (!confirm(`Supprimer définitivement ${p.name} ?\n\nSes déploiements (conteneurs, Application Argo CD, manifests), le repo ${p.repo_path}, ses images et sa fiche catalogue seront supprimés.`)) return
   try {
     const { data } = await api.deleteProject(p.name)
     trackTask(data)

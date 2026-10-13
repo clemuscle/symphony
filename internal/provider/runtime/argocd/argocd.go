@@ -438,6 +438,60 @@ func (p *Provider) argo(method, apiPath string, body any) ([]byte, int, error) {
 	return data, resp.StatusCode, err
 }
 
+// Remove supprime l'Application du service (le finalizer fait supprimer ses
+// ressources du cluster par Argo CD), puis ses manifests du repo de
+// déploiement. Une Application du même nom que Symphony n'a pas créée est
+// laissée en place.
+func (p *Provider) Remove(name string) error {
+	if err := validName(name); err != nil {
+		return err
+	}
+	appPath := "/api/v1/applications/" + url.PathEscape(name)
+	data, status, err := p.argo("GET", appPath, nil)
+	if err != nil {
+		return err
+	}
+	switch status {
+	case http.StatusOK:
+		var app application
+		if err := json.Unmarshal(data, &app); err != nil {
+			return fmt.Errorf("argocd: réponse illisible: %w", err)
+		}
+		if app.Metadata.Labels[managedLabel] != managedValue {
+			return fmt.Errorf("application %s : pas créée par Symphony, laissée en place", name)
+		}
+		data, status, err = p.argo("DELETE", appPath+"?cascade=true", nil)
+		if err != nil {
+			return err
+		}
+		// 403/404 : supprimée entre-temps
+		if status != http.StatusOK && status != http.StatusNotFound && status != http.StatusForbidden {
+			return apiError("suppression de l'Application", status, data)
+		}
+	case http.StatusNotFound, http.StatusForbidden: // déjà absente
+	default:
+		return apiError("état de l'Application", status, data)
+	}
+
+	// Manifests : l'Application est en cours de suppression, Argo CD ne les
+	// relit plus. Un commit par fichier : DeleteFile est la seule suppression
+	// commune aux SCM.
+	files, err := p.scm.ListFiles(p.cfg.Repo, p.cfg.Branch, path.Join(p.cfg.Path, name))
+	if errors.Is(err, provider.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("manifests de %s: %w", name, err)
+	}
+	for _, file := range files {
+		err := p.scm.DeleteFile(p.cfg.Repo, p.cfg.Branch, file, fmt.Sprintf("remove: %s [symphony]", name))
+		if err != nil && !errors.Is(err, provider.ErrNotFound) {
+			return fmt.Errorf("suppression de %s: %w", file, err)
+		}
+	}
+	return nil
+}
+
 // apiError reprend le message d'erreur d'Argo CD ({"error": ..., "message": ...})
 func apiError(op string, status int, data []byte) error {
 	var e struct {

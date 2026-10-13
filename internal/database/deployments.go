@@ -54,3 +54,9 @@ func (db *DB) ListDeployments() ([]Deployment, error) {
 	}
 	return deployments, rows.Err()
 }
+
+// DeleteDeployments efface l'historique des déploiements d'un projet
+func (db *DB) DeleteDeployments(projectName string) error {
+	_, err := db.Exec(`DELETE FROM deployments WHERE project_name=$1`, projectName)
+	return err
+}

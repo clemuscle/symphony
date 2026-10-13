@@ -102,8 +102,12 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
   front renvoie (`?provider=`) pour Stop/Restart/Logs.
 - Port d'un déploiement : `port` = port de l'appli **dans** le conteneur, `host_port` = port
   publié (0 = celui du conteneur remplacé, sinon un port libre).
-- Suppression de projet asynchrone (202) : GitLab refuse de supprimer un projet tant que la
-  purge de son registry n'est pas finie (2–3 min).
+- Suppression de projet asynchrone (202), complète : `Remove` sur **chaque** runtime
+  (conteneurs et images Docker ; Application Argo CD, ses ressources et ses manifests),
+  lignes `deployments`, repo, fiche catalogue. GitLab refuse de supprimer un projet tant
+  que la purge de son registry n'est pas finie (2–3 min), puis ne fait que le
+  **programmer** (GitLab 18 : `-deletion_scheduled-`) : `DeleteRepo` le supprime ensuite
+  pour de bon (`permanently_remove`, par l'id numérique).
 - Le front lit exactement les clés JSON de l'API : toute struct sérialisée a des tags
   `json` en snake_case.
 - `resolveInputs` refuse les entrées d'action non déclarées (anti-injection de variables
@@ -143,8 +147,7 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
 - Serveur de test : binaire construit dans le scratchpad, lancé avec `PORT=18080` (le 8080
   peut être pris par l'instance de l'utilisateur), arrêté après.
 - Projets temporaires nommés `symphony-*-e2e`, supprimés après via
-  `DELETE /api/v1/projects/{nom}` (GitLab les montre ensuite en `-deletion_scheduled-` :
-  normal). Déploiements de test : supprimer le conteneur et ses lignes `deployments`.
+  `DELETE /api/v1/projects/{nom}`, qui supprime aussi leurs déploiements.
 - Modifications temporaires d'un repo de config ou de templates : restaurer l'original et
   vérifier qu'il est identique.
 - Démo : la tester sur des ports décalés pour ne pas gêner la GitLab de l'utilisateur

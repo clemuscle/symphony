@@ -107,6 +107,13 @@ PENDING ──► RUNNING ──► SUCCESS
   d'état ; un sondage toutes les 15 s rattrape un webhook perdu et suffit seul pour une CI
   sans webhook (GitHub Actions). Au-delà d'une heure, la tâche échoue.
 - Une seule tâche à la fois par projet ou service (`409` sinon).
+- **Supprimer un projet** efface tout ce que Symphony a créé pour lui, dans l'ordre :
+  ses déploiements sur chaque runtime (`Remove` : conteneurs et images locales pour
+  Docker ; Application Argo CD supprimée en cascade puis manifests retirés du repo de
+  déploiement), en attendant qu'ils aient disparu, puis le repo et ses images (purge du
+  registry, puis suppression définitive : GitLab 18 ne fait sinon que la programmer),
+  la fiche catalogue et les lignes en base. Chaque étape est rejouable. Une Application
+  Argo CD du même nom que Symphony n'a pas créée est laissée en place.
 - Chaque changement est diffusé en **Server-Sent Events** (`/api/v1/tasks/events`) :
   l'UI suit l'avancement sans recharger ni sonder. À la reconnexion, le front relit la
   liste : une coupure ne fait rien manquer.

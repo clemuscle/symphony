@@ -80,3 +80,34 @@ func TestDeleteFileAbsent(t *testing.T) {
 		t.Errorf("DeleteFile = %v, attendu ErrNotFound", err)
 	}
 }
+
+// Suppression différée (GitLab 18) : le premier DELETE ne fait que renommer le
+// projet ; DeleteRepo le supprime ensuite pour de bon, sous son nouveau chemin
+func TestDeleteRepoDefinitif(t *testing.T) {
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.RequestURI())
+		switch r.Method + " " + r.URL.EscapedPath() {
+		case "GET /api/v4/projects/root%2Fsvc":
+			w.Write([]byte(`{"id":42,"path_with_namespace":"root/svc"}`))
+		case "GET /api/v4/projects/root%2Fsvc/registry/repositories":
+			w.Write([]byte(`[]`))
+		case "DELETE /api/v4/projects/root%2Fsvc":
+			w.WriteHeader(202)
+		case "GET /api/v4/projects/42":
+			w.Write([]byte(`{"id":42,"path_with_namespace":"root/svc-deletion_scheduled-42","marked_for_deletion_on":"2026-10-13"}`))
+		case "DELETE /api/v4/projects/42":
+			w.WriteHeader(202)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	if err := New("gitlab", srv.URL, "token").DeleteRepo("root/svc"); err != nil {
+		t.Fatal(err)
+	}
+	last := calls[len(calls)-1]
+	if want := "DELETE /api/v4/projects/42?permanently_remove=true&full_path=root%2Fsvc-deletion_scheduled-42"; last != want {
+		t.Errorf("dernier appel = %s, attendu %s", last, want)
+	}
+}

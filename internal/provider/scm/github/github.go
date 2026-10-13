@@ -226,6 +226,9 @@ func (p *Provider) ListFiles(repoPath, branch, dirPath string) ([]string, error)
 	if err != nil {
 		return nil, err
 	}
+	if status == 404 {
+		return nil, fmt.Errorf("listFiles %s: %w", dirPath, provider.ErrNotFound)
+	}
 	if status != 200 {
 		return nil, fmt.Errorf("listFiles %s: status %d", dirPath, status)
 	}

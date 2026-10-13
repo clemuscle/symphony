@@ -428,3 +428,64 @@ func (p *Provider) Logs(deploymentID string, lines int) (string, error) {
 	}
 	return cleanLogs(string(data)), nil
 }
+
+// Remove supprime les containers du service (y compris un "-next" resté d'une
+// bascule ratée), leurs volumes anonymes et toutes les images locales de leur
+// repo, quel que soit le tag. Une image encore utilisée par un autre container
+// est gardée.
+func (p *Provider) Remove(name string) error {
+	filters := url.QueryEscape(fmt.Sprintf(`{"label":["symphony.project=%s"]}`, name))
+	data, status, err := p.docker("GET", "/containers/json?all=true&filters="+filters, nil)
+	if err != nil {
+		return err
+	}
+	if status != 200 {
+		return fmt.Errorf("docker ps: status %d — %s", status, strings.TrimSpace(string(data)))
+	}
+	var containers []struct {
+		ID    string `json:"Id"`
+		Image string `json:"Image"`
+	}
+	if err := json.Unmarshal(data, &containers); err != nil {
+		return fmt.Errorf("docker ps: %w", err)
+	}
+	repos := map[string]bool{}
+	for _, c := range containers {
+		data, status, err := p.docker("DELETE", fmt.Sprintf("/containers/%s?force=true&v=true", c.ID), nil)
+		if err != nil {
+			return err
+		}
+		if status != 204 && status != 404 {
+			return fmt.Errorf("docker rm %s: status %d — %s", c.ID[:12], status, strings.TrimSpace(string(data)))
+		}
+		repo, _ := provider.SplitImage(c.Image, "")
+		repos[repo] = true
+	}
+	for repo := range repos {
+		p.removeImages(repo)
+	}
+	return nil
+}
+
+// removeImages supprime les tags locaux de repo. Sans erreur : une image
+// restée en place n'empêche pas la suppression du service.
+func (p *Provider) removeImages(repo string) {
+	filters := url.QueryEscape(fmt.Sprintf(`{"reference":[%q]}`, repo))
+	data, status, err := p.docker("GET", "/images/json?filters="+filters, nil)
+	if err != nil || status != 200 {
+		slog.Warn("liste des images", "repo", repo, "status", status, "error", err)
+		return
+	}
+	var images []struct {
+		RepoTags []string `json:"RepoTags"`
+	}
+	json.Unmarshal(data, &images)
+	for _, img := range images {
+		for _, tag := range img.RepoTags {
+			// 409 : image utilisée par un autre container, elle reste
+			if _, status, err := p.docker("DELETE", "/images/"+tag, nil); err != nil || (status != 200 && status != 404 && status != 409) {
+				slog.Warn("suppression de l'image", "image", tag, "status", status, "error", err)
+			}
+		}
+	}
+}

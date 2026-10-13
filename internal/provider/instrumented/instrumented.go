@@ -129,3 +129,7 @@ func (r runtime) List() ([]provider.Deployment, error) {
 func (r runtime) Logs(deploymentID string, lines int) (string, error) {
 	return call("runtime", r.ID(), "Logs", func() (string, error) { return r.RuntimeProvider.Logs(deploymentID, lines) })
 }
+
+func (r runtime) Remove(name string) error {
+	return call0("runtime", r.ID(), "Remove", func() error { return r.RuntimeProvider.Remove(name) })
+}

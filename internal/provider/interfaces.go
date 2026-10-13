@@ -22,7 +22,7 @@ type SCMProvider interface {
 	PushFiles(repoPath, branch string, files map[string]string, commitMsg string) error
 	ListRepos() ([]Repo, error)
 	GetFileContent(repoPath, branch, filePath string) (string, error)
-	ListFiles(repoPath, branch, dirPath string) ([]string, error)
+	ListFiles(repoPath, branch, dirPath string) ([]string, error)  // ErrNotFound si le dossier est absent
 	DeleteFile(repoPath, branch, filePath, commitMsg string) error // ErrNotFound si absent
 	DeleteRepo(repoPath string) error                              // ErrNotFound si absent
 	// CreateWebhook abonne url aux événements de pipeline du repo, avec secret
@@ -106,6 +106,11 @@ type RuntimeProvider interface {
 	Status(deploymentID string) (*Deployment, error)
 	List() ([]Deployment, error)
 	Logs(deploymentID string, lines int) (string, error)
+	// Remove supprime le déploiement du service name et tout ce qu'il a créé
+	// (conteneurs et images, ou Application, ressources et manifests). Sans
+	// effet s'il n'existe pas. La suppression peut finir après le retour :
+	// Status(name) répond ErrNotFound quand elle est terminée.
+	Remove(name string) error
 }
 
 type DeployRequest struct {
