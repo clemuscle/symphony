@@ -1,7 +1,7 @@
 # Scénario de démo
 
 Le parcours complet d'un développeur, puis ce qui se passe côté équipe plateforme.
-Compter 15 minutes, dont 3 à 4 d'attente de pipeline.
+Compter 15 à 20 minutes, dont 3 à 4 d'attente de pipeline.
 
 Prérequis : `./demo/up.sh` a fini et affiche les URL de Symphony et de GitLab. Les exemples
 ci-dessous utilisent les ports par défaut (Symphony sur 8080, GitLab sur 8929).
@@ -95,6 +95,21 @@ mais plus de bouton « Nouveau projet » ni de formulaire de déploiement ; l'AP
 toute façon (`403`). **dave** est connecté mais sans rôle : Symphony le lui dit. **alice**
 (admin) peut supprimer un projet et lire l'audit (`/api/v1/audit`), qui montre que `hello-api` a été créé
 par `bob@demo.symphony`.
+
+## 5 bis. Supprimer pour de bon (1 min)
+
+Toujours en **alice** : **Projets**, supprimer `hello-k8s`. La tâche montre ses étapes :
+
+1. **Déploiements** : l'Application Argo CD est supprimée avec ses ressources (pods,
+   Service, Ingress), et `apps/hello-k8s/` quitte `root/symphony-deployments` (commits
+   `remove: hello-k8s`). Pour un service Docker : conteneur et images locales.
+2. **Repo et images** : purge du registry (2 à 3 min sur GitLab), puis suppression
+   **définitive** du repo : GitLab 18 ne ferait sinon que la programmer
+   (`-deletion_scheduled-`, gardé plusieurs jours).
+3. **Fiche catalogue** et **Projet** : plus rien dans le catalogue ni en base.
+
+À la fin, `kubectl -n symphony-apps get all` ne montre plus rien de `hello-k8s`, et
+http://hello-k8s.localhost:8081 ne répond plus.
 
 ## 6. Observer (30 s)
 
