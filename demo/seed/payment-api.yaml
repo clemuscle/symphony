@@ -1,0 +1,48 @@
+# Fiche catalogue du service, lue par Symphony toutes les 15 s.
+# À tenir à jour par l'équipe : owner, tier, SLO, liens, dépendances, actions.
+apiVersion: symphony/v1
+kind: Service
+metadata:
+  name: payment-api
+  owner: team-payments
+  team:
+    name: Paiements
+    slack: "#team-payments"
+    email: payments@demo.symphony
+  tags: [go, rest-api, kubernetes, pci]
+  tier: critical
+  lifecycle: production
+  labels:
+    golden_path: api-rest-go-k8s
+spec:
+  type: api
+  language: go
+  version: 2.1.0
+  repo: __REPO_URL__
+  links:
+    - title: Repository
+      url: __REPO_URL__
+      icon: code
+    - title: Pipelines
+      url: __REPO_URL__/-/pipelines
+      icon: ci
+    - title: Application Argo CD
+      url: __ARGOCD_URL__/applications/argocd/payment-api
+      icon: web
+    - title: Métriques
+      url: __APP_URL__/metrics
+      icon: monitoring
+  dependencies:
+    - service: auth-service
+      type: api
+    - service: postgres-payments
+      type: database
+    - service: kafka-events
+      type: queue
+  slo:
+    availability: "99.99%"
+    latency_p99: 200ms
+  actions:
+    - name: Relancer la pipeline
+      description: Relance la pipeline CI sur main
+      ci_provider: gitlab-ci

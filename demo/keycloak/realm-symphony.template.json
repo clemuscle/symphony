@@ -32,6 +32,19 @@
   ],
   "clients": [
     {
+      "clientId": "gitlab",
+      "name": "GitLab",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "__GITLAB_OIDC_SECRET__",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["__GITLAB_URL__/users/auth/openid_connect/callback"],
+      "webOrigins": ["__GITLAB_URL__"],
+      "attributes": { "pkce.code.challenge.method": "S256" }
+    },
+    {
       "clientId": "symphony",
       "name": "Symphony",
       "enabled": true,

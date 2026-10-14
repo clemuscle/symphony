@@ -12,8 +12,8 @@ dit ce qui en a été repris, adapté ou écarté.
 
 ## Principes
 
-1. **Tout se pilote par Git.** La configuration de Symphony, les golden paths et le
-   catalogue de services vivent dans des repos Git, relus toutes les 15 s. Le binaire est
+1. **Tout se pilote par Git.** La configuration de Symphony, les golden paths et la fiche
+   catalogue de chaque projet vivent dans des repos Git, relus toutes les 15 s. Le binaire est
    immuable ; changer la plateforme, c'est pousser un commit.
 2. **Des drivers, pas des plugins.** Chaque outil externe est derrière une interface Go
    stricte (`SCMProvider`, `CIProvider`, `RegistryProvider`, `RuntimeProvider`). Pas de
@@ -31,8 +31,8 @@ dit ce qui en a été repris, adapté ou écarté.
 
 ```
                     ┌──────────────────────────────┐
-                    │  SPA Vue 3 (catalogue,       │
-                    │  projets, déploiements)      │
+                    │  SPA Vue 3 (projets,         │
+                    │  catalogue, déploiements)    │
                     └──────────────┬───────────────┘
                                    │ REST /api/v1
 ┌──────────────────────────────────▼───────────────────────────────────┐
@@ -40,7 +40,7 @@ dit ce qui en a été repris, adapté ou écarté.
 │                                                                      │
 │  api/ (chi, handlers)   gitops/Syncer      gitops/TemplateLoader     │
 │  tasks/Runner ◄── webhooks GitLab          golden paths (15 s)       │
-│  (tâches, SSE)          catalogue (15 s)                             │
+│  (tâches, SSE)          fiches (15 s)                                │
 │  configWatcher (15 s)   catalogue.Store    database (PostgreSQL)     │
 │                                                                      │
 │  provider.Registry : SCM │ CI │ Registry │ Runtime                   │
@@ -54,10 +54,17 @@ dit ce qui en a été repris, adapté ou écarté.
 
 | Repo | Contenu | Relu |
 |---|---|---|
-| `root/symphony-config` | `symphony.yaml` (providers, catalogue, templates) et `services/` (catalogue) | toutes les 15 s, appliqué à chaud |
-| `root/symphony-templates` | `templates/<nom>/` : `template.yaml`, template CI, `skeleton/` | toutes les 15 s |
-| un repo par service créé | le code du service, généré depuis le golden path | — |
-| `root/symphony-deployments` | `apps/<service>/` : manifests Kubernetes écrits par Symphony (runtime `argocd`) | par Argo CD |
+| `platform/symphony-config` | `symphony.yaml` (providers, templates, authentification…) | toutes les 15 s, appliqué à chaud |
+| `platform/symphony-templates` | `templates/<nom>/` : `template.yaml`, template CI, `skeleton/` | toutes les 15 s |
+| `apps/<service>` : un repo par projet | le code du service, généré depuis le golden path, et sa fiche `catalog-info.yaml` | la fiche, toutes les 15 s |
+| `platform/symphony-deployments` | `apps/<service>/` : manifests Kubernetes écrits par Symphony (runtime `argocd`) | par Argo CD |
+
+Deux groupes en démo : **platform**, tenu par l'équipe plateforme, et **apps**, ouvert aux
+développeurs (`providers.scm[].config.namespace` : groupe des repos créés). La fiche d'un
+projet est dans **son** repo, pas dans la configuration de la plateforme : son équipe la
+modifie par un commit, à côté du code qu'elle décrit (le modèle de `catalog-info.yaml`
+chez Backstage). Le catalogue de Symphony, ce sont les golden paths ; ses projets sont ce
+qui en est sorti.
 
 Le `symphony.yaml` local n'est qu'un **bootstrap** (section `config_source`) : comment
 joindre GitLab et où lire la configuration. C'est le seul fichier qui demande un
@@ -70,8 +77,8 @@ redémarrage, comme l'`app-config` de Backstage.
 | `cmd/symphony` | Composition : bootstrap et source de config (`config.go`), construction des providers (`providers.go`), assemblage (`main.go`) |
 | `internal/config` | Types de `symphony.yaml` et décodage (`${VAR}` remplacées par l'environnement) |
 | `internal/provider` | Interfaces, `Registry` (providers par id, remplaçable d'un bloc) et implémentations : `scm/gitlab`, `scm/github`, `ci/gitlabci`, `ci/githubactions`, `registry/gitlabregistry`, `runtime/docker`, `runtime/argocd` |
-| `internal/gitops` | `Syncer` (catalogue) et `TemplateLoader` (golden paths) |
-| `internal/catalogue` | Store en mémoire des services (`kind: Service`) |
+| `internal/gitops` | `Syncer` (fiche `catalog-info.yaml` de chaque projet) et `TemplateLoader` (golden paths) |
+| `internal/catalogue` | Store en mémoire des fiches (`kind: Service`) |
 | `internal/tasks` | Moteur de tâches : étapes enregistrées en base, attente de pipelines (webhook ou sondage), reprise au démarrage, diffusion des changements (`Hub`, pour le SSE) |
 | `internal/webhook` | Réception des événements de pipeline GitLab (`/webhooks/gitlab`, secret partagé) |
 | `internal/database` | PostgreSQL via `database/sql` : `projects`, `pipelines`, `deployments`, `tasks`, `audit_log` ; migrations embarquées |
@@ -79,7 +86,7 @@ redémarrage, comme l'`app-config` de Backstage.
 | `internal/metrics` | Métriques Prometheus sur `/metrics` ; `internal/provider/instrumented` enveloppe chaque provider pour mesurer ses appels |
 | `internal/auth` | OIDC (connexion, retour, déconnexion), cookie de session signé, rôles, CSRF, CORS ; `Holder` remplacé d'un bloc au rechargement de la config |
 | `internal/web` | Front compilé embarqué (`go:embed`), avec repli sur `index.html` pour les routes Vue |
-| `frontend/` | Vue 3 + Vite : pages Catalogue, Projets, Déploiements |
+| `frontend/` | Vue 3 + Vite : pages Projets (avec leur fiche), Catalogue (golden paths), Déploiements, Activité |
 
 ## Flux principaux
 
@@ -128,9 +135,11 @@ projet inexistant) :
 
 1. **Repo et squelette** : lire le skeleton et le template CI **avant** de créer le repo
    (un template cassé ne laisse pas de repo vide), remplacer les placeholders, créer le
-   repo, puis pousser skeleton et CI en **un seul commit**, qui lance la première pipeline.
-2. **Projet, catalogue et webhook** : enregistrer le projet, écrire sa fiche dans
-   `symphony-config/services/`, abonner Symphony aux événements de pipeline du repo.
+   repo, puis pousser skeleton, CI et fiche `catalog-info.yaml` en **un seul commit**, qui
+   lance la première pipeline. La fiche part de celle du skeleton s'il en a une (liens,
+   SLO, actions du golden path), et reçoit l'équipe, le tier et le cycle de vie saisis.
+2. **Projet et webhook** : enregistrer le projet (le `Syncer` lit alors sa fiche), abonner
+   Symphony aux événements de pipeline du repo.
 3. **Première pipeline** : attendre sa fin. Quand la tâche réussit, l'image du service est
    dans le registry : le projet est prêt à déployer.
 
@@ -193,6 +202,13 @@ journaux.
 4. À chaque requête, le rôle est recalculé depuis les groupes et la configuration : un
    changement de `auth.roles` s'applique sans reconnexion.
 
+En démo, GitLab se connecte au même realm Keycloak (OmniAuth OpenID Connect, client
+`gitlab`) : un seul annuaire pour les deux outils. `up.sh` crée les comptes dans GitLab
+avec leur e-mail (liés à Keycloak à la première connexion) et leur donne leurs droits :
+alice Owner de `platform` et `apps`, bob Developer et carol Reporter de `apps`. GitLab CE
+ne synchronise pas les groupes de l'annuaire (fonction payante) : ces droits sont posés
+par le script, pas déduits des groupes Keycloak.
+
 ### Actions Day-2
 
 Une fiche de catalogue peut déclarer des actions (« Relancer la pipeline »…) : un appel
@@ -249,6 +265,7 @@ implémentations n'en savent rien.
 | `Registry.Replace` plutôt que redémarrer | pas de coupure ; les requêtes en cours finissent avec leurs providers | redémarrage du processus |
 | API Docker sur le socket, sans SDK | quelques appels HTTP suffisent, pas de dépendance lourde | SDK Docker |
 | Catalogue en mémoire, source dans Git | Git est la source de vérité, la base ne garde que l'état propre à Symphony | catalogue en base |
+| Fiche dans le repo du projet | elle évolue avec le code, par l'équipe qui le connaît, avec ses droits sur le repo ; plus de fiche sans repo ni pipeline derrière | dossier `services/` du repo de config (versions ≤ 0.5) |
 | Backend-for-Frontend pour l'OIDC | le navigateur ne détient aucun jeton (pas de vol par XSS), le front n'a pas de bibliothèque OIDC ; recommandé par l'IETF pour les applications navigateur | jetons gérés par la SPA (oidc-client) |
 | Session dans un cookie signé, rôle recalculé à chaque requête | pas de stockage de sessions ; un changement de groupes → rôles dans la config s'applique sans reconnexion | sessions en base |
 | Découverte OIDC paresseuse et retentée | Symphony démarre même si l'IdP est absent ; `discovery_url` sépare l'URL interne de l'issuer vu par le navigateur | découverte au démarrage, bloquante |

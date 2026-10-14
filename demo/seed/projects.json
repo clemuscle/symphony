@@ -1,0 +1,29 @@
+[
+  {
+    "name": "auth-service",
+    "description": "Authentification des utilisateurs et émission des jetons",
+    "golden_path_id": "api-rest-python",
+    "runtime_provider": "docker-local",
+    "owner": "team-identity",
+    "tier": "critical",
+    "lifecycle": "production"
+  },
+  {
+    "name": "payment-api",
+    "description": "Paiements, remboursements et rapprochement bancaire",
+    "golden_path_id": "api-rest-go-k8s",
+    "runtime_provider": "argocd-k3s",
+    "owner": "team-payments",
+    "tier": "critical",
+    "lifecycle": "production"
+  },
+  {
+    "name": "notification-service",
+    "description": "Envoi des e-mails et des notifications push",
+    "golden_path_id": "api-rest-node",
+    "runtime_provider": "argocd-k3s",
+    "owner": "team-product",
+    "tier": "standard",
+    "lifecycle": "staging"
+  }
+]

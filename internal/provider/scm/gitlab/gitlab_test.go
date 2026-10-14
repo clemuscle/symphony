@@ -1,9 +1,11 @@
 package gitlab
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -109,5 +111,44 @@ func TestDeleteRepoDefinitif(t *testing.T) {
 	last := calls[len(calls)-1]
 	if want := "DELETE /api/v4/projects/42?permanently_remove=true&full_path=root%2Fsvc-deletion_scheduled-42"; last != want {
 		t.Errorf("dernier appel = %s, attendu %s", last, want)
+	}
+}
+
+func TestCreateRepoNamespace(t *testing.T) {
+	var gotNamespace any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && r.URL.EscapedPath() == "/api/v4/namespaces/apps%2Fteam-a":
+			w.Write([]byte(`{"id": 42, "full_path": "apps/team-a"}`))
+		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/v4/namespaces/"):
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == "POST" && r.URL.Path == "/api/v4/projects":
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			gotNamespace = body["namespace_id"]
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"id": 1, "path_with_namespace": "apps/team-a/svc"}`))
+		default:
+			t.Errorf("appel inattendu %s %s", r.Method, r.URL)
+		}
+	}))
+	defer srv.Close()
+
+	// Groupe par défaut du provider, sous-groupe compris
+	p := New("gitlab", srv.URL, "t").WithNamespace("apps/team-a/")
+	if _, err := p.CreateRepo(provider.CreateRepoRequest{Name: "svc"}); err != nil {
+		t.Fatal(err)
+	}
+	if gotNamespace != float64(42) {
+		t.Errorf("namespace_id = %v, attendu 42", gotNamespace)
+	}
+
+	// Groupe introuvable : erreur, pas de repo créé ailleurs
+	gotNamespace = nil
+	if _, err := p.CreateRepo(provider.CreateRepoRequest{Name: "svc", Namespace: "inconnu"}); err == nil {
+		t.Error("groupe introuvable accepté")
+	}
+	if gotNamespace != nil {
+		t.Error("repo créé malgré un groupe introuvable")
 	}
 }

@@ -3,32 +3,54 @@
 Le parcours complet d'un développeur, puis ce qui se passe côté équipe plateforme.
 Compter 15 à 20 minutes, dont 3 à 4 d'attente de pipeline.
 
+Organisation de la GitLab de démo :
+
+- groupe **platform** (équipe plateforme, alice) : `symphony-config` (configuration de
+  Symphony), `symphony-templates` (les golden paths), `symphony-deployments` (l'état voulu
+  des services sur Kubernetes, appliqué par Argo CD) ;
+- groupe **apps** (développeurs : bob en Developer, carol en Reporter) : les projets créés
+  par Symphony, chacun avec sa CI et sa fiche `catalog-info.yaml`.
+
 Prérequis : `./demo/up.sh` a fini et affiche les URL de Symphony et de GitLab. Les exemples
 ci-dessous utilisent les ports par défaut (Symphony sur 8080, GitLab sur 8929).
 
-## 0. Se connecter (30 s)
+## 0. Se connecter, une fois pour tout (1 min)
 
 Ouvrir http://localhost:8080 : Symphony renvoie vers Keycloak. Se connecter en **bob**
 (mot de passe `bob`, rôle developer). L'en-tête affiche l'utilisateur et son rôle ; le
 navigateur n'a reçu qu'un cookie de session, aucun jeton.
 
-## 1. Le catalogue (30 s)
+Ouvrir GitLab (http://localhost:8929) et cliquer **Keycloak** : bob est connecté sans
+ressaisir de mot de passe. Keycloak est le seul annuaire : mêmes comptes, mêmes groupes
+pour Symphony et GitLab.
 
-Ouvrir **Catalogue** sur http://localhost:8080 : quatre services d'exemple, avec équipe,
-niveau de criticité, SLO et liens. Ces fiches ne sont pas en base : elles viennent du repo
-`root/symphony-config` (`services/`), relu toutes les 15 s.
+## 1. Les projets (1 min)
 
-## 2. Créer un service depuis un golden path (4 min, suivi en direct)
+La page **Projets** liste trois services créés par `up.sh` avec les golden paths de la démo,
+comme un développeur l'aurait fait : `auth-service` (Python, Docker), `payment-api`
+(Go, Kubernetes) et `notification-service` (Node, Kubernetes). Ce sont de vrais projets :
 
-**Projets → Nouveau projet**, choisir **API REST Go**, nommer le service `hello-api`,
-créer. L'API répond tout de suite : la création est une **tâche**, dont les étapes
-s'affichent en direct sous le formulaire.
+- chaque carte montre son équipe, son tier et l'URL où il répond (un hello world) ;
+- le panneau de détail réunit le repo, les pipelines, les déploiements (avec l'état
+  Argo CD `Synced / Healthy`), la fiche (SLO, dépendances, liens) et les actions Day-2 ;
+- **la fiche vient du repo du projet** : `catalog-info.yaml` à sa racine, relu toutes les
+  15 s. Dans GitLab, `apps/auth-service` → modifier `catalog-info.yaml` (passer
+  `availability` à `"99.9%"`, par exemple) : la carte change sans rien toucher dans Symphony.
 
-1. **Repo et squelette** : le repo `root/hello-api` est créé, le squelette (code,
-   Dockerfile, tests) et le `.gitlab-ci.yml` du golden path y sont poussés en un commit,
-   ce qui lance la première pipeline.
-2. **Projet, catalogue et webhook** : la fiche `hello-api` arrive au catalogue, et le repo
-   reçoit un webhook vers Symphony.
+Côté GitLab, bob voit le groupe **apps** (les projets, en Developer) mais pas **platform**
+(la configuration de Symphony, tenue par alice).
+
+## 2. Créer un service depuis le catalogue (4 min, suivi en direct)
+
+**Catalogue** : les golden paths approuvés par l'équipe plateforme. Choisir **API REST Go**,
+nommer le service `hello-api`, renseigner l'équipe et le tier, créer. L'API répond tout de
+suite : la création est une **tâche**, dont les étapes s'affichent en direct sous le formulaire.
+
+1. **Repo et squelette** : le repo `apps/hello-api` est créé, le squelette (code,
+   Dockerfile, tests), le `.gitlab-ci.yml` du golden path et la fiche `catalog-info.yaml`
+   y sont poussés en un commit, ce qui lance la première pipeline.
+2. **Projet et webhook** : le projet apparaît dans **Projets**, et le repo reçoit un
+   webhook vers Symphony.
 3. **Première pipeline** : `pipeline #N : pending → running → success`, poussé par le
    webhook de GitLab (le lien « Pipeline » ouvre la pipeline en cours). Elle teste puis
    construit l'image et la pousse dans le registry (3 à 4 min la première fois).
@@ -60,8 +82,8 @@ service répond sur http://hello-k8s.localhost:8081/healthz.
 
 Symphony n'a rien appliqué lui-même :
 
-- dans GitLab, `root/symphony-deployments` a reçu un commit
-  `deploy: hello-k8s localhost:5050/root/hello-k8s:<sha>` avec `apps/hello-k8s/` ;
+- dans GitLab, `platform/symphony-deployments` a reçu un commit
+  `deploy: hello-k8s localhost:5050/apps/hello-k8s:<sha>` avec `apps/hello-k8s/` ;
 - dans Argo CD (http://localhost:8088, identifiants affichés par `up.sh`), l'Application
   `hello-k8s` pointe sur ce dossier.
 
@@ -75,23 +97,25 @@ kubectl -n symphony-apps scale deploy hello-k8s --replicas=3   # revient à 1 en
 
 ## 4. Côté plateforme : tout se pilote par Git (2 min)
 
-**Ajouter un golden path sans redémarrer.** Dans GitLab, `root/symphony-templates`,
+Se connecter à GitLab en **alice** (bouton Keycloak) : elle tient le groupe **platform**.
+
+**Ajouter un golden path sans redémarrer.** Dans `platform/symphony-templates`,
 dupliquer `templates/api-rest-go` en `templates/api-rest-go-v2` (dans `template.yaml`,
-changer `name` et `title`). Dans Symphony, **Projets → Nouveau projet →
-↻ Recharger depuis Git** : le nouveau golden path apparaît.
+changer `name` et `title`). Dans Symphony, **Catalogue → ↻ Recharger depuis Git** : le
+nouveau golden path apparaît.
 
 **Un template cassé est ignoré, pas fatal.** Dans ce `template.yaml`, mettre un `name`
 différent du dossier : le golden path disparaît de la liste, les autres restent, et les logs
 (`docker compose logs symphony` dans `demo/`) disent pourquoi.
 
-**Changer la configuration à chaud.** Dans `root/symphony-config/symphony.yaml`, retirer un
+**Changer la configuration à chaud.** Dans `platform/symphony-config/symphony.yaml`, retirer un
 provider : il disparaît de `GET /api/v1/providers` en moins de 15 s. Une configuration
 invalide (YAML cassé) est refusée, et la précédente reste en place.
 
 ## 5. Les rôles (1 min)
 
-**Déconnexion**, puis connexion en **carol** (viewer) : catalogue et projets visibles,
-mais plus de bouton « Nouveau projet » ni de formulaire de déploiement ; l'API refuse de
+**Déconnexion**, puis connexion en **carol** (viewer) : projets et catalogue visibles,
+mais plus de création ni de formulaire de déploiement ; l'API refuse de
 toute façon (`403`). **dave** est connecté mais sans rôle : Symphony le lui dit. **alice**
 (admin) peut supprimer un projet et lire l'audit (`/api/v1/audit`), qui montre que `hello-api` a été créé
 par `bob@demo.symphony`.
@@ -101,12 +125,12 @@ par `bob@demo.symphony`.
 Toujours en **alice** : **Projets**, supprimer `hello-k8s`. La tâche montre ses étapes :
 
 1. **Déploiements** : l'Application Argo CD est supprimée avec ses ressources (pods,
-   Service, Ingress), et `apps/hello-k8s/` quitte `root/symphony-deployments` (commits
+   Service, Ingress), et `apps/hello-k8s/` quitte `platform/symphony-deployments` (commits
    `remove: hello-k8s`). Pour un service Docker : conteneur et images locales.
 2. **Repo et images** : purge du registry (2 à 3 min sur GitLab), puis suppression
    **définitive** du repo : GitLab 18 ne ferait sinon que la programmer
    (`-deletion_scheduled-`, gardé plusieurs jours).
-3. **Fiche catalogue** et **Projet** : plus rien dans le catalogue ni en base.
+3. **Fiche catalogue** et **Projet** : la fiche est partie avec le repo ; plus rien en base.
 
 À la fin, `kubectl -n symphony-apps get all` ne montre plus rien de `hello-k8s`, et
 http://hello-k8s.localhost:8081 ne répond plus.
@@ -114,7 +138,7 @@ http://hello-k8s.localhost:8081 ne répond plus.
 ## 6. Observer (30 s)
 
 http://localhost:8080/metrics : requêtes de l'API par route, appels à GitLab, Docker et Argo CD par
-méthode (durée, erreurs), rechargements du catalogue, des templates et de la configuration.
+méthode (durée, erreurs), relectures des fiches, des templates et de la configuration.
 
 ## Nettoyer
 

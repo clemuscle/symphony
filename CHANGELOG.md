@@ -5,7 +5,31 @@ image `ghcr.io/clemuscle/symphony:X.Y`.
 
 ## Non publié
 
+### Ajouté
+- **Démo avec de vrais projets** : `up.sh` crée et déploie trois services depuis les golden
+  paths, via l'API de Symphony (`demo/seed.sh`) : `auth-service` (Python, Docker),
+  `payment-api` (Go) et `notification-service` (Node) sur Kubernetes. Chacun a son repo,
+  ses pipelines, son image et répond en HTTP ; `--no-seed` pour s'en passer.
+- **GitLab connecté à Keycloak** en démo (OpenID Connect) : mêmes comptes pour Symphony et
+  GitLab, créés et dotés de leurs droits par `up.sh`.
+- Groupes GitLab en démo : `platform` (configuration, golden paths, repo de déploiement)
+  et `apps` (les projets) ; `providers.scm[].config.namespace` choisit le groupe des
+  repos créés.
+- Le formulaire de création renseigne la fiche : équipe, tier, cycle de vie.
+
 ### Modifié
+- **La fiche catalogue vit dans le repo du projet** (`catalog-info.yaml`, poussée avec le
+  squelette, relue toutes les 15 s) au lieu de `symphony-config/services/` : son équipe la
+  modifie par un commit. Un golden path peut en fournir la base (`skeleton/catalog-info.yaml`).
+  `catalogue.repo`, `catalogue.path` et `CATALOGUE_BRANCH` ne sont plus lus ;
+  `catalogue.file` change le nom de la fiche.
+- **UI** : la page **Projets** devient l'accueil et réunit chaque projet, sa fiche (équipe,
+  SLO, dépendances, liens, actions Day-2), ses pipelines et ses déploiements avec leur URL ;
+  la page **Catalogue** présente les golden paths et crée les projets.
+- `GET /api/v1/projects` renvoie la fiche de chaque projet (`service`).
+- Un groupe GitLab introuvable à la création est une erreur, au lieu d'un repo créé à la
+  racine du compte.
+- `up.sh` nomme le port déjà pris et la variable qui le change.
 - **Supprimer un projet supprime vraiment tout** : ses déploiements sur chaque runtime
   (conteneurs, volumes anonymes et images locales Docker ; Application Argo CD et ses
   ressources Kubernetes, manifests retirés du repo de déploiement), son historique de

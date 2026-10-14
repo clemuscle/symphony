@@ -21,23 +21,21 @@ export const api = {
   // Session
   me: () => http.get('/api/v1/me'),
 
-  // Catalogue
-  getServices: () => http.get('/api/v1/services'),
+  // Actions Day-2 déclarées dans la fiche catalogue d'un projet
   triggerAction: (service, action, inputs) =>
     http.post(`/api/v1/services/${service}/actions/${action}`, inputs),
 
-  // Golden Paths
+  // Catalogue : les golden paths
   getGoldenPaths: () => http.get('/api/v1/golden-paths'),
 
   // Recharge le catalogue et les golden paths depuis Git
   sync: () => http.post('/api/v1/sync'),
 
-  // Projets
+  // Projets (chacun avec sa fiche catalogue, champ service)
   createProject: (data) => http.post('/api/v1/projects', data),
   listProjects: () => http.get('/api/v1/projects'),
   deleteProject: (name) => http.delete(`/api/v1/projects/${name}`),
   getProjectImage: (name) => http.get(`/api/v1/projects/${name}/image`),
-  listRepos: () => http.get('/api/v1/repos'),
 
   // Pipelines
   triggerPipeline: (projectPath, ref, vars) =>

@@ -57,7 +57,12 @@ type ProviderDef struct {
 	Config  map[string]string `yaml:"config"`
 }
 
+// CatalogueConfig : chaque projet porte sa fiche dans son repo (File, défaut
+// catalog-info.yaml). Repo, Branch et Path désignaient l'ancien dossier
+// services/ du repo de config : ils ne sont plus lus.
 type CatalogueConfig struct {
+	File string `yaml:"file"`
+
 	Repo   string `yaml:"repo"`
 	Branch string `yaml:"branch"`
 	Path   string `yaml:"path"`

@@ -11,6 +11,9 @@ providers:
       config:
         url: http://gitlab:${GITLAB_PORT}
         token_env: GITLAB_TOKEN
+        # Groupe des projets créés : ouvert aux développeurs, à part des
+        # repos de la plateforme (groupe platform)
+        namespace: apps
 
   ci:
     - id: gitlab-ci
@@ -38,18 +41,18 @@ providers:
         socket: /var/run/docker.sock
 
     # Kubernetes en GitOps : Symphony commite les manifests de chaque service
-    # dans root/symphony-deployments, Argo CD (dans k3s) les applique
+    # dans platform/symphony-deployments, Argo CD (dans k3s) les applique
     - id: argocd-k3s
       type: argocd
       config:
         url: http://k3s:30080
         token_env: ARGOCD_TOKEN
         scm_ref: gitlab-local
-        repo: root/symphony-deployments
+        repo: platform/symphony-deployments
         branch: main
         path: apps
         # Le même repo vu par Argo CD, depuis un pod (relais gitlab-proxy)
-        repo_url: http://k3s:${GITLAB_PORT}/root/symphony-deployments.git
+        repo_url: http://k3s:${GITLAB_PORT}/platform/symphony-deployments.git
         namespace: symphony-apps
         # Chaque service répond sur http://<service>.localhost:<K8S_HTTP_PORT>
         ingress_domain: localhost
@@ -61,13 +64,13 @@ webhooks:
   url: http://symphony:8080 # Symphony vu par GitLab
   secret_env: WEBHOOK_SECRET
 
+# Catalogue : chaque projet porte sa fiche (équipe, tier, SLO, liens, actions)
+# dans son propre repo, à la racine
 catalogue:
-  repo: root/symphony-config
-  branch: main
-  path: services
+  file: catalog-info.yaml
 
 templates:
-  repo: root/symphony-templates
+  repo: platform/symphony-templates
   branch: main
   path: templates
 

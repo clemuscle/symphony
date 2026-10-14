@@ -2,18 +2,22 @@
 # Démo Symphony, de zéro à une instance utilisable, en une commande :
 #   1. vérifie les prérequis
 #   2. démarre PostgreSQL, GitLab CE et le runner
-#   3. initialise GitLab : Auto DevOps désactivé, token API, repos
-#      root/symphony-config et root/symphony-templates (contenu de demo/gitlab/),
-#      runner enregistré
+#   3. initialise GitLab : Auto DevOps désactivé, token API, groupes platform
+#      (symphony-config, symphony-templates, symphony-deployments : contenu de
+#      demo/gitlab/) et apps (les projets), comptes du realm Keycloak et leurs
+#      droits, runner enregistré
 #   4. démarre Kubernetes (k3s) et y installe Argo CD, avec un compte pour
-#      Symphony et l'accès au repo root/symphony-deployments et au registry
+#      Symphony et l'accès au repo platform/symphony-deployments et au registry
 #   5. démarre Keycloak (realm symphony : alice admin, bob developer,
-#      carol viewer, dave sans rôle)
-#   6. démarre Symphony et attend qu'il ait chargé golden paths et catalogue
+#      carol viewer, dave sans rôle), qui sert aussi à se connecter à GitLab
+#   6. démarre Symphony et attend qu'il ait chargé les golden paths
+#   7. crée et déploie, via l'API de Symphony, les projets de demo/seed/ :
+#      de vrais repos, pipelines et services joignables (~5 min)
 #
 # Rejouable : chaque étape vérifie ce qui existe déjà.
-# --no-k8s : sans Kubernetes (~1,5 Go de RAM en moins) ; le golden path
-#   « API REST Go (Kubernetes) » ne peut alors pas être déployé.
+# --no-k8s : sans Kubernetes (~1,5 Go de RAM en moins) ; les projets de démo
+#   prévus sur Kubernetes sont alors déployés sur Docker.
+# --no-seed : sans les projets de démo (on les crée pendant la démo).
 # Ports réglables : GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 \
 #   SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 K8S_HTTP_PORT=18081 ARGOCD_PORT=18088 \
 #   K8S_API_PORT=16443 ./demo/up.sh
@@ -23,10 +27,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 K8S=true
+SEED=true
 for arg in "$@"; do
   case $arg in
     --no-k8s) K8S=false ;;
-    *) echo "usage : $0 [--no-k8s]" >&2; exit 2 ;;
+    --no-seed) SEED=false ;;
+    *) echo "usage : $0 [--no-k8s] [--no-seed]" >&2; exit 2 ;;
   esac
 done
 ARGOCD_VERSION=v3.1.8
@@ -57,6 +63,7 @@ GITLAB_ROOT_PASSWORD=${GITLAB_ROOT_PASSWORD:-Sy-$(random 20)}
 KEYCLOAK_ADMIN_PASSWORD=$(saved KEYCLOAK_ADMIN_PASSWORD); KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-$(random 20)}
 SESSION_SECRET=$(saved SESSION_SECRET); SESSION_SECRET=${SESSION_SECRET:-$(random 48)}
 WEBHOOK_SECRET=$(saved WEBHOOK_SECRET); WEBHOOK_SECRET=${WEBHOOK_SECRET:-$(random 32)}
+GITLAB_OIDC_SECRET=$(saved GITLAB_OIDC_SECRET); GITLAB_OIDC_SECRET=${GITLAB_OIDC_SECRET:-$(random 32)}
 
 GITLAB_URL="http://localhost:${GITLAB_PORT}"
 SYMPHONY_URL="http://localhost:${SYMPHONY_PORT}"
@@ -78,6 +85,7 @@ SYMPHONY_IMAGE=${SYMPHONY_IMAGE}
 KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
 SESSION_SECRET=${SESSION_SECRET}
 WEBHOOK_SECRET=${WEBHOOK_SECRET}
+GITLAB_OIDC_SECRET=${GITLAB_OIDC_SECRET}
 GITLAB_ROOT_PASSWORD=${GITLAB_ROOT_PASSWORD}
 GITLAB_TOKEN=${GITLAB_TOKEN}
 K8S_GITLAB_TOKEN=${K8S_GITLAB_TOKEN}
@@ -104,19 +112,24 @@ fi
 # Un port pris par autre chose que la démo elle-même = conflit
 running=$($COMPOSE ps --services --status running 2>/dev/null || true)
 if [ -z "$running" ] && command -v ss >/dev/null 2>&1; then
-  ports="$GITLAB_PORT $REGISTRY_PORT $GITLAB_SSH_PORT $SYMPHONY_PORT $KEYCLOAK_PORT"
-  [ "$K8S" = true ] && ports="$ports $K8S_HTTP_PORT $ARGOCD_PORT $K8S_API_PORT"
-  for p in $ports; do
+  vars="GITLAB_PORT REGISTRY_PORT GITLAB_SSH_PORT SYMPHONY_PORT KEYCLOAK_PORT"
+  [ "$K8S" = true ] && vars="$vars K8S_HTTP_PORT ARGOCD_PORT K8S_API_PORT"
+  for v in $vars; do
+    p=${!v}
     ss -ltn | awk '{print $4}' | grep -q ":${p}\$" \
-      && fail "port ${p} déjà utilisé ; choisir d'autres ports, ex. GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 K8S_HTTP_PORT=18081 ARGOCD_PORT=18088 K8S_API_PORT=16443 ./demo/up.sh"
+      && fail "port ${p} déjà utilisé ; en choisir un autre, ex. ${v}=1${p: -4} ./demo/up.sh"
   done
 fi
 
 write_env
 
-# Realm Keycloak : les URL de retour dépendent du port de Symphony
+# Realm Keycloak : les URL de retour dépendent des ports des applications
 mkdir -p keycloak/import
-sed "s|__SYMPHONY_URL__|${SYMPHONY_URL}|g" keycloak/realm-symphony.template.json > keycloak/import/realm-symphony.json
+# (Symphony, GitLab), comme le secret du client gitlab
+sed -e "s|__SYMPHONY_URL__|${SYMPHONY_URL}|g" -e "s|__GITLAB_URL__|${GITLAB_URL}|g" \
+  -e "s|__GITLAB_OIDC_SECRET__|${GITLAB_OIDC_SECRET}|g" \
+  keycloak/realm-symphony.template.json > keycloak/import/realm-symphony.json
+chmod 600 keycloak/import/realm-symphony.json
 
 # ── 2. Infra ──────────────────────────────────────────────────────────────────
 
@@ -158,15 +171,34 @@ api -X PUT "$GITLAB_URL/api/v4/application/settings" \
   || fail "réglage des webhooks de GitLab impossible"
 ok "Webhooks de GitLab vers Symphony autorisés"
 
-# Pousse le contenu de demo/gitlab/<repo>/ dans root/<repo>, en un commit
-seed_repo() {
-  local repo=$1 dir=gitlab/$1
-  if [ "$(api -o /dev/null -w '%{http_code}' "$GITLAB_URL/api/v4/projects/root%2F$repo")" = 200 ]; then
-    ok "root/$repo déjà présent"
+urlenc() { jq -rn --arg s "$1" '$s|@uri'; }
+
+# Groupes : platform pour les repos de la plateforme (équipe plateforme),
+# apps pour les projets créés par Symphony (ouverts aux développeurs)
+group_id() { api "$GITLAB_URL/api/v4/groups/$1" | jq -r '.id // empty'; }
+ensure_group() {
+  local path=$1 description=$2
+  if [ -n "$(group_id "$path")" ]; then
+    ok "Groupe $path déjà présent"
     return
   fi
-  api -X POST "$GITLAB_URL/api/v4/projects" -d "name=$repo" -d "visibility=private" \
-    | jq -e .id >/dev/null || fail "création de root/$repo impossible"
+  api -X POST "$GITLAB_URL/api/v4/groups" -d "name=$path" -d "path=$path" \
+    -d "visibility=private" --data-urlencode "description=$description" \
+    | jq -e .id >/dev/null || fail "création du groupe $path impossible"
+  ok "Groupe $path créé"
+}
+ensure_group platform "Configuration de Symphony : golden paths, repo de déploiement"
+ensure_group apps "Projets créés par Symphony"
+
+# Pousse le contenu de demo/gitlab/<repo>/ dans platform/<repo>, en un commit
+seed_repo() {
+  local repo=$1 dir=gitlab/$1 path=platform/$1
+  if [ "$(api -o /dev/null -w '%{http_code}' "$GITLAB_URL/api/v4/projects/$(urlenc "$path")")" = 200 ]; then
+    ok "$path déjà présent"
+    return
+  fi
+  api -X POST "$GITLAB_URL/api/v4/projects" -d "name=$repo" -d "namespace_id=$(group_id platform)" \
+    -d "visibility=private" | jq -e .id >/dev/null || fail "création de $path impossible"
   local actions
   actions=$(cd "$dir" && find . -type f | sort | while read -r f; do
     jq -n --arg p "${f#./}" --rawfile c "$f" '{action: "create", file_path: $p, content: $c}'
@@ -174,13 +206,40 @@ seed_repo() {
   jq -n --argjson a "$actions" \
     '{branch: "main", commit_message: "feat: contenu initial de la démo [symphony]", actions: $a}' \
     | api -X POST -H "Content-Type: application/json" --data @- \
-      "$GITLAB_URL/api/v4/projects/root%2F$repo/repository/commits" \
-    | jq -e .id >/dev/null || fail "push du contenu de root/$repo impossible"
-  ok "root/$repo créé ($(echo "$actions" | jq length) fichiers)"
+      "$GITLAB_URL/api/v4/projects/$(urlenc "$path")/repository/commits" \
+    | jq -e .id >/dev/null || fail "push du contenu de $path impossible"
+  ok "$path créé ($(echo "$actions" | jq length) fichiers)"
 }
 seed_repo symphony-config
 seed_repo symphony-templates
 seed_repo symphony-deployments
+
+# Comptes du realm Keycloak : créés ici avec leur e-mail, GitLab les lie à
+# Keycloak à la première connexion (bouton « Keycloak »). Droits : alice
+# (admin) tient la plateforme, bob (developer) travaille dans apps, carol
+# (viewer) y lit ; dave n'a accès à rien.
+# Niveaux GitLab : 20 Reporter, 30 Developer, 40 Maintainer, 50 Owner
+ensure_member() {
+  local group=$1 user_id=$2 level=$3
+  api -X POST "$GITLAB_URL/api/v4/groups/$group/members" -d "user_id=$user_id" -d "access_level=$level" >/dev/null
+  api -X PUT "$GITLAB_URL/api/v4/groups/$group/members/$user_id" -d "access_level=$level" >/dev/null
+}
+for u in alice:Alice_Admin bob:Bob_Developer carol:Carol_Viewer dave:Dave_SansRole; do
+  username=${u%%:*} name=${u#*:}
+  id=$(api "$GITLAB_URL/api/v4/users?username=$username" | jq -r '.[0].id // empty')
+  if [ -z "$id" ]; then
+    id=$(api -X POST "$GITLAB_URL/api/v4/users" -d "username=$username" -d "name=${name/_/ }" \
+      -d "email=$username@demo.symphony" -d "password=Sy-$(random 24)" -d "skip_confirmation=true" \
+      | jq -r '.id // empty')
+    [ -n "$id" ] || fail "création du compte GitLab $username impossible"
+  fi
+  case $username in
+    alice) ensure_member platform "$id" 50; ensure_member apps "$id" 50 ;;
+    bob)   ensure_member apps "$id" 30 ;;
+    carol) ensure_member apps "$id" 20 ;;
+  esac
+done
+ok "Comptes GitLab alice, bob, carol, dave (connexion par Keycloak) et leurs droits"
 
 if [ "$(api "$GITLAB_URL/api/v4/runners/all" | jq 'any(.[]?; .online)')" = true ]; then
   ok "Runner déjà enregistré"
@@ -206,9 +265,9 @@ kube() { $COMPOSE exec -T k3s kubectl "$@"; }
 
 if [ "$K8S" = true ]; then
   # Jeton en lecture seule pour le cluster : containerd tire les images du
-  # registry, Argo CD lit root/symphony-deployments
+  # registry, Argo CD lit platform/symphony-deployments
   if [ -n "$K8S_GITLAB_TOKEN" ] && curl -sf -o /dev/null -u "root:$K8S_GITLAB_TOKEN" \
-      "$GITLAB_URL/root/symphony-deployments.git/info/refs?service=git-upload-pack"; then
+      "$GITLAB_URL/platform/symphony-deployments.git/info/refs?service=git-upload-pack"; then
     ok "Jeton de lecture du cluster déjà en place"
   else
     root_id=$(api "$GITLAB_URL/api/v4/user" | jq -r .id)
@@ -258,7 +317,7 @@ configs:
   # Accès au repo de déploiement (le jeton reste dans le cluster, pas dans Git)
   kube -n argocd create secret generic symphony-deployments-repo \
     --from-literal=type=git \
-    --from-literal=url="http://k3s:${GITLAB_PORT}/root/symphony-deployments.git" \
+    --from-literal=url="http://k3s:${GITLAB_PORT}/platform/symphony-deployments.git" \
     --from-literal=username=root --from-literal=password="$K8S_GITLAB_TOKEN" \
     --dry-run=client -o yaml \
     | kube label --local -f - argocd.argoproj.io/secret-type=repository -o yaml \
@@ -311,12 +370,20 @@ token=$(curl -sf -d grant_type=password -d client_id=symphony -d username=carol 
 [ -n "$token" ] && [ "$token" != null ] || fail "jeton de démo impossible à obtenir auprès de Keycloak"
 count() { curl -sf -H "Authorization: Bearer $token" "$SYMPHONY_URL/api/v1/$1" 2>/dev/null | jq length 2>/dev/null || echo 0; }
 for i in $(seq 60); do
-  n=$(count golden-paths); m=$(count services)
-  [ "${n:-0}" -gt 0 ] && [ "${m:-0}" -gt 0 ] && break
-  [ "$i" = 60 ] && fail "Symphony n'a pas chargé golden paths et catalogue : $COMPOSE logs symphony"
+  n=$(count golden-paths)
+  [ "${n:-0}" -gt 0 ] && break
+  [ "$i" = 60 ] && fail "Symphony n'a pas chargé les golden paths : $COMPOSE logs symphony"
   sleep 2
 done
-ok "Symphony prêt : $n golden paths, $m services au catalogue"
+ok "Symphony prêt : $n golden paths au catalogue"
+
+# ── 7. Projets de démo ────────────────────────────────────────────────────────
+
+if [ "$SEED" = true ]; then
+  ./seed.sh "$K8S" || warn "projets de démo incomplets : voir la page Activité de Symphony, puis relancer ./demo/up.sh"
+else
+  warn "Sans projets de démo (--no-seed)"
+fi
 
 cat <<EOF
 
@@ -325,7 +392,8 @@ $(echo -e "${GREEN}Démo prête${NC}")
   Symphony   $SYMPHONY_URL
              alice (admin) · bob (developer) · carol (viewer) · dave (sans rôle)
              mot de passe = identifiant
-  GitLab     $GITLAB_URL   (root / $GITLAB_ROOT_PASSWORD)
+  GitLab     $GITLAB_URL   bouton « Keycloak », mêmes comptes ; root / $GITLAB_ROOT_PASSWORD
+             groupes platform (config de Symphony) et apps (projets)
   Keycloak   $KEYCLOAK_URL/admin   (admin / $KEYCLOAK_ADMIN_PASSWORD)
 EOF
 if [ "$K8S" = true ]; then

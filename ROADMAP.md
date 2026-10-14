@@ -103,11 +103,29 @@ Objectif : les opérations longues sont des tâches suivies, pas des requêtes q
 Fini quand : l'UI montre l'avancement d'une création ou d'un déploiement sans recharger la
 page, et une tâche survit à un redémarrage de Symphony.
 
-## v0.6 — Multi-plateforme et robustesse
+## v0.6 — De vrais projets
 
+Objectif (retours de la démo du 14 octobre 2026) : tout ce que montre la démo existe pour
+de vrai, et chaque chose est à sa place.
+
+- [x] Projets d'abord : la page Projets réunit chaque projet, sa fiche, ses pipelines et
+      ses déploiements ; le Catalogue, ce sont les golden paths
+- [x] Fiche catalogue dans le repo du projet (`catalog-info.yaml`), plus de fiche sans
+      repo ni pipeline
+- [x] Démo : trois projets créés depuis les golden paths et déployés (Docker et
+      Kubernetes), avec repo, pipelines et URL
+- [x] Démo : groupes GitLab `platform` (configuration) et `apps` (projets)
+- [x] Démo : GitLab connecté au même Keycloak que Symphony
 - [x] Supprimer un projet supprime tout : déploiements sur chaque runtime (conteneurs et
       images, Application Argo CD, ressources et manifests) et repo GitLab pour de bon
       (pas seulement programmé pour suppression)
+- [ ] GIF de la démo régénéré
+
+Fini quand : après `./demo/up.sh`, trois projets répondent dans le navigateur, la fiche
+d'un projet se modifie par un commit dans son repo, et bob se connecte à GitLab par Keycloak.
+
+## v0.7 — Multi-plateforme et robustesse
+
 - [ ] Golden path GitHub + GitHub Actions de bout en bout (workflow avec
       `workflow_dispatch` et entrées `SYMPHONY_*` déclarées)
 - [ ] Bascule Docker : attendre le `HEALTHCHECK` de l'image au lieu de 3 s fixes

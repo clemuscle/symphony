@@ -19,6 +19,8 @@ type Provider struct {
 	baseURL string
 	token   string
 	client  *http.Client
+	// Groupe des repos créés sans namespace explicite (vide : compte du token)
+	namespace string
 
 	// Un commit à la fois par repo : GitLab refuse (400) des commits
 	// simultanés sur une même branche, ce qui arrive quand plusieurs tâches
@@ -84,6 +86,12 @@ func (p *Provider) api(method, path string, body any) ([]byte, int, error) {
 	return data, resp.StatusCode, nil
 }
 
+// WithNamespace : groupe par défaut des repos créés (config.namespace)
+func (p *Provider) WithNamespace(ns string) *Provider {
+	p.namespace = strings.Trim(ns, "/")
+	return p
+}
+
 func (p *Provider) CreateRepo(req provider.CreateRepoRequest) (*provider.Repo, error) {
 	payload := map[string]any{
 		"name":                   req.Name,
@@ -91,10 +99,17 @@ func (p *Provider) CreateRepo(req provider.CreateRepoRequest) (*provider.Repo, e
 		"initialize_with_readme": false,
 		"visibility":             "private",
 	}
-	if req.Namespace != "" {
-		if nsID, err := p.resolveNamespace(req.Namespace); err == nil {
-			payload["namespace_id"] = nsID
+	// Un groupe introuvable est une erreur : le repo ne doit pas atterrir
+	// ailleurs, hors des droits prévus
+	if ns := strings.Trim(req.Namespace, "/"); ns != "" || p.namespace != "" {
+		if ns == "" {
+			ns = p.namespace
 		}
+		nsID, err := p.resolveNamespace(ns)
+		if err != nil {
+			return nil, err
+		}
+		payload["namespace_id"] = nsID
 	}
 
 	data, status, err := p.api("POST", "/projects", payload)
@@ -316,22 +331,26 @@ func (p *Provider) ListFiles(repoPath, branch, dirPath string) ([]string, error)
 	}
 }
 
+// resolveNamespace : id d'un groupe (ou d'un utilisateur) par son chemin
+// complet, sous-groupes compris (apps/team-a)
 func (p *Provider) resolveNamespace(name string) (int, error) {
-	data, _, err := p.api("GET", "/namespaces?search="+url.QueryEscape(name), nil)
+	data, status, err := p.api("GET", "/namespaces/"+url.PathEscape(name), nil)
 	if err != nil {
 		return 0, err
 	}
-	var ns []struct {
-		ID   int    `json:"id"`
-		Path string `json:"path"`
+	if status == 404 {
+		return 0, fmt.Errorf("namespace %q introuvable: %w", name, provider.ErrNotFound)
 	}
-	json.Unmarshal(data, &ns)
-	for _, n := range ns {
-		if n.Path == name {
-			return n.ID, nil
-		}
+	if status != 200 {
+		return 0, fmt.Errorf("namespace %q: status %d — %s", name, status, string(data))
 	}
-	return 0, fmt.Errorf("namespace %q introuvable", name)
+	var ns struct {
+		ID int `json:"id"`
+	}
+	if err := json.Unmarshal(data, &ns); err != nil {
+		return 0, fmt.Errorf("namespace %q: %w", name, err)
+	}
+	return ns.ID, nil
 }
 
 func (p *Provider) DeleteFile(repoPath, branch, filePath, commitMsg string) error {

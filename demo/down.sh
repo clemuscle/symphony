@@ -19,7 +19,7 @@ docker ps -a --filter label=symphony=true --format '{{.ID}} {{.Image}}' \
 
 if [ "${1:-}" = "--purge" ]; then
   docker compose --profile symphony --profile k8s down -v
-  rm -rf .env k3s/output k3s/registries.yaml k3s/kubeconfig.yaml
+  rm -rf .env k3s/output k3s/registries.yaml k3s/kubeconfig.yaml keycloak/import
   echo "Démo supprimée (volumes compris)."
 else
   docker compose --profile symphony --profile k8s down

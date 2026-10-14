@@ -78,3 +78,9 @@ func (s *Store) Count() int {
 	defer s.mu.RUnlock()
 	return len(s.services)
 }
+
+func (s *Store) Remove(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.services, name)
+}

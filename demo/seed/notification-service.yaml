@@ -1,0 +1,43 @@
+# Fiche catalogue du service, lue par Symphony toutes les 15 s.
+# À tenir à jour par l'équipe : owner, tier, SLO, liens, dépendances, actions.
+apiVersion: symphony/v1
+kind: Service
+metadata:
+  name: notification-service
+  owner: team-product
+  team:
+    name: Produit
+    slack: "#team-product"
+    email: product@demo.symphony
+  tags: [node, rest-api, notifications]
+  tier: standard
+  lifecycle: staging
+  labels:
+    golden_path: api-rest-node
+spec:
+  type: api
+  language: node
+  version: 0.9.0
+  repo: __REPO_URL__
+  links:
+    - title: Repository
+      url: __REPO_URL__
+      icon: code
+    - title: Pipelines
+      url: __REPO_URL__/-/pipelines
+      icon: ci
+    - title: Application Argo CD
+      url: __ARGOCD_URL__/applications/argocd/notification-service
+      icon: web
+  dependencies:
+    - service: auth-service
+      type: api
+    - service: rabbitmq
+      type: queue
+  slo:
+    availability: "99.5%"
+    latency_p99: 500ms
+  actions:
+    - name: Relancer la pipeline
+      description: Relance la pipeline CI sur main
+      ci_provider: gitlab-ci

@@ -105,7 +105,7 @@ catalogue:
 	if err != nil {
 		t.Fatal(err)
 	}
-	syncer := gitops.NewSyncer(providers, catalogue.NewStore(), "root/symphony-config", "main", "services")
+	syncer := gitops.NewSyncer(providers, catalogue.NewStore(), func() ([]gitops.ProjectRef, error) { return nil, nil }, "")
 	codec, _, _ := auth.NewCodec("")
 	w := &configWatcher{
 		source:    source,
@@ -134,9 +134,8 @@ catalogue:
 
 	// Configuration invalide : refusée, la précédente reste en place
 	for _, bad := range []string{
-		"providers: [pas une map",                                          // YAML
-		"catalogue:\n  repo: root/symphony-config\n",                       // pas de SCM par défaut
-		strings.ReplaceAll(v1, "repo: root/symphony-config", "repo: \"\""), // pas de catalogue
+		"providers: [pas une map",                 // YAML
+		"catalogue:\n  file: catalog-info.yaml\n", // pas de SCM par défaut
 	} {
 		content = []byte(bad)
 		w.check()
@@ -155,17 +154,19 @@ catalogue:
 	assertSCM("gitlab-a")
 }
 
-func TestCatalogueSource(t *testing.T) {
-	cfg, err := config.Parse([]byte("catalogue:\n  repo: root/c\n  branch: dev\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if repo, branch, dir := catalogueSource(cfg); repo != "root/c" || branch != "dev" || dir != "services" {
-		t.Errorf("catalogueSource = %s %s %s", repo, branch, dir)
-	}
-	t.Setenv("CATALOGUE_BRANCH", "hotfix")
-	if _, branch, _ := catalogueSource(cfg); branch != "hotfix" {
-		t.Errorf("CATALOGUE_BRANCH ignoré : %s", branch)
+func TestCatalogueFile(t *testing.T) {
+	for content, want := range map[string]string{
+		"":                                     "catalog-info.yaml",
+		"catalogue:\n  file: .symphony.yaml\n": ".symphony.yaml",
+		"catalogue:\n  repo: root/c\n":         "catalog-info.yaml", // ancien format : ignoré
+	} {
+		cfg, err := config.Parse([]byte(content))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := catalogueFile(cfg); got != want {
+			t.Errorf("catalogueFile(%q) = %s, attendu %s", content, got, want)
+		}
 	}
 }
 

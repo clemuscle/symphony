@@ -89,10 +89,9 @@ func main() {
 	}
 	hooks := webhook.NewHolder(hookSettings)
 
-	// Catalogue + GitOps syncer
+	// Catalogue : la fiche de chaque projet, lue dans son repo
 	store := catalogue.NewStore()
-	catRepo, catBranch, catDir := catalogueSource(cfg)
-	syncer := gitops.NewSyncer(providers, store, catRepo, catBranch, catDir)
+	syncer := gitops.NewSyncer(providers, store, projectRefs(db), catalogueFile(cfg))
 	go syncer.Start()
 
 	// Golden paths : rechargés depuis le repo de templates
@@ -147,4 +146,28 @@ func orDefault(v, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// projectRefs : les projets enregistrés, dont le catalogue lit les fiches.
+// Les repos créés par Symphony ont main pour branche par défaut.
+func projectRefs(db *database.DB) func() ([]gitops.ProjectRef, error) {
+	return func() ([]gitops.ProjectRef, error) {
+		projects, err := db.ListProjects()
+		if err != nil {
+			return nil, err
+		}
+		refs := make([]gitops.ProjectRef, 0, len(projects))
+		for _, p := range projects {
+			if p.RepoPath == "" {
+				continue
+			}
+			refs = append(refs, gitops.ProjectRef{
+				Name:        p.Name,
+				RepoPath:    p.RepoPath,
+				Branch:      "main",
+				SCMProvider: p.SCMProvider,
+			})
+		}
+		return refs, nil
+	}
 }

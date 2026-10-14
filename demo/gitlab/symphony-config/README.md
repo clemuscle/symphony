@@ -1,10 +1,9 @@
 # symphony-config
 
-Source de vérité de Symphony.
+Configuration de Symphony, tenue par l'équipe plateforme (groupe `platform`).
 
 ```
-symphony.yaml     # configuration : providers, catalogue, repo de templates
-services/         # catalogue de services, un fichier par service (kind: Service)
+symphony.yaml     # providers, catalogue, repo des golden paths, authentification
 ```
 
 ## symphony.yaml
@@ -19,21 +18,22 @@ config_source:
     config:
       url: http://gitlab:8929
       token_env: GITLAB_TOKEN
-  repo: root/symphony-config
+  repo: platform/symphony-config
   branch: main
   path: symphony.yaml
 ```
 
-Relu toutes les 15 s : une version valide est appliquée à chaud (providers, repos
-du catalogue et des templates), une version invalide est refusée et la précédente
-reste en place (voir les logs de Symphony). Seul le bootstrap demande un redémarrage.
+Relu toutes les 15 s : une version valide est appliquée à chaud (providers, repo
+des templates, authentification), une version invalide est refusée et la
+précédente reste en place (voir les logs de Symphony). Seul le bootstrap demande
+un redémarrage.
 
 Les tokens ne sont jamais écrits dans ce repo : chaque provider nomme sa variable
 d'environnement (`token_env`).
 
-## services/
+## Où sont les autres repos
 
-Relu toutes les 15 s. Symphony y écrit la fiche des projets qu'il crée et la
-retire quand le projet est supprimé ; on peut aussi y ajouter des fiches à la main.
-
-Les golden paths sont dans le repo `root/symphony-templates`.
+- `platform/symphony-templates` : les golden paths (le catalogue de Symphony) ;
+- `platform/symphony-deployments` : l'état voulu des services sur Kubernetes (Argo CD) ;
+- `apps/*` : les projets créés par Symphony. Chacun porte sa fiche catalogue
+  (`catalog-info.yaml`, à la racine) : son équipe la modifie par un commit.
