@@ -3,7 +3,7 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
-## Non publié
+## v0.6 — De vrais projets
 
 ### Ajouté
 - **Démo avec de vrais projets** : `up.sh` crée et déploie trois services depuis les golden
