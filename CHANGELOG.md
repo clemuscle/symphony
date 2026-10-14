@@ -23,6 +23,8 @@ image `ghcr.io/clemuscle/symphony:X.Y`.
   modifie par un commit. Un golden path peut en fournir la base (`skeleton/catalog-info.yaml`).
   `catalogue.repo`, `catalogue.path` et `CATALOGUE_BRANCH` ne sont plus lus ;
   `catalogue.file` change le nom de la fiche.
+- GIF du README régénéré sur la nouvelle interface (Projets, détail d'un projet, Catalogue,
+  création suivie en direct, Déploiements).
 - **UI** : la page **Projets** devient l'accueil et réunit chaque projet, sa fiche (équipe,
   SLO, dépendances, liens, actions Day-2), ses pipelines et ses déploiements avec leur URL ;
   la page **Catalogue** présente les golden paths et crée les projets.
