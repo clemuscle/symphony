@@ -112,8 +112,8 @@ sans section `config_source`, il est lu comme une configuration complète (hors 
 
 Fait : v0.1 (binaire unique, `/metrics`, CI et image publiée), v0.2 (démo), v0.3 (OIDC,
 rôles, audit), v0.4 (Kubernetes en GitOps avec Argo CD), v0.5 (tâches asynchrones,
-webhooks, temps réel). En cours, v0.6 : vrais projets de démo, fiche catalogue dans le repo
-du projet, connexion unique à GitLab. À venir : golden path GitHub de bout en bout, Vault. Détail : [ROADMAP.md](ROADMAP.md) et
+webhooks, temps réel), v0.6 (vrais projets de démo, fiche catalogue dans le repo du projet,
+connexion unique à GitLab). À venir, v0.7 : golden path GitHub de bout en bout, Vault. Détail : [ROADMAP.md](ROADMAP.md) et
 [CHANGELOG.md](CHANGELOG.md).
 
 **Stack** : Go 1.22+, chi, go-oidc, PostgreSQL, Prometheus client, Vue 3 + Vite, GitLab CE,

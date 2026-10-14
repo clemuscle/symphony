@@ -242,7 +242,7 @@ implémentations n'en savent rien.
 | Autorisations | rôles `viewer` < `developer` < `admin` déduits des groupes OIDC (configuration), vérifiés par route | rôles par projet |
 | CSRF | requête modifiante avec cookie : `Origin` (ou `Sec-Fetch-Site`) doit être Symphony | — |
 | CORS | aucune origine tierce par défaut ; liste `cors_origins`, sans cookies | — |
-| Secrets | variables d'environnement, jamais dans les fichiers ni dans le repo de déploiement | Vault — v0.6 |
+| Secrets | variables d'environnement, jamais dans les fichiers ni dans le repo de déploiement | Vault — v0.7 |
 | Argo CD | compte de service à jeton (`apiKey`), limité aux Applications du projet `default` et à leurs journaux | — |
 | Fuite de token | l'auth du registry n'est envoyée qu'au registry qui héberge l'image | — |
 | Injection CI | entrées d'action validées, clés inconnues refusées | — |
@@ -283,7 +283,7 @@ implémentations n'en savent rien.
 | Drivers Go stricts, pas de plugins | **fait** (4 interfaces, 7 implémentations) |
 | L'IDP n'exécute pas de `kubectl apply` | **fait** pour Kubernetes (runtime `argocd`) ; le runtime Docker local déploie directement, pour la démo |
 | OIDC exclusif, RBAC par groupes | **fait** (Keycloak en démo, tout fournisseur OIDC ; sans section `auth`, mode développement) |
-| Vault pour les secrets | prévu en v0.6 |
+| Vault pour les secrets | prévu en v0.7 |
 | Tâches asynchrones PENDING → RUNNING → SUCCESS via webhooks CI | **fait** : tâches en base, webhooks GitLab, sondage de secours, SSE |
 | `/metrics` Prometheus | **fait** (API, providers, rechargements) |
 | Repos d'infra séparés des repos applicatifs | **fait** pour Kubernetes : manifests dans `symphony-deployments` |
