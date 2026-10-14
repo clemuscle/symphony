@@ -119,7 +119,7 @@ de vrai, et chaque chose est à sa place.
 - [x] Supprimer un projet supprime tout : déploiements sur chaque runtime (conteneurs et
       images, Application Argo CD, ressources et manifests) et repo GitLab pour de bon
       (pas seulement programmé pour suppression)
-- [ ] GIF de la démo régénéré
+- [x] GIF de la démo régénéré
 
 Fini quand : après `./demo/up.sh`, trois projets répondent dans le navigateur, la fiche
 d'un projet se modifie par un commit dans son repo, et bob se connecte à GitLab par Keycloak.
