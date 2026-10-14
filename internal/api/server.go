@@ -79,7 +79,7 @@ func NewServer(
 		r.With(viewer).Get("/golden-paths", handlers.ListGoldenPaths(templates))
 
 		// Projets
-		r.With(viewer).Get("/projects", handlers.ListProjects(db))
+		r.With(viewer).Get("/projects", handlers.ListProjects(db, store))
 		r.With(developer).Post("/projects", handlers.CreateProject(providers, db, templates, runner))
 		r.With(admin).Delete("/projects/{name}", handlers.DeleteProject(db, runner))
 		r.With(viewer).Get("/projects/{name}/image", handlers.GetProjectImage(providers, db))

@@ -26,9 +26,10 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
   section `config_source` dit où lire la vraie configuration, `root/symphony-config` →
   `symphony.yaml` sur GitLab. Sans `config_source`, le fichier local est lu comme une
   configuration complète (hors ligne). `${VAR}` est remplacé par l'environnement.
+  En démo, la config est dans `platform/symphony-config`.
 - **`.env`** à la racine (godotenv) : `GITLAB_TOKEN`, `GITHUB_TOKEN`, `DB_HOST`/`DB_PORT`/
   `DB_NAME`/`DB_USER`/`DB_PASSWORD` (défauts `localhost`/`5432`/`symphony`/`symphony`/
-  `symphony123`), `PORT` (8080), `CATALOGUE_BRANCH` (surcharge `catalogue.branch`).
+  `symphony123`), `PORT` (8080).
 - **PostgreSQL** (conteneur `symphony-postgres`), **GitLab** sur `http://gitlab.local:8929`,
   **socket Docker** ; le daemon Docker doit déclarer `gitlab.local:5050` en insecure registry.
 - Front : servi par le binaire (`internal/web`, `go:embed`) ; sans `npm run build`, `/`
@@ -53,18 +54,25 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
   redémarrage, `WaitPipeline`, sondage, `Hub` SSE). Les types de tâches et leurs étapes
   sont dans `internal/api/handlers/tasks.go` (`RegisterTasks`) ; les handlers valident puis
   `submit` (202). `internal/webhook` : `/webhooks/gitlab`.
-- `internal/gitops` : `Syncer` (catalogue, `services/` du repo de config) et
-  `TemplateLoader` (golden paths, `templates/<nom>/template.yaml` de `symphony-templates`).
-  Format des templates : README de ce repo.
+- `internal/gitops` : `Syncer` (catalogue : la fiche `catalog-info.yaml` à la racine du
+  repo de **chaque projet en base**, `catalogue.file`) et `TemplateLoader` (golden paths,
+  `templates/<nom>/template.yaml` de `symphony-templates`). Format des templates et des
+  fiches : README de ce repo. La fiche est générée à la création (`catalogueFile` dans
+  `handlers/projects.go`) et poussée avec le squelette.
 - `internal/provider/runtime/argocd` : runtime Kubernetes GitOps. Commite
   `apps/<service>/` (Deployment, Service, Ingress, `kustomization.yaml`) dans le repo de
   déploiement via le SCM `scm_ref`, upsert de l'`Application` Argo CD, refresh ; Stop et
   Restart réécrivent `kustomization.yaml`. Jamais d'appel à l'API Kubernetes.
 - `demo/` : `docker-compose.yml`, `up.sh` (démarre et initialise tout, rejouable,
-  `--no-k8s` sans k3s ni Argo CD),
+  `--no-k8s` sans k3s ni Argo CD, `--no-seed` sans projets de démo), `seed.sh` (crée et
+  déploie les projets de `seed/projects.json` par l'API, au nom de bob, puis commite leur
+  fiche complète `seed/<nom>.yaml`),
   `down.sh` (`--purge` efface les données), `SCENARIO.md`. `demo/gitlab/` est le contenu
-  poussé dans la GitLab de démo (`symphony-config`, `symphony-templates`,
-  `symphony-deployments`) : le mettre à jour
+  poussé dans le groupe `platform` de la GitLab de démo (`symphony-config`,
+  `symphony-templates`, `symphony-deployments`) ; les projets vont dans le groupe `apps`
+  (`config.namespace` du SCM). GitLab se connecte au realm Keycloak (client `gitlab`,
+  `discovery: false` : navigateur sur localhost, jetons sur keycloak:8080) ; `up.sh` crée
+  les comptes et leurs droits (CE ne synchronise pas les groupes). Le mettre à jour
   quand on change les golden paths de référence. `demo/capture/` régénère
   `documentation/demo.gif` (Playwright).
 - `internal/api` : toutes les routes dans `server.go`, chacune avec son rôle minimum
@@ -84,6 +92,9 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
   (Symphony en conteneur). Keycloak : `KC_HOSTNAME` + `KC_HOSTNAME_BACKCHANNEL_DYNAMIC`.
 - Deux « registry » : `provider.Registry` contient tous les providers ;
   `RegistryProvider` est le registry d'**images** (`providers.GetRegistry(id)`).
+- La page **Projets** (accueil) montre les projets en base avec leur fiche
+  (`GET /projects`, champ `service`) ; le **Catalogue** du front, ce sont les golden paths.
+  Plus de fiche sans projet : `catalogue.repo`/`path` ne sont plus lus (avertissement).
 - Le contenu de `provider.Registry` est **remplacé d'un bloc** au rechargement de la
   config. Ne jamais garder un provider dans une struct longue durée : le résoudre à chaque
   appel (`providers.SCM("")`), comme `Syncer` et `TemplateLoader`.

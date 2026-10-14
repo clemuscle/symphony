@@ -47,7 +47,7 @@ var startupTimeout = 5 * time.Minute
 func RegisterTasks(r *tasks.Runner, d TaskDeps) {
 	r.Register(tasks.Definition{Kind: KindCreateProject, Steps: []tasks.Step{
 		{Label: "Repo et squelette", Run: d.createRepo},
-		{Label: "Projet, catalogue et webhook", Run: d.registerProject},
+		{Label: "Projet et webhook", Run: d.registerProject},
 		{Label: "Première pipeline (image)", Run: d.waitFirstPipeline},
 	}})
 	r.Register(tasks.Definition{Kind: KindDeploy, Steps: []tasks.Step{
@@ -174,6 +174,14 @@ func (d TaskDeps) createRepo(_ context.Context, x *tasks.Exec) error {
 		x.Set("pipelines_url", ci.PipelinesURL(repo.WebURL))
 	}
 
+	// La fiche catalogue vit dans le repo : elle dépend de son URL
+	file := d.Syncer.File()
+	fiche, err := catalogueFile(files[file], p, gp, &repo, ci, x.Task().CreatedBy)
+	if err != nil {
+		return err
+	}
+	files[file] = fiche
+
 	// Un seul commit : il lance la première pipeline, et sur GitLab un premier
 	// commit sans .gitlab-ci.yml déclencherait l'Auto DevOps
 	x.Progress("push du squelette et de la CI (%d fichiers)", len(files))
@@ -204,9 +212,9 @@ func scaffoldFiles(templates *gitops.TemplateLoader, gp *gitops.GoldenPath, ci p
 	return files, nil
 }
 
-// registerProject enregistre le projet, sa fiche catalogue, et abonne Symphony
-// aux pipelines du repo. Catalogue et webhook ne sont pas bloquants : le projet
-// existe, un échec est signalé dans les résultats.
+// registerProject enregistre le projet et abonne Symphony aux pipelines du
+// repo. Le webhook n'est pas bloquant : le projet existe, un échec est
+// signalé dans les résultats.
 func (d TaskDeps) registerProject(_ context.Context, x *tasks.Exec) error {
 	var p createParams
 	if err := x.Params(&p); err != nil {
@@ -262,11 +270,9 @@ func (d TaskDeps) registerProject(_ context.Context, x *tasks.Exec) error {
 	}
 	x.Set("registry_url", proj.RegistryURL)
 
-	x.Progress("fiche catalogue")
-	if err := d.Syncer.Register(serviceFromProject(proj, gp, &repo, ci)); err != nil {
-		slog.Warn("enregistrement catalogue", "project", p.Name, "error", err)
-		x.Set("catalogue_error", err.Error())
-	}
+	// La fiche est dans le repo depuis le premier commit : le catalogue la lit
+	// dès que le projet est en base
+	go d.Syncer.ForceSync()
 
 	if s := d.Webhooks.Get(); s.Enabled() {
 		x.Progress("webhook de pipeline")
@@ -504,9 +510,8 @@ func (d TaskDeps) deleteCatalogue(_ context.Context, x *tasks.Exec) error {
 	if err := x.Params(&p); err != nil {
 		return err
 	}
-	if err := d.Syncer.Unregister(p.Name); err != nil {
-		return fmt.Errorf("suppression de la fiche catalogue: %w", err)
-	}
+	// La fiche est partie avec le repo
+	d.Syncer.Forget(p.Name)
 	return nil
 }
 

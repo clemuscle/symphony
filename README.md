@@ -15,8 +15,10 @@ existants (GitLab ou GitHub, leur CI, un registry, Docker, Argo CD) au lieu de l
 - **Golden paths** : un template (squelette de code, Dockerfile, tests, pipeline CI) devient
   un repo GitLab qui se construit tout seul. Ajouter un golden path, c'est pousser un
   dossier dans un repo Git : il est disponible en moins de 15 s, sans redémarrage.
-- **Catalogue de services** : équipe, criticité, SLO, liens et actions Day-2 de chaque
-  service, versionnés dans Git.
+- **Projets et leur fiche** : équipe, criticité, SLO, dépendances, liens et actions Day-2
+  de chaque service, dans un `catalog-info.yaml` à la racine de son propre repo, que son
+  équipe tient à jour comme le reste du code. La page Projets les réunit avec le repo, les
+  pipelines et l'URL où chaque service répond.
 - **Déploiement sur Kubernetes en GitOps** : Symphony commite les manifests du service dans
   un repo de déploiement et crée l'`Application` Argo CD ; Argo CD applique, corrige les
   dérives, et l'UI affiche son état (Synced, Healthy). Symphony n'a aucun accès au cluster.
@@ -30,7 +32,7 @@ existants (GitLab ou GitHub, leur CI, un registry, Docker, Argo CD) au lieu de l
   place.
 - **Sécurisé** : connexion OIDC (Keycloak en démo, tout fournisseur OIDC), rôles
   `viewer` / `developer` / `admin` déduits des groupes de l'annuaire, audit de qui a fait
-  quoi.
+  quoi. En démo, GitLab se connecte au même Keycloak : un seul compte pour les deux.
 - **Observable** : `/metrics` Prometheus sur l'API, chaque appel à GitLab, GitHub ou Docker
   et chaque rechargement depuis Git.
 
@@ -41,13 +43,16 @@ k3s et Argo CD ; `--no-k8s` en économise 1,5 Go).
 
 ```bash
 git clone https://github.com/clemuscle/symphony.git && cd symphony
-./demo/up.sh        # GitLab CE, runner, Keycloak, PostgreSQL, k3s + Argo CD, Symphony (5 à 10 min la 1re fois)
+./demo/up.sh        # GitLab CE, runner, Keycloak, PostgreSQL, k3s + Argo CD, Symphony, projets de démo (15 min la 1re fois)
 ```
 
-Le script affiche les URL et identifiants. Comptes de démo (mot de passe = identifiant) :
-`alice` (admin), `bob` (developer), `carol` (viewer), `dave` (sans rôle). Suivre ensuite le
-[scénario de démo](demo/SCENARIO.md) (10 min). Ports déjà pris ?
-`GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 K8S_HTTP_PORT=18081 ARGOCD_PORT=18088 K8S_API_PORT=16443 ./demo/up.sh`.
+Le script affiche les URL et identifiants. Comptes de démo, pour Symphony comme pour
+GitLab (bouton « Keycloak ») et mot de passe = identifiant : `alice` (admin), `bob`
+(developer), `carol` (viewer), `dave` (sans rôle). Trois projets sont déjà créés et
+déployés depuis les golden paths, avec leur repo, leurs pipelines et leur URL
+(`--no-seed` pour partir de zéro). Suivre ensuite le [scénario de démo](demo/SCENARIO.md)
+(15 min). Ports déjà pris ? `up.sh` dit lequel, et comment le changer
+(`K8S_API_PORT=16443 ./demo/up.sh`, par exemple).
 Arrêt : `./demo/down.sh` (`--purge` pour tout effacer).
 
 ## Architecture
@@ -60,7 +65,7 @@ flowchart LR
   subgraph Symphony["Symphony — un binaire Go, ~10 Mo"]
     API[API chi] --> REG[Registry de providers]
     W[configWatcher] -->|remplace d'un bloc| REG
-    S[Syncer catalogue]
+    S[Syncer des fiches]
     T[TemplateLoader]
   end
   REG --> SCM[GitLab / GitHub]
@@ -69,7 +74,7 @@ flowchart LR
   REG --> RT[Docker]
   REG --> ARGO[Argo CD] --> K8S[Kubernetes]
   W -. 15 s .-> CFG[(symphony-config<br/>symphony.yaml)]
-  S -. 15 s .-> SVC[(symphony-config<br/>services/)]
+  S -. 15 s .-> SVC[(repo de chaque projet<br/>catalog-info.yaml)]
   T -. 15 s .-> TPL[(symphony-templates<br/>templates/)]
   API --> DB[(PostgreSQL)]
 ```
@@ -107,7 +112,8 @@ sans section `config_source`, il est lu comme une configuration complète (hors 
 
 Fait : v0.1 (binaire unique, `/metrics`, CI et image publiée), v0.2 (démo), v0.3 (OIDC,
 rôles, audit), v0.4 (Kubernetes en GitOps avec Argo CD), v0.5 (tâches asynchrones,
-webhooks, temps réel). À venir : golden path GitHub de bout en bout, Vault. Détail : [ROADMAP.md](ROADMAP.md) et
+webhooks, temps réel). En cours, v0.6 : vrais projets de démo, fiche catalogue dans le repo
+du projet, connexion unique à GitLab. À venir : golden path GitHub de bout en bout, Vault. Détail : [ROADMAP.md](ROADMAP.md) et
 [CHANGELOG.md](CHANGELOG.md).
 
 **Stack** : Go 1.22+, chi, go-oidc, PostgreSQL, Prometheus client, Vue 3 + Vite, GitLab CE,

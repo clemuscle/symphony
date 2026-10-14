@@ -7,8 +7,8 @@
         <span class="subtitle">Internal Developer Portal</span>
       </div>
       <nav class="nav">
-        <RouterLink to="/" class="nav-link">📦 Catalogue</RouterLink>
-        <RouterLink to="/projects" class="nav-link">🗂 Projets</RouterLink>
+        <RouterLink to="/" class="nav-link">🗂 Projets</RouterLink>
+        <RouterLink to="/catalogue" class="nav-link">📦 Catalogue</RouterLink>
         <RouterLink to="/deployments" class="nav-link">🚀 Déploiements</RouterLink>
         <RouterLink to="/tasks" class="nav-link">
           ⚡ Activité<span class="count" v-if="activeTasks.length">{{ activeTasks.length }}</span>

@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/clemuscle/symphony/internal/provider"
 	"github.com/clemuscle/symphony/internal/tasks"
 	"github.com/go-chi/chi/v5"
+	"gopkg.in/yaml.v3"
 )
 
 type CreateProjectRequest struct {
@@ -27,7 +30,17 @@ type CreateProjectRequest struct {
 	SCMProvider     string            `json:"scm_provider"`
 	RuntimeProvider string            `json:"runtime_provider"`
 	EnvVars         map[string]string `json:"env_vars"`
+
+	// Fiche catalogue (catalog-info.yaml du repo), modifiable ensuite dans Git
+	Owner     string `json:"owner"`     // équipe responsable, défaut : le créateur
+	Tier      string `json:"tier"`      // critical, standard, internal
+	Lifecycle string `json:"lifecycle"` // production, staging, experimental
 }
+
+var (
+	validTiers      = []string{"critical", "standard", "internal"}
+	validLifecycles = []string{"production", "staging", "experimental", "deprecated"}
+)
 
 // projectNameRe : nom de repo et de service (DNS : utilisable tel quel comme
 // nom Kubernetes, d'image et d'hôte)
@@ -50,6 +63,21 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 		}
 		if req.Port == 0 {
 			req.Port = 8080
+		}
+		req.Owner = strings.TrimSpace(req.Owner)
+		if req.Tier == "" {
+			req.Tier = "standard"
+		}
+		if req.Lifecycle == "" {
+			req.Lifecycle = "staging"
+		}
+		if !slices.Contains(validTiers, req.Tier) {
+			respondError(w, http.StatusBadRequest, fmt.Sprintf("tier invalide : %s attendu", strings.Join(validTiers, ", ")))
+			return
+		}
+		if !slices.Contains(validLifecycles, req.Lifecycle) {
+			respondError(w, http.StatusBadRequest, fmt.Sprintf("lifecycle invalide : %s attendu", strings.Join(validLifecycles, ", ")))
+			return
 		}
 
 		gp, err := templates.GetGoldenPath(req.GoldenPathID)
@@ -100,36 +128,70 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 	}
 }
 
-// serviceFromProject construit la fiche catalogue d'un projet nouvellement créé
-func serviceFromProject(proj *database.Project, gp *gitops.GoldenPath, repo *provider.Repo, ci provider.CIProvider) catalogue.Service {
-	return catalogue.Service{
-		APIVersion: "symphony/v1",
-		Kind:       "Service",
-		Metadata: catalogue.Metadata{
-			Name:      proj.Name,
-			Owner:     proj.CreatedBy,
-			Tags:      []string{gp.Language, "symphony"},
-			Tier:      "standard",
-			Lifecycle: "staging",
-			Labels:    map[string]string{"golden_path": gp.ID},
-		},
-		Spec: catalogue.ServiceSpec{
-			Type:     gp.Type,
-			Language: gp.Language,
-			Repo:     repo.WebURL,
-			Links: []catalogue.Link{
-				{Title: "Repository", URL: repo.WebURL, Icon: "code"},
-				{Title: "Pipelines", URL: ci.PipelinesURL(repo.WebURL), Icon: "ci"},
-			},
-			Actions: []catalogue.Action{
-				{
-					Name:        "Relancer la pipeline",
-					Description: "Relance la pipeline CI sur main",
-					CIProvider:  ci.ID(),
-				},
-			},
-		},
+// catalogueFile construit la fiche catalogue d'un nouveau projet, poussée dans
+// son repo avec le squelette. Une fiche fournie par le golden path (même nom
+// dans le skeleton) sert de base : il peut y déclarer liens, SLO et actions.
+func catalogueFile(base string, p createParams, gp *gitops.GoldenPath, repo *provider.Repo,
+	ci provider.CIProvider, createdBy string) (string, error) {
+	svc := catalogue.Service{}
+	if base != "" {
+		var err error
+		if svc, err = gitops.ParseService(p.Name, base); err != nil {
+			return "", fmt.Errorf("fiche catalogue du golden path: %w", err)
+		}
 	}
+	svc.APIVersion, svc.Kind, svc.Metadata.Name = "symphony/v1", "Service", p.Name
+	m := &svc.Metadata
+	m.Owner = firstNonEmpty(p.Owner, m.Owner, createdBy)
+	m.Tier = firstNonEmpty(p.Tier, m.Tier)
+	m.Lifecycle = firstNonEmpty(p.Lifecycle, m.Lifecycle)
+	if !slices.Contains(m.Tags, gp.Language) {
+		m.Tags = append(m.Tags, gp.Language)
+	}
+	if m.Labels == nil {
+		m.Labels = map[string]string{}
+	}
+	m.Labels["golden_path"] = gp.ID
+
+	sp := &svc.Spec
+	sp.Type = firstNonEmpty(sp.Type, gp.Type)
+	sp.Language = firstNonEmpty(sp.Language, gp.Language)
+	sp.Repo = repo.WebURL
+	sp.Links = append([]catalogue.Link{
+		{Title: "Repository", URL: repo.WebURL, Icon: "code"},
+		{Title: "Pipelines", URL: ci.PipelinesURL(repo.WebURL), Icon: "ci"},
+	}, sp.Links...)
+	if len(sp.Actions) == 0 {
+		sp.Actions = []catalogue.Action{{
+			Name:        "Relancer la pipeline",
+			Description: "Relance la pipeline CI sur main",
+		}}
+	}
+	// Les actions pipeline du golden path visent le CI du projet
+	for i := range sp.Actions {
+		if sp.Actions[i].WebhookURL == "" && sp.Actions[i].CIProvider == "" {
+			sp.Actions[i].CIProvider = ci.ID()
+		}
+	}
+
+	var buf bytes.Buffer
+	buf.WriteString("# Fiche catalogue du service, lue par Symphony toutes les 15 s.\n" +
+		"# À tenir à jour par l'équipe : owner, tier, SLO, liens, dépendances, actions.\n")
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(svc); err != nil {
+		return "", fmt.Errorf("fiche catalogue: %w", err)
+	}
+	return buf.String(), nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // DeleteProject lance la suppression en tâche et répond 202 : GitLab purge
@@ -158,15 +220,18 @@ func DeleteProject(db *database.DB, runner *tasks.Runner) http.HandlerFunc {
 	}
 }
 
-func ListProjects(db *database.DB) http.HandlerFunc {
+// projectView : un projet et sa fiche catalogue (absente si son repo n'en a pas)
+type projectView struct {
+	database.Project
+	Service *catalogue.Service `json:"service"`
+}
+
+func ListProjects(db *database.DB, store *catalogue.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		projects, err := db.ListProjects()
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, err.Error())
 			return
-		}
-		if projects == nil {
-			projects = []database.Project{}
 		}
 		// Suppressions en cours : tâches delete_project non terminées
 		active, err := db.ListTasks(database.TaskFilter{Unfinished: true, Limit: 1000})
@@ -180,10 +245,15 @@ func ListProjects(db *database.DB) http.HandlerFunc {
 				deleting[t.Resource] = true
 			}
 		}
-		for i := range projects {
-			projects[i].Deleting = deleting[projects[i].Name]
+		views := make([]projectView, len(projects))
+		for i, p := range projects {
+			p.Deleting = deleting[p.Name]
+			views[i] = projectView{Project: p}
+			if svc, ok := store.Get(p.Name); ok {
+				views[i].Service = &svc
+			}
 		}
-		respond(w, http.StatusOK, projects)
+		respond(w, http.StatusOK, views)
 	}
 }
 

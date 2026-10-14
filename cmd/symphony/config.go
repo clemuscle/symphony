@@ -78,9 +78,6 @@ func (s *configSource) load() (cfg *config.Config, raw []byte, err error) {
 	if cfg.ConfigSource != nil {
 		return nil, raw, fmt.Errorf("config_source n'est autorisé que dans le bootstrap local")
 	}
-	if cfg.Catalogue.Repo == "" {
-		return nil, raw, fmt.Errorf("catalogue.repo requis")
-	}
 	return cfg, raw, nil
 }
 
@@ -111,12 +108,14 @@ func buildPolicy(cfg *config.Config, codec *auth.Codec) (*auth.Policy, error) {
 	return p, nil
 }
 
-// catalogueSource : repo, branche et dossier du catalogue, avec leurs défauts.
-// CATALOGUE_BRANCH surcharge la branche de la configuration.
-func catalogueSource(cfg *config.Config) (repo, branch, dir string) {
-	return cfg.Catalogue.Repo,
-		getEnv("CATALOGUE_BRANCH", orDefault(cfg.Catalogue.Branch, "main")),
-		orDefault(cfg.Catalogue.Path, "services")
+// catalogueFile : nom de la fiche catalogue dans le repo de chaque projet.
+// L'ancien dossier services/ du repo de config n'est plus lu : on le signale.
+func catalogueFile(cfg *config.Config) string {
+	if cfg.Catalogue.Repo != "" || cfg.Catalogue.Path != "" {
+		slog.Warn("catalogue.repo et catalogue.path ne sont plus lus : chaque projet porte sa fiche dans son repo",
+			"fichier", orDefault(cfg.Catalogue.File, gitops.DefaultCatalogueFile))
+	}
+	return orDefault(cfg.Catalogue.File, gitops.DefaultCatalogueFile)
 }
 
 // templatesSource : repo, branche et dossier des templates, avec leurs défauts
@@ -202,7 +201,7 @@ func (w *configWatcher) apply(cfg *config.Config) error {
 	w.providers.Replace(next)
 	w.security.Set(policy)
 	w.webhooks.Set(hooks)
-	w.syncer.SetSource(catalogueSource(cfg))
+	w.syncer.SetFile(catalogueFile(cfg))
 	w.templates.SetSource(templatesSource(cfg))
 	logProviders("configuration rechargée", w.providers)
 

@@ -95,7 +95,7 @@ func newSCM(def config.ProviderDef) (provider.SCMProvider, error) {
 		if token == "" {
 			token = def.Config["token"]
 		}
-		return gitlabscm.New(def.ID, def.Config["url"], token), nil
+		return gitlabscm.New(def.ID, def.Config["url"], token).WithNamespace(def.Config["namespace"]), nil
 
 	case "github":
 		return githubscm.New(def.ID, os.Getenv(def.Config["token_env"]), def.Config["org"]), nil

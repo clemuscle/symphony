@@ -7,8 +7,10 @@ import Tasks from '../views/Tasks.vue'
 export default createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', component: Catalogue },
-    { path: '/projects', component: Projects },
+    { path: '/', component: Projects },
+    { path: '/catalogue', component: Catalogue },
+    // Ancienne adresse de la liste des projets
+    { path: '/projects', redirect: '/' },
     { path: '/deployments', component: Deployments },
     { path: '/tasks', component: Tasks },
   ]
