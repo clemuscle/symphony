@@ -3,7 +3,7 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
-## v0.9 — La vitrine (en cours)
+## v0.9 — La vitrine
 
 ### Ajouté
 - **Environnements et promotion** : `environments` dans `symphony.yaml` (ordre de
