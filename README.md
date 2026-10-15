@@ -67,6 +67,20 @@ Avec `GITHUB_TOKEN=<jeton> ./demo/up.sh`, la démo ajoute GitHub et le golden pa
 classique avec les droits `repo`, `workflow`, `delete_repo` et `read/write/delete:packages`.
 Arrêt : `./demo/down.sh` (`--purge` pour tout effacer).
 
+### Installer sur Kubernetes
+
+```bash
+kubectl create secret generic symphony \
+  --from-literal=DB_PASSWORD=… --from-literal=SESSION_SECRET=… --from-literal=GITLAB_TOKEN=…
+helm install symphony ./deploy/helm/symphony --set existingSecret=symphony \
+  --set database.host=<postgres> --set-file bootstrap=symphony.yaml
+```
+
+Le chart ([deploy/helm/symphony](deploy/helm/symphony)) fait tourner Symphony en non-root,
+sur un système de fichiers en lecture seule et sans jeton Kubernetes (il n'appelle jamais
+l'API du cluster). PostgreSQL n'est pas fourni. La CI l'installe sur un cluster kind à
+chaque commit.
+
 ## Architecture
 
 ```mermaid

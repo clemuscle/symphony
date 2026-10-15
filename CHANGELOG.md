@@ -6,6 +6,13 @@ image `ghcr.io/clemuscle/symphony:X.Y`.
 ## v0.8 — Prêt pour la prod (en cours)
 
 ### Ajouté
+- **Chart Helm** (`deploy/helm/symphony`) : Symphony s'installe sur Kubernetes, en
+  non-root, système de fichiers en lecture seule, sans jeton Kubernetes ; bootstrap en
+  ConfigMap (pod relancé s'il change), secrets dans un Secret existant
+  (`secret://env/…`), Ingress en option. La CI l'installe sur un cluster kind et vérifie
+  santé, API et UI.
+- Au démarrage, Symphony attend PostgreSQL une minute au lieu de s'arrêter (base et
+  appli démarrées ensemble).
 - **Droits par équipe** : un projet appartient à une équipe de l'annuaire (`projects.team`,
   migration 004) ; seuls ses membres developers et les admins le déploient, l'arrêtent, le
   relancent, lisent ses logs, relancent sa pipeline et lancent ses actions. À la création,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -39,8 +40,19 @@ func Connect() (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open: %w", err)
 	}
-	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("ping: %w", err)
+	// La base peut démarrer en même temps que Symphony (Kubernetes, compose) :
+	// on l'attend une minute avant d'abandonner
+	deadline := time.Now().Add(time.Minute)
+	for {
+		err := db.Ping()
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("ping: %w", err)
+		}
+		slog.Warn("PostgreSQL pas encore joignable, nouvel essai dans 2 s", "error", err)
+		time.Sleep(2 * time.Second)
 	}
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
