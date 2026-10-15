@@ -5,7 +5,7 @@
         <h2>Déploiements</h2>
         <p class="subtitle">Services déployés, sur tous les runtimes (Docker, Kubernetes via Argo CD)</p>
       </div>
-      <button class="btn-refresh" @click="load">↻ Rafraîchir</button>
+      <button class="btn-refresh" @click="load()">↻ Rafraîchir</button>
     </div>
 
     <!-- Déploiement manuel -->
@@ -88,30 +88,32 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { api } from '../api'
-import { can, canOperate } from '../stores/session'
-// Équipe du projet d'un déploiement (le déploiement porte le nom du projet)
-const teamOf = (name) => projects.value.find(p => p.name === name)?.team
+import { api, errorMessage } from '../api'
 import TaskProgress from '../components/TaskProgress.vue'
+import { can, canOperate } from '../stores/session'
 import { taskStore, trackTask } from '../stores/tasks'
+import type { Deployment, Project } from '../types'
 
-const deployments = ref([])
+const deployments = ref<Deployment[]>([])
 const loading = ref(true)
 const deploying = ref(false)
-const deployTaskId = ref(null)
-const deployTask = computed(() => taskStore.byId[deployTaskId.value])
-const deployError = ref(null)
+const deployTaskId = ref<number | null>(null)
+const deployTask = computed(() => (deployTaskId.value ? taskStore.byId[deployTaskId.value] : undefined))
+const deployError = ref<string | null>(null)
 
 const form = ref({
-  project_name: '', image: '', tag: 'latest', port: 8080, host_port: null, runtime_provider: '',
+  project_name: '', image: '', tag: 'latest',
+  port: 8080 as number | '', host_port: null as number | '' | null, runtime_provider: '',
 })
-const runtimes = ref([])
+const runtimes = ref<string[]>([])
 
-const projects = ref([])
-const tags = ref([])
+const projects = ref<Project[]>([])
+// Équipe du projet d'un déploiement (le déploiement porte le nom du projet)
+const teamOf = (name: string) => projects.value.find(p => p.name === name)?.team
+const tags = ref<string[]>([])
 const imageHint = ref('')
 let autoImage = '' // dernière image préremplie : écrasée seulement si l'utilisateur ne l'a pas modifiée
 
@@ -127,21 +129,21 @@ onMounted(() => {
   // déclenche le préremplissage de l'image, des tags et du runtime
   api.listProjects().then(({ data }) => {
     projects.value = data || []
-    if (route.query.project) form.value.project_name = route.query.project
+    if (typeof route.query.project === 'string') form.value.project_name = route.query.project
   }).catch(() => {})
   api.getProviders().then(({ data }) => { runtimes.value = data.runtime || [] }).catch(() => {})
 })
 
 // Tant qu'un déploiement est en cours (Argo CD synchronise, pods qui
 // démarrent), la liste se rafraîchit seule
-let timer = null
+let timer: ReturnType<typeof setTimeout> | undefined
 watch(deployments, (list) => {
   clearTimeout(timer)
   if (list.some(d => d.status === 'deploying')) timer = setTimeout(() => load(true), 3000)
 })
 onUnmounted(() => clearTimeout(timer))
 
-const isUp = (d) => ['running', 'deploying'].includes(d.status)
+const isUp = (d: Deployment) => ['running', 'deploying'].includes(d.status)
 
 // Projet connu : préremplir image, tags, port et runtime depuis son registry
 watch(() => form.value.project_name, async (name) => {
@@ -159,7 +161,7 @@ watch(() => form.value.project_name, async (name) => {
     if (data.runtime_provider) form.value.runtime_provider = data.runtime_provider
     if (!data.tags.length) imageHint.value = 'Aucune image publiée pour ce projet'
   } catch (e) {
-    imageHint.value = e.response?.data?.error || e.message
+    imageHint.value = errorMessage(e)
   }
 })
 
@@ -175,7 +177,7 @@ async function deploy() {
     })
     deployTaskId.value = trackTask(data)
   } catch (e) {
-    deployError.value = e.response?.data?.error || e.message
+    deployError.value = errorMessage(e)
   } finally { deploying.value = false }
 }
 
@@ -187,15 +189,15 @@ async function load(quiet = false) {
   finally { loading.value = false }
 }
 
-async function stop(d) {
+async function stop(d: Deployment) {
   if (!confirm(`Arrêter ${d.name || d.id} (${d.provider}) ?`)) return
   try { await api.stopDeployment(d.id, d.provider); await load() }
-  catch (e) { alert(e.response?.data?.error || e.message) }
+  catch (e) { alert(errorMessage(e)) }
 }
 
-async function restart(d) {
+async function restart(d: Deployment) {
   try { await api.restartDeployment(d.id, d.provider); await load() }
-  catch (e) { alert(e.response?.data?.error || e.message) }
+  catch (e) { alert(errorMessage(e)) }
 }
 </script>
 

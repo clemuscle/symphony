@@ -13,6 +13,10 @@ image `ghcr.io/clemuscle/symphony:X.Y`.
   exemple dans Vault), les repos de tous les projets sont réabonnés avec le nouveau
   secret ; GitLab et GitHub mettent à jour un webhook existant au lieu de l'ignorer.
 - Golden path `api-rest-python-github` (FastAPI, GitHub Actions, GHCR).
+- **Front en TypeScript strict** (`vue-tsc`), ESLint (règles Vue et TypeScript), tests
+  Vitest (logique des projets, droits, tâches, composants) ; la CI les lance avec
+  `npm audit`. `Projects.vue` (434 lignes) découpé en `ProjectCard`, `ProjectPanel` et
+  `DayTwoAction`, logique pure dans `src/lib/`.
 - Le runtime `docker` accepte `socket: tcp://<hôte:port>` (proxy de socket).
 
 ### Sécurité
@@ -24,6 +28,8 @@ image `ghcr.io/clemuscle/symphony:X.Y`.
 
 ### Modifié
 - `SCMProvider.CreateWebhook` devient `EnsureWebhook` (crée ou met à jour le secret).
+- Dépendances du front à jour : les failles connues d'axios, vue et de leurs dépendances
+  sont corrigées (`npm audit` vide) ; restes du gabarit Vite supprimés.
 
 ## v0.8 — Prêt pour la prod
 

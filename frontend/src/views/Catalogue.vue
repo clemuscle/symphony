@@ -130,36 +130,39 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, nextTick, onMounted } from 'vue'
-import { api } from '../api'
+import { api, errorMessage } from '../api'
+import { langIcon } from '../lib/projects'
 import { can, myTeams } from '../stores/session'
 import TaskProgress from '../components/TaskProgress.vue'
 import { taskStore, trackTask } from '../stores/tasks'
+import type { CreateProjectRequest, GoldenPath, Group } from '../types'
 
-const goldenPaths = ref([])
+const goldenPaths = ref<GoldenPath[]>([])
 const loading = ref(true)
 const syncing = ref(false)
-const selected = ref(null)
-const formCard = ref(null)
+const selected = ref<GoldenPath | null>(null)
+const formCard = ref<HTMLElement | null>(null)
 const creating = ref(false)
-const createTaskId = ref(null)
-const createTask = computed(() => taskStore.byId[createTaskId.value])
-const createError = ref(null)
+const createTaskId = ref<number | null>(null)
+const createTask = computed(() => (createTaskId.value ? taskStore.byId[createTaskId.value] : undefined))
+const createError = ref<string | null>(null)
 const nameError = ref('')
 
-const emptyForm = () => ({
+type ProjectForm = Omit<CreateProjectRequest, 'golden_path_id' | 'scm_provider' | 'runtime_provider'>
+const emptyForm = (): ProjectForm => ({
   name: '', description: '', namespace: '', port: 8080,
   owner: myTeams()[0] || '', tier: 'standard', lifecycle: 'staging',
 })
 const form = ref(emptyForm())
 
-const langIcon = (lang) => ({ go: '🐹', python: '🐍', node: '💚', java: '☕' })[lang] || '📦'
-const runtimeLabel = (rt) => ({ 'docker-local': '🐳 Docker', 'argocd-k3s': '☸️ Kubernetes (Argo CD)' })[rt] || rt || 'runtime par défaut'
+const runtimeLabels: Record<string, string> = { 'docker-local': '🐳 Docker', 'argocd-k3s': '☸️ Kubernetes (Argo CD)' }
+const runtimeLabel = (rt: string) => runtimeLabels[rt] || rt || 'runtime par défaut'
 
 // Équipes proposées pour le champ owner : groupes de l'annuaire, si le
 // provider d'identité en a un (Keycloak) ; saisie libre sinon
-const groups = ref([])
+const groups = ref<Group[]>([])
 async function loadGroups() {
   try {
     const { data } = await api.listIdentityGroups()
@@ -169,7 +172,7 @@ async function loadGroups() {
 
 onMounted(() => { loadGoldenPaths(); loadGroups() })
 
-async function select(gp) {
+async function select(gp: GoldenPath) {
   if (selected.value?.id !== gp.id) {
     selected.value = gp
     form.value = emptyForm()
@@ -212,17 +215,18 @@ async function createProject() {
   creating.value = true
   createTaskId.value = null
   createError.value = null
+  const gp = selected.value
+  if (!gp) return
   try {
     const { data } = await api.createProject({
       ...form.value,
-      owner: form.value.owner,
-      golden_path_id: selected.value.id,
-      scm_provider: selected.value.scm_provider,
-      runtime_provider: selected.value.runtime_provider,
+      golden_path_id: gp.id,
+      scm_provider: gp.scm_provider,
+      runtime_provider: gp.runtime_provider,
     })
     createTaskId.value = trackTask(data)
   } catch (e) {
-    createError.value = e.response?.data?.error || e.message
+    createError.value = errorMessage(e)
   } finally { creating.value = false }
 }
 </script>
