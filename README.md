@@ -146,7 +146,9 @@ Fait : v0.1 (binaire unique, `/metrics`, CI et image publiée), v0.2 (démo), v0
 rôles, audit), v0.4 (Kubernetes en GitOps avec Argo CD), v0.5 (tâches asynchrones,
 webhooks, temps réel), v0.6 (vrais projets de démo, fiche catalogue dans le repo du projet,
 connexion unique à GitLab), v0.7 (secrets et identité en providers : Vault, Keycloak et
-son annuaire ; golden path GitHub de bout en bout ; bascule Docker sur le `HEALTHCHECK`).
+son annuaire ; golden path GitHub de bout en bout ; bascule Docker sur le `HEALTHCHECK`),
+v0.8 (chart Helm testé en CI, configuration stricte, droits par équipe, erreurs masquées).
+À venir, v1.0 : secrets des applis, environnements et promotion, mode visite.
 Détail : [ROADMAP.md](ROADMAP.md) et [CHANGELOG.md](CHANGELOG.md).
 
 **Stack** : Go 1.27, chi, go-oidc, PostgreSQL, Prometheus client, Vue 3 + Vite, GitLab CE,

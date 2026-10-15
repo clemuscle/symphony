@@ -3,7 +3,7 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
-## v0.8 — Prêt pour la prod (en cours)
+## v0.8 — Prêt pour la prod
 
 ### Ajouté
 - **Chart Helm** (`deploy/helm/symphony`) : Symphony s'installe sur Kubernetes, en
