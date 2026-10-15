@@ -55,9 +55,9 @@ wait_task() {
 
 projects=$(jq -c '.[]' seed/projects.json)
 if [ "$K8S" != true ]; then
-  # Sans Kubernetes, ni runtime argocd-k3s ni golden path api-rest-go-k8s
-  projects=$(echo "$projects" | jq -c '.runtime_provider = "docker-local"
-    | if .golden_path_id == "api-rest-go-k8s" then .golden_path_id = "api-rest-go" else . end')
+  # Sans Kubernetes, pas de golden path api-rest-go-k8s (la production est
+  # alors sur Docker, voir up.sh)
+  projects=$(echo "$projects" | jq -c 'if .golden_path_id == "api-rest-go-k8s" then .golden_path_id = "api-rest-go" else . end')
 fi
 
 # 1. Création : les trois tâches partent ensemble, leurs pipelines passent
@@ -82,40 +82,10 @@ if [ ${#created[@]} -gt 0 ]; then
   done
 fi
 
-# 2. Déploiement de l'image construite, sur le runtime prévu
-deployments=$(sym "$SYMPHONY_URL/api/v1/deployments" | jq -r '.[].name')
-declare -A deploying=()
-while read -r p; do
-  name=$(echo "$p" | jq -r .name)
-  runtime=$(echo "$p" | jq -r .runtime_provider)
-  if grep -qx "$name" <<<"$deployments"; then
-    ok "$name déjà déployé"
-    continue
-  fi
-  image=$(sym "$SYMPHONY_URL/api/v1/projects/$name/image" || true)
-  tag=$(echo "$image" | jq -r '[.tags[]? | select(. != "latest")][0] // "latest"' 2>/dev/null || true)
-  if [ -z "$image" ] || [ -z "$tag" ]; then
-    warn "$name : pas d'image dans le registry, déploiement sauté"
-    continue
-  fi
-  id=$(jq -n --arg n "$name" --arg i "$(echo "$image" | jq -r .image)" --arg t "$tag" --arg r "$runtime" \
-      '{project_name: $n, image: $i, tag: $t, port: 8080, runtime_provider: $r}' \
-    | sym -X POST --data @- "$SYMPHONY_URL/api/v1/deployments" | jq -r '.id // empty')
-  [ -n "$id" ] || { warn "déploiement de $name refusé par Symphony"; continue; }
-  deploying[$name]=$id
-done <<<"$projects"
-
-if [ ${#deploying[@]} -gt 0 ]; then
-  info "Déploiement de ${!deploying[*]}…"
-  for name in "${!deploying[@]}"; do
-    wait_task "${deploying[$name]}" "déploiement de $name" && ok "$name déployé"
-  done
-fi
-
-# 3. Fiche catalogue complète (équipe, SLO, dépendances, liens), commitée
-# dans le repo du projet comme le ferait son équipe ; [skip ci] : pas de
-# nouvelle pipeline pour une fiche
-deployments=$(sym "$SYMPHONY_URL/api/v1/deployments")
+# 2. Fiche catalogue complète (équipe, SLO, dépendances, liens, variables par
+# environnement), commitée dans le repo du projet comme le ferait son équipe,
+# avant le déploiement : les variables et secrets de l'appli en viennent.
+# [skip ci] : pas de nouvelle pipeline pour une fiche.
 projects_api=$(sym "$SYMPHONY_URL/api/v1/projects")
 while read -r p; do
   name=$(echo "$p" | jq -r .name)
@@ -126,9 +96,7 @@ while read -r p; do
     "$GITLAB_URL/api/v4/projects/$(urlenc "$repo")/repository/files/catalog-info.yaml/raw?ref=main" || true)
   grep -q '^  slo:' <<<"$current" && continue
 
-  app_url=$(echo "$deployments" | jq -r --arg n "$name" '[.[] | select(.name == $n) | .url][0] // ""')
-  fiche=$(sed -e "s|__REPO_URL__|$GITLAB_URL/$repo|g" -e "s|__APP_URL__|$app_url|g" \
-    -e "s|__ARGOCD_URL__|$ARGOCD_URL|g" "seed/$name.yaml")
+  fiche=$(sed -e "s|__REPO_URL__|$GITLAB_URL/$repo|g" -e "s|__ARGOCD_URL__|$ARGOCD_URL|g" "seed/$name.yaml")
   [ "$K8S" = true ] || fiche=$(sed '/title: Application Argo CD/,+2d' <<<"$fiche")
   jq -n --arg c "$fiche" \
     '{branch: "main", content: $c, commit_message: "docs: fiche catalogue complète (équipe, SLO, dépendances) [skip ci]"}' \
@@ -138,5 +106,60 @@ while read -r p; do
     || warn "$name : fiche catalogue non mise à jour"
 done <<<"$projects"
 
+# Les fiches sont relues toutes les 15 s : on force la relecture, puis on
+# attend qu'elles soient chargées (le SLO n'est que dans les fiches complètes)
+sym -X POST "$SYMPHONY_URL/api/v1/sync" >/dev/null || true
+for _ in $(seq 30); do
+  loaded=$(sym "$SYMPHONY_URL/api/v1/projects" | jq '[.[] | select(.service.spec.slo.availability != "")] | length')
+  [ "$loaded" -ge "$(echo "$projects" | wc -l)" ] && break
+  sleep 2
+done
+
+# 3. Déploiement en staging de l'image construite par la pipeline
+deployed() { # <projet> <environnement>
+  sym "$SYMPHONY_URL/api/v1/deployments" \
+    | jq -e --arg n "$1" --arg e "$2" 'any(.[]; .project == $n and .environment == $e and .status == "running")' >/dev/null
+}
+declare -A deploying=()
+while read -r p; do
+  name=$(echo "$p" | jq -r .name)
+  if deployed "$name" staging; then
+    ok "$name déjà déployé en staging"
+    continue
+  fi
+  image=$(sym "$SYMPHONY_URL/api/v1/projects/$name/image" || true)
+  tag=$(echo "$image" | jq -r '[.tags[]? | select(. != "latest")][0] // "latest"' 2>/dev/null || true)
+  if [ -z "$image" ] || [ -z "$tag" ]; then
+    warn "$name : pas d'image dans le registry, déploiement sauté"
+    continue
+  fi
+  id=$(jq -n --arg n "$name" --arg i "$(echo "$image" | jq -r .image)" --arg t "$tag" \
+      '{project_name: $n, environment: "staging", image: $i, tag: $t, port: 8080}' \
+    | sym -X POST --data @- "$SYMPHONY_URL/api/v1/deployments" | jq -r '.id // empty')
+  [ -n "$id" ] || { warn "déploiement de $name refusé par Symphony"; continue; }
+  deploying[$name]=$id
+done <<<"$projects"
+
+if [ ${#deploying[@]} -gt 0 ]; then
+  info "Déploiement en staging de ${!deploying[*]}…"
+  for name in "${!deploying[@]}"; do
+    wait_task "${deploying[$name]}" "déploiement de $name" && ok "$name déployé en staging"
+  done
+fi
+
+# 4. Promotion en production (environnement protégé) : la même image, saine
+# en staging
+while read -r p; do
+  name=$(echo "$p" | jq -r .name)
+  [ "$(echo "$p" | jq -r '.promote // false')" = true ] || continue
+  if deployed "$name" production; then
+    ok "$name déjà en production"
+    continue
+  fi
+  id=$(sym -X POST --data '{"to":"production"}' "$SYMPHONY_URL/api/v1/projects/$name/promote" | jq -r '.id // empty')
+  [ -n "$id" ] || { warn "promotion de $name refusée par Symphony"; continue; }
+  wait_task "$id" "promotion de $name" && ok "$name promu en production"
+done <<<"$projects"
+
 echo
-echo "$deployments" | jq -r '.[] | select(.url != "") | "  \(.name)\t\(.url)"' | sort
+sym "$SYMPHONY_URL/api/v1/deployments" | jq -r '.[] | select(.url != "") | "  \(.project) (\(.environment))\t\(.url)"' | sort

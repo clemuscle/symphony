@@ -61,6 +61,8 @@ export const api = {
   // Déploiements
   listDeployments: () => http.get<Deployment[]>('/api/v1/deployments'),
   deploy: (data: DeployRequest) => http.post<Task>('/api/v1/deployments', data),
+  // Promotion : l'image saine de l'environnement précédent, déployée dans to
+  promote: (project: string, to: string) => http.post<Task>(`/api/v1/projects/${project}/promote`, { to }),
   // provider : runtime qui porte le déploiement (champ provider de la liste)
   stopDeployment: (id: string, provider: string) =>
     http.delete(`/api/v1/deployments/${id}`, { params: { provider } }),

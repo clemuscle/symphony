@@ -157,7 +157,7 @@ func TestTCPEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Name != "x" {
-		t.Errorf("nom = %q, attendu le label symphony.project", d.Name)
+	if d.Project != "x" || d.Name != "x-next" {
+		t.Errorf("projet %q, nom %q : attendu le projet du label symphony.project", d.Project, d.Name)
 	}
 }

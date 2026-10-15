@@ -102,10 +102,24 @@ providers:
         # Le même repo vu par Argo CD, depuis un pod (relais gitlab-proxy)
         repo_url: http://k3s:${GITLAB_PORT}/platform/symphony-deployments.git
         namespace: symphony-apps
-        # Chaque service répond sur http://<service>.localhost:<K8S_HTTP_PORT>
+        # Chaque service répond sur http://<service>-<env>.localhost:<K8S_HTTP_PORT>
         ingress_domain: localhost
         ingress_port: ${K8S_HTTP_PORT}
+        # Secrets des applis : External Secrets Operator les lit dans Vault
+        # (ClusterSecretStore créé par up.sh), jamais de valeur dans Git
+        secret_store: symphony-vault
+        secret_store_provider: vault
     # k8s:fin
+
+# Environnements, dans l'ordre de promotion. production est protégée : on n'y
+# déploie qu'une image déjà saine en staging (promotion). Un golden path peut
+# changer le runtime d'un environnement (api-rest-go-k8s : staging sur k3s).
+environments:
+  - name: staging
+    runtime: docker-local
+  - name: production
+    runtime: argocd-k3s # docker-local sans Kubernetes (up.sh --no-k8s)
+    protected: true
 
 # Webhooks entrants : chaque repo créé par Symphony le prévient de l'avancement
 # de ses pipelines (sinon, sondage toutes les 15 s)

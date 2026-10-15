@@ -42,6 +42,7 @@ for arg in "$@"; do
   esac
 done
 ARGOCD_VERSION=v3.1.8
+ESO_CHART_VERSION=2.11.0
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 info() { echo -e "${BLUE}[démo]${NC} $*"; }
@@ -74,6 +75,7 @@ KEYCLOAK_ADMIN_PASSWORD=$(saved KEYCLOAK_ADMIN_PASSWORD); KEYCLOAK_ADMIN_PASSWOR
 SESSION_SECRET=$(saved SESSION_SECRET); SESSION_SECRET=${SESSION_SECRET:-$(random 48)}
 WEBHOOK_SECRET=$(saved WEBHOOK_SECRET); WEBHOOK_SECRET=${WEBHOOK_SECRET:-$(random 32)}
 GITLAB_OIDC_SECRET=$(saved GITLAB_OIDC_SECRET); GITLAB_OIDC_SECRET=${GITLAB_OIDC_SECRET:-$(random 32)}
+APP_DB_PASSWORD=$(saved APP_DB_PASSWORD); APP_DB_PASSWORD=${APP_DB_PASSWORD:-$(random 24)}
 DIRECTORY_SECRET=$(saved DIRECTORY_SECRET); DIRECTORY_SECRET=${DIRECTORY_SECRET:-$(random 32)}
 VAULT_ROOT_TOKEN=$(saved VAULT_ROOT_TOKEN); VAULT_ROOT_TOKEN=${VAULT_ROOT_TOKEN:-demo-root-$(random 24)}
 
@@ -101,6 +103,7 @@ SESSION_SECRET=${SESSION_SECRET}
 WEBHOOK_SECRET=${WEBHOOK_SECRET}
 GITLAB_OIDC_SECRET=${GITLAB_OIDC_SECRET}
 DIRECTORY_SECRET=${DIRECTORY_SECRET}
+APP_DB_PASSWORD=${APP_DB_PASSWORD}
 VAULT_ROOT_TOKEN=${VAULT_ROOT_TOKEN}
 VAULT_ROLE_ID=${VAULT_ROLE_ID}
 VAULT_SECRET_ID=${VAULT_SECRET_ID}
@@ -220,7 +223,7 @@ content_of() {
   if [ "$1" != ./symphony.yaml ]; then cat "$1"; return; fi
   local gh="" k8s=""
   [ -n "$GITHUB_TOKEN" ] || gh='/# github:début/,/# github:fin/d'
-  [ "$K8S" = true ] || k8s='/# k8s:début/,/# k8s:fin/d'
+  [ "$K8S" = true ] || k8s='/# k8s:début/,/# k8s:fin/d;s/runtime: argocd-k3s # docker-local sans Kubernetes.*/runtime: docker-local/'
   sed -e "$gh" -e "$k8s" "$1"
 }
 
@@ -384,6 +387,24 @@ configs:
     ok "Compte Argo CD de Symphony et son jeton créés"
   fi
   ok "Argo CD prêt : $ARGOCD_URL"
+
+  # External Secrets Operator : lit dans Vault les secrets des applis déployées
+  # en GitOps (ExternalSecret écrites par Symphony, aucune valeur dans Git).
+  # Installé par le contrôleur Helm intégré à k3s.
+  kube apply -f - >/dev/null <<EOF
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: external-secrets
+  namespace: kube-system
+spec:
+  repo: https://charts.external-secrets.io
+  chart: external-secrets
+  version: ${ESO_CHART_VERSION}
+  targetNamespace: external-secrets
+  createNamespace: true
+EOF
+  ok "External Secrets Operator ${ESO_CHART_VERSION} en cours d'installation"
 else
   warn "Sans Kubernetes (--no-k8s) : seul le runtime docker-local est utilisable"
 fi
@@ -419,19 +440,22 @@ put_secret symphony/argocd --arg token "${ARGOCD_TOKEN:-sans-kubernetes}"
 put_secret symphony/github --arg token "${GITHUB_TOKEN:-sans-github}"
 put_secret symphony/webhook --arg secret "$WEBHOOK_SECRET"
 put_secret symphony/keycloak --arg directory_secret "$DIRECTORY_SECRET"
+# Secret d'application (démo) : référencé par la fiche de payment-api
+put_secret apps/payment-api/db --arg password "$APP_DB_PASSWORD"
 
-# AppRole de Symphony : lecture seule de secret/symphony/*
+# AppRole de Symphony : lecture seule de secret/symphony/* (ses jetons) et de
+# secret/apps/* (secrets des applis, résolus au déploiement sur Docker)
 approle_login() {
   jq -n --arg r "$VAULT_ROLE_ID" --arg s "$VAULT_SECRET_ID" '{role_id: $r, secret_id: $s}' \
     | curl -sf --data @- "$VAULT_URL/v1/auth/approle/login" | jq -e .auth.client_token >/dev/null 2>&1
 }
+jq -n '{policy: "path \"secret/data/symphony/*\" { capabilities = [\"read\"] }\npath \"secret/data/apps/*\" { capabilities = [\"read\"] }"}' \
+  | vault -X PUT --data @- "$VAULT_URL/v1/sys/policies/acl/symphony" >/dev/null
 if [ -n "$VAULT_ROLE_ID" ] && approle_login; then
   ok "AppRole de Symphony déjà en place"
 else
   vault "$VAULT_URL/v1/sys/auth" | jq -e '."approle/"' >/dev/null \
     || vault -X POST -d '{"type":"approle"}' "$VAULT_URL/v1/sys/auth/approle" >/dev/null
-  jq -n '{policy: "path \"secret/data/symphony/*\" { capabilities = [\"read\"] }"}' \
-    | vault -X PUT --data @- "$VAULT_URL/v1/sys/policies/acl/symphony" >/dev/null
   vault -X POST -d '{"token_policies":"symphony","token_ttl":"1h","token_max_ttl":"24h"}' \
     "$VAULT_URL/v1/auth/approle/role/symphony" >/dev/null
   VAULT_ROLE_ID=$(vault "$VAULT_URL/v1/auth/approle/role/symphony/role-id" | jq -r '.data.role_id // empty')
@@ -440,7 +464,44 @@ else
   write_env
   ok "AppRole de Symphony créé (lecture de secret/symphony/*)"
 fi
-ok "Vault prêt : $VAULT_URL (secrets de Symphony sous secret/symphony/)"
+ok "Vault prêt : $VAULT_URL (secrets de Symphony sous secret/symphony/, des applis sous secret/apps/)"
+
+if [ "$K8S" = true ]; then
+  # External Secrets : un jeton Vault en lecture seule sur secret/apps/*, et le
+  # ClusterSecretStore symphony-vault que référencent les ExternalSecret
+  jq -n '{policy: "path \"secret/data/apps/*\" { capabilities = [\"read\"] }"}' \
+    | vault -X PUT --data @- "$VAULT_URL/v1/sys/policies/acl/apps-read" >/dev/null
+  eso_token=$(vault -X POST -d '{"policies":["apps-read"],"period":"768h","no_parent":true}' \
+    "$VAULT_URL/v1/auth/token/create" | jq -r '.auth.client_token // empty')
+  [ -n "$eso_token" ] || fail "jeton Vault d'External Secrets impossible à créer"
+  for i in $(seq 60); do
+    kube get crd clustersecretstores.external-secrets.io >/dev/null 2>&1 && break
+    [ "$i" = 60 ] && fail "External Secrets Operator ne s'installe pas : kubectl -n external-secrets get pods"
+    sleep 5
+  done
+  kube -n external-secrets rollout status deployment/external-secrets-webhook --timeout=300s >/dev/null \
+    || fail "External Secrets Operator ne démarre pas"
+  kube -n external-secrets create secret generic vault-eso-token --from-literal=token="$eso_token" \
+    --dry-run=client -o yaml | kube apply -f - >/dev/null
+  kube apply -f - >/dev/null <<EOF
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: symphony-vault
+spec:
+  provider:
+    vault:
+      server: http://k3s:8200
+      path: secret
+      version: v2
+      auth:
+        tokenSecretRef:
+          name: vault-eso-token
+          namespace: external-secrets
+          key: token
+EOF
+  ok "External Secrets branché sur Vault (ClusterSecretStore symphony-vault, lecture de secret/apps/*)"
+fi
 
 # ── 7. Symphony ───────────────────────────────────────────────────────────────
 

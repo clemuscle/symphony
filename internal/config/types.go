@@ -1,5 +1,7 @@
 package config
 
+import "github.com/clemuscle/symphony/internal/environments"
+
 type Config struct {
 	// Bootstrap : si renseigné, la configuration (providers, catalogue,
 	// templates) est lue dans un repo Git et le reste du fichier local est ignoré
@@ -14,6 +16,10 @@ type Config struct {
 	// Origines autorisées à appeler l'API depuis un autre site (CORS). Vide :
 	// même origine seulement, le front étant servi par Symphony.
 	CORSOrigins []string `yaml:"cors_origins"`
+
+	// Environnements de déploiement, dans l'ordre de promotion (staging, puis
+	// production…) ; absent : un déploiement par projet, sans environnement
+	Environments []environments.Environment `yaml:"environments"`
 
 	// Webhooks entrants (événements de pipeline) ; absent : les tâches suivent
 	// les pipelines par sondage seulement

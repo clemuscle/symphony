@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/clemuscle/symphony/internal/config"
+	"github.com/clemuscle/symphony/internal/environments"
 )
 
 func TestValidateProviders(t *testing.T) {
@@ -85,6 +86,13 @@ func TestRepoConfigsValid(t *testing.T) {
 			continue
 		}
 		if err := validateProviders(cfg.Providers); err != nil {
+			t.Errorf("%s : %v", f, err)
+		}
+		runtimes := map[string]bool{}
+		for _, rt := range cfg.Providers.Runtime {
+			runtimes[rt.ID] = true
+		}
+		if err := environments.Validate(cfg.Environments, func(rt string) bool { return runtimes[rt] }); err != nil {
 			t.Errorf("%s : %v", f, err)
 		}
 		if cfg.ConfigSource != nil {

@@ -91,6 +91,17 @@ helm lint deploy/helm/symphony    # chart ; la CI l'installe sur kind (deploy/he
   (`SYMPHONY_*` compris), sinon 422. Webhooks : `/webhooks/<plateforme>` ; une forge qui
   ne peut pas joindre Symphony (GitHub et une démo locale) laisse le sondage travailler.
 
+**Environnements et secrets des applis**
+- Un déploiement s'appelle `DeploymentName(projet, env)` et porte projet et environnement
+  (labels Docker `symphony.project`/`symphony.environment`, Argo CD `symphony/project`/
+  `symphony/environment`) : ne jamais retrouver un projet par le nom du déploiement.
+- Environnement protégé : `Deploy` refuse, seul `Promote` y va (image saine de
+  l'environnement précédent).
+- Variables d'une appli : fiche (`spec.environments[].env`), jamais la demande. Secrets
+  limités à `apps/<projet>/` (`checkAppSecret`), jamais `secret://env/…`. Un runtime qui
+  écrit dans Git (`SecretRefs()` vrai) ne reçoit que des références ; les autres reçoivent
+  des valeurs résolues au déploiement, jamais enregistrées.
+
 **Tâches et API**
 - Une étape de tâche peut être rejouée après un redémarrage : tester `x.Get` avant d'agir,
   `x.Set` juste après.

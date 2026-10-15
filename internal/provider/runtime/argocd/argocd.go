@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -38,6 +39,11 @@ type Config struct {
 	IngressDomain string // service joignable sur <nom>.<domaine> ; vide : pas d'Ingress
 	IngressClass  string // vide : classe par défaut du cluster
 	IngressPort   string // port public de l'Ingress, s'il n'est pas 80
+
+	// Secrets des applications : ClusterSecretStore d'External Secrets
+	// Operator qui lit le provider de secrets SecretStoreProvider (même coffre)
+	SecretStore         string
+	SecretStoreProvider string
 }
 
 // Labels des Applications : celles de Symphony (seules listées), arrêtées
@@ -45,6 +51,8 @@ const (
 	managedLabel   = "app.kubernetes.io/managed-by"
 	managedValue   = "symphony"
 	stoppedLabel   = "symphony/stopped"
+	projectLabel   = "symphony/project"                       // projet déployé
+	envLabel       = "symphony/environment"                   // environnement (vide : sans)
 	resourcesFinal = "resources-finalizer.argocd.argoproj.io" // supprimer l'Application supprime ses ressources
 )
 
@@ -90,6 +98,24 @@ func New(id string, scm provider.SCMProvider, cfg Config) (*Provider, error) {
 func (p *Provider) ID() string   { return p.id }
 func (p *Provider) Type() string { return "argocd" }
 
+// SecretRefs : oui si un ClusterSecretStore est configuré. Les secrets ne vont
+// jamais dans Git : une ExternalSecret les fait lire dans le cluster.
+func (p *Provider) SecretRefs() bool { return p.cfg.SecretStore != "" }
+
+// secretEnv : références des secrets → entrées de l'ExternalSecret. Le coffre
+// du ClusterSecretStore est celui du provider SecretStoreProvider.
+func (p *Provider) secretEnv(refs map[string]provider.SecretRef) ([]secretVar, error) {
+	vars := make([]secretVar, 0, len(refs))
+	for name, ref := range refs {
+		if ref.Provider != p.cfg.SecretStoreProvider {
+			return nil, fmt.Errorf("variable %s : %s n'est pas lu par le store %s (provider %s)", name, ref, p.cfg.SecretStore, p.cfg.SecretStoreProvider)
+		}
+		vars = append(vars, secretVar{Name: name, Path: ref.Path, Key: ref.Key})
+	}
+	sort.Slice(vars, func(i, j int) bool { return vars[i].Name < vars[j].Name })
+	return vars, nil
+}
+
 // ─── Déploiement : commit dans le repo de déploiement, puis Application ─────
 
 func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, error) {
@@ -114,6 +140,17 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 	if p.cfg.IngressDomain != "" {
 		svc.IngressHost = req.Name + "." + p.cfg.IngressDomain
 	}
+	if len(req.SecretEnv) > 0 {
+		if p.cfg.SecretStore == "" {
+			return nil, fmt.Errorf("secrets des applications : pas de secret_store (External Secrets) configuré pour %s", p.id)
+		}
+		secrets, err := p.secretEnv(req.SecretEnv)
+		if err != nil {
+			return nil, err
+		}
+		svc.Secrets = secrets
+		svc.SecretStore = p.cfg.SecretStore
+	}
 	files, err := svc.files()
 	if err != nil {
 		return nil, err
@@ -121,7 +158,11 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 	if err := p.commit(req.Name, files, fmt.Sprintf("deploy: %s %s:%s [symphony]", req.Name, image, tag)); err != nil {
 		return nil, err
 	}
-	if err := p.upsertApplication(req.Name, false); err != nil {
+	owner := appOwner{project: req.Project, environment: req.Environment}
+	if owner.project == "" {
+		owner.project = req.Name
+	}
+	if err := p.upsertApplication(req.Name, false, owner); err != nil {
 		return nil, err
 	}
 	p.refresh(req.Name)
@@ -176,12 +217,20 @@ func (p *Provider) update(id string, stopped bool, change func(*kustomization)) 
 	if err := p.commit(id, map[string]string{kustomizationFile: rendered}, fmt.Sprintf("%s: %s [symphony]", verb, id)); err != nil {
 		return err
 	}
-	if err := p.upsertApplication(id, stopped); err != nil {
+	// Projet et environnement : ceux de l'Application en place
+	owner := appOwner{project: id}
+	if d, err := p.Status(id); err == nil {
+		owner = appOwner{project: d.Project, environment: d.Environment}
+	}
+	if err := p.upsertApplication(id, stopped, owner); err != nil {
 		return err
 	}
 	p.refresh(id)
 	return nil
 }
+
+// appOwner : projet et environnement d'une Application, portés par ses labels
+type appOwner struct{ project, environment string }
 
 func (p *Provider) servicePath(name, file string) string {
 	return path.Join(p.cfg.Path, name, file)
@@ -246,12 +295,17 @@ type appStatus struct {
 // upsertApplication crée l'Application du service, ou la met à jour si sa
 // définition a changé (configuration du runtime, arrêt). Synchronisation
 // automatique : Argo CD applique chaque commit et corrige toute dérive.
-func (p *Provider) upsertApplication(name string, stopped bool) error {
+func (p *Provider) upsertApplication(name string, stopped bool, owner appOwner) error {
 	var app application
 	app.Metadata.Name = name
-	// Toujours écrit, à true ou false : l'upsert d'Argo CD fusionne les
-	// labels, un label retiré resterait en place
-	app.Metadata.Labels = map[string]string{managedLabel: managedValue, stoppedLabel: fmt.Sprint(stopped)}
+	// Toujours écrits, même vides : l'upsert d'Argo CD fusionne les labels,
+	// un label retiré resterait en place
+	app.Metadata.Labels = map[string]string{
+		managedLabel: managedValue,
+		stoppedLabel: fmt.Sprint(stopped),
+		projectLabel: owner.project,
+		envLabel:     owner.environment,
+	}
 	app.Metadata.Finalizers = []string{resourcesFinal}
 	app.Spec.Project = p.cfg.Project
 	app.Spec.Source.RepoURL = p.cfg.RepoURL
@@ -375,13 +429,19 @@ func (p *Provider) deployment(app application) provider.Deployment {
 	if st == nil {
 		st = &appStatus{}
 	}
+	project := app.Metadata.Labels[projectLabel]
+	if project == "" {
+		project = app.Metadata.Name // Application antérieure aux environnements
+	}
 	d := provider.Deployment{
-		ID:        app.Metadata.Name,
-		Name:      app.Metadata.Name,
-		Status:    deploymentStatus(st.Health.Status, app.Metadata.Labels[stoppedLabel] == "true"),
-		CreatedAt: app.Metadata.CreationTimestamp,
-		Sync:      st.Sync.Status,
-		Health:    st.Health.Status,
+		ID:          app.Metadata.Name,
+		Name:        app.Metadata.Name,
+		Project:     project,
+		Environment: app.Metadata.Labels[envLabel],
+		Status:      deploymentStatus(st.Health.Status, app.Metadata.Labels[stoppedLabel] == "true"),
+		CreatedAt:   app.Metadata.CreationTimestamp,
+		Sync:        st.Sync.Status,
+		Health:      st.Health.Status,
 	}
 	if len(st.Summary.Images) > 0 {
 		d.Image = st.Summary.Images[0]
@@ -438,11 +498,46 @@ func (p *Provider) argo(method, apiPath string, body any) ([]byte, int, error) {
 	return data, resp.StatusCode, err
 }
 
-// Remove supprime l'Application du service (le finalizer fait supprimer ses
+// Remove supprime les Applications du projet, une par environnement (label
+// symphony/project), et celle qui porte son nom (déploiements antérieurs aux
+// environnements)
+func (p *Provider) Remove(project string) error {
+	if err := validName(project); err != nil {
+		return err
+	}
+	names := []string{project}
+	data, status, err := p.argo("GET", "/api/v1/applications?selector="+
+		url.QueryEscape(managedLabel+"="+managedValue+","+projectLabel+"="+project), nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return apiError("liste des Applications", status, data)
+	}
+	var list struct {
+		Items []application `json:"items"`
+	}
+	if err := json.Unmarshal(data, &list); err != nil {
+		return fmt.Errorf("argocd: réponse illisible: %w", err)
+	}
+	for _, app := range list.Items {
+		if app.Metadata.Name != project {
+			names = append(names, app.Metadata.Name)
+		}
+	}
+	for _, name := range names {
+		if err := p.removeApp(name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// removeApp supprime une Application (le finalizer fait supprimer ses
 // ressources du cluster par Argo CD), puis ses manifests du repo de
 // déploiement. Une Application du même nom que Symphony n'a pas créée est
 // laissée en place.
-func (p *Provider) Remove(name string) error {
+func (p *Provider) removeApp(name string) error {
 	if err := validName(name); err != nil {
 		return err
 	}

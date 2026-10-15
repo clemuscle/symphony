@@ -109,38 +109,62 @@ type RuntimeProvider interface {
 	Status(deploymentID string) (*Deployment, error)
 	List() ([]Deployment, error)
 	Logs(deploymentID string, lines int) (string, error)
-	// Remove supprime le déploiement du service name et tout ce qu'il a créé
-	// (conteneurs et images, ou Application, ressources et manifests). Sans
-	// effet s'il n'existe pas. La suppression peut finir après le retour :
-	// Status(name) répond ErrNotFound quand elle est terminée.
-	Remove(name string) error
+	// SecretRefs : le runtime transmet lui-même les secrets à l'application
+	// (DeployRequest.SecretEnv, des références : Symphony ne lit pas leur
+	// valeur) ; sinon Symphony les résout et les passe dans EnvVars. Un runtime
+	// qui écrit dans Git (argocd) ne doit jamais recevoir de valeur.
+	SecretRefs() bool
+	// Remove supprime les déploiements du projet, dans tous ses environnements,
+	// et tout ce qu'ils ont créé (conteneurs et images, ou Applications,
+	// ressources et manifests). Sans effet s'il n'y en a pas. La suppression
+	// peut finir après le retour : List ne les montre plus quand elle est
+	// terminée.
+	Remove(project string) error
 }
 
 type DeployRequest struct {
-	Name          string            `json:"name"`
-	Image         string            `json:"image"`
-	Tag           string            `json:"tag"`
-	Port          int               `json:"port"`      // port écouté par l'appli dans le container
-	HostPort      int               `json:"host_port"` // 0 : celui du déploiement précédent, sinon choisi par le runtime
-	EnvVars       map[string]string `json:"env_vars"`
-	HealthCheck   string            `json:"health_check"`
-	RestartPolicy string            `json:"restart_policy"`
-	RegistryAuth  *RegistryAuth     `json:"-"` // renseigné par l'API, jamais lu du body
+	// Name : nom du déploiement (conteneur, Application), unique par runtime :
+	// DeploymentName(Project, Environment)
+	Name        string            `json:"name"`
+	Project     string            `json:"project"`
+	Environment string            `json:"environment"` // vide : sans environnements
+	Image       string            `json:"image"`
+	Tag         string            `json:"tag"`
+	Port        int               `json:"port"`      // port écouté par l'appli dans le container
+	HostPort    int               `json:"host_port"` // 0 : celui du déploiement précédent, sinon choisi par le runtime
+	EnvVars     map[string]string `json:"env_vars"`
+	// Variables dont la valeur est un secret, quand SecretRefs() : références
+	// seules, lues dans le cluster par le runtime
+	SecretEnv     map[string]SecretRef `json:"-"`
+	HealthCheck   string               `json:"health_check"`
+	RestartPolicy string               `json:"restart_policy"`
+	RegistryAuth  *RegistryAuth        `json:"-"` // renseigné par l'API, jamais lu du body
 }
 
 type Deployment struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Image     string    `json:"image"`
-	Status    string    `json:"status"` // running, deploying, stopped, error
-	URL       string    `json:"url"`
-	Port      int       `json:"port"` // port publié côté hôte (celui de l'URL)
-	CreatedAt time.Time `json:"created_at"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Project     string    `json:"project"`     // projet déployé (labels du runtime)
+	Environment string    `json:"environment"` // vide : déploiement sans environnement
+	Image       string    `json:"image"`
+	Status      string    `json:"status"` // running, deploying, stopped, error
+	URL         string    `json:"url"`
+	Port        int       `json:"port"` // port publié côté hôte (celui de l'URL)
+	CreatedAt   time.Time `json:"created_at"`
 	// Runtime qui porte le déploiement, renseigné par l'API
 	Provider string `json:"provider"`
 	// État GitOps (runtime argocd) : synchronisation avec Git et santé
 	Sync   string `json:"sync,omitempty"`   // Synced, OutOfSync
 	Health string `json:"health,omitempty"` // Healthy, Progressing, Degraded…
+}
+
+// DeploymentName : nom du déploiement d'un projet dans un environnement
+// (<projet>-<environnement>), le projet seul sans environnement
+func DeploymentName(project, environment string) string {
+	if environment == "" {
+		return project
+	}
+	return project + "-" + environment
 }
 
 // ─── SECRETS ──────────────────────────────────────────────────────────────────

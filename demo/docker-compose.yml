@@ -208,7 +208,7 @@ services:
       - ./k3s/registries.yaml:/etc/rancher/k3s/registries.yaml:ro
       - ./k3s/output:/output
 
-  # Relais vers GitLab dans le réseau de k3s. GitLab est configuré sur
+  # Relais vers GitLab (et Vault, pour External Secrets) dans le réseau de k3s. GitLab est configuré sur
   # localhost (external_url) : le registry renvoie vers
   # http://localhost:<GITLAB_PORT>/jwt/auth pour les jetons. Avec ce relais,
   # localhost:<GITLAB_PORT> et localhost:<REGISTRY_PORT> mènent à GitLab pour
@@ -221,6 +221,7 @@ services:
     entrypoint: ["sh", "-c"]
     command:
       - >-
+        socat TCP-LISTEN:8200,fork,reuseaddr TCP:vault:8200 &
         socat TCP-LISTEN:${GITLAB_PORT:-8929},fork,reuseaddr TCP:gitlab:${GITLAB_PORT:-8929} &
         exec socat TCP-LISTEN:${REGISTRY_PORT:-5050},fork,reuseaddr TCP:gitlab:${REGISTRY_PORT:-5050}
     restart: unless-stopped

@@ -101,12 +101,21 @@ func (a *fakeArgo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.apps[app.Metadata.Name] = app
 		json.NewEncoder(w).Encode(app)
 	case r.Method == "GET" && r.URL.Path == "/api/v1/applications":
-		if r.URL.Query().Get("selector") != "app.kubernetes.io/managed-by=symphony" {
+		// Sélecteur de labels : k=v[,k=v…], toujours sur les Applications de Symphony
+		selector := r.URL.Query().Get("selector")
+		if !strings.HasPrefix(selector, "app.kubernetes.io/managed-by=symphony") {
 			http.Error(w, "selector", http.StatusBadRequest)
 			return
 		}
 		items := []application{}
+	apps:
 		for _, app := range a.apps {
+			for _, kv := range strings.Split(selector, ",") {
+				k, v, _ := strings.Cut(kv, "=")
+				if app.Metadata.Labels[k] != v {
+					continue apps
+				}
+			}
 			items = append(items, app)
 		}
 		json.NewEncoder(w).Encode(map[string]any{"items": items})
@@ -338,10 +347,20 @@ func TestDeploymentStatus(t *testing.T) {
 
 func TestRemove(t *testing.T) {
 	p, scm, argo := newTest(t)
-	for _, name := range []string{"svc", "svc-bis"} {
-		if _, err := p.Deploy(provider.DeployRequest{Name: name, Image: "nginx:1.27"}); err != nil {
+	// svc : sans environnement (ancien) et en staging et production ; svc-bis :
+	// un autre projet
+	for _, req := range []provider.DeployRequest{
+		{Name: "svc", Image: "nginx:1.27"},
+		{Name: "svc-staging", Project: "svc", Environment: "staging", Image: "nginx:1.27"},
+		{Name: "svc-production", Project: "svc", Environment: "production", Image: "nginx:1.27"},
+		{Name: "svc-bis", Image: "nginx:1.27"},
+	} {
+		if _, err := p.Deploy(req); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if d, _ := p.Status("svc-production"); d.Project != "svc" || d.Environment != "production" {
+		t.Errorf("projet %q, environnement %q", d.Project, d.Environment)
 	}
 	var autre application
 	autre.Metadata.Name = "autre"
@@ -350,11 +369,13 @@ func TestRemove(t *testing.T) {
 	if err := p.Remove("svc"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Status("svc"); !errors.Is(err, provider.ErrNotFound) {
-		t.Errorf("Application toujours là : %v", err)
+	for _, name := range []string{"svc", "svc-staging", "svc-production"} {
+		if _, err := p.Status(name); !errors.Is(err, provider.ErrNotFound) {
+			t.Errorf("Application %s toujours là : %v", name, err)
+		}
 	}
 	for f := range scm.files {
-		if strings.HasPrefix(f, "apps/svc/") {
+		if strings.HasPrefix(f, "apps/svc/") || strings.HasPrefix(f, "apps/svc-staging/") || strings.HasPrefix(f, "apps/svc-production/") {
 			t.Errorf("manifest restant : %s", f)
 		}
 	}
@@ -375,5 +396,56 @@ func TestRemove(t *testing.T) {
 	}
 	if _, ok := argo.apps["autre"]; !ok {
 		t.Error("Application non gérée supprimée")
+	}
+}
+
+// TestStopKeepsOwner : arrêter réécrit l'Application sans perdre son projet
+// ni son environnement
+func TestStopKeepsOwner(t *testing.T) {
+	p, _, argo := newTest(t)
+	if _, err := p.Deploy(provider.DeployRequest{Name: "api-production", Project: "api", Environment: "production", Image: "nginx:1.27"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Stop("api-production"); err != nil {
+		t.Fatal(err)
+	}
+	labels := argo.apps["api-production"].Metadata.Labels
+	if labels[projectLabel] != "api" || labels[envLabel] != "production" || labels[stoppedLabel] != "true" {
+		t.Errorf("labels après arrêt : %v", labels)
+	}
+}
+
+// TestDeploySecretRefs : les secrets d'une application vont dans une
+// ExternalSecret (références), jamais leur valeur dans Git
+func TestDeploySecretRefs(t *testing.T) {
+	p, scm, _ := newTest(t)
+	refs := map[string]provider.SecretRef{"DB_PASSWORD": {Provider: "vault", Path: "apps/api/db", Key: "password"}}
+	if _, err := p.Deploy(provider.DeployRequest{Name: "api", Image: "nginx:1.27", SecretEnv: refs}); err == nil {
+		t.Error("secrets acceptés sans secret_store")
+	}
+	p.cfg.SecretStore, p.cfg.SecretStoreProvider = "symphony-vault", "vault"
+	if !p.SecretRefs() {
+		t.Error("SecretRefs = false avec un secret_store")
+	}
+	if _, err := p.Deploy(provider.DeployRequest{Name: "api", Image: "nginx:1.27", EnvVars: map[string]string{"LOG": "info"}, SecretEnv: refs}); err != nil {
+		t.Fatal(err)
+	}
+	es := scm.files["apps/api/externalsecret.yaml"]
+	for _, want := range []string{"kind: ExternalSecret", `name: "symphony-vault"`, `key: "apps/api/db"`, `property: "password"`, "name: api-env"} {
+		if !strings.Contains(es, want) {
+			t.Errorf("ExternalSecret sans %q :\n%s", want, es)
+		}
+	}
+	dep := scm.files["apps/api/deployment.yaml"]
+	if !strings.Contains(dep, "secretKeyRef:") || !strings.Contains(dep, `value: "info"`) {
+		t.Errorf("deployment.yaml :\n%s", dep)
+	}
+	if !strings.Contains(scm.files["apps/api/kustomization.yaml"], "externalsecret.yaml") {
+		t.Error("ExternalSecret absente de kustomization.yaml")
+	}
+	// Un secret d'un autre coffre n'est pas lu par ce store
+	refs["X"] = provider.SecretRef{Provider: "autre", Path: "apps/api/x"}
+	if _, err := p.Deploy(provider.DeployRequest{Name: "api", Image: "nginx:1.27", SecretEnv: refs}); err == nil {
+		t.Error("secret d'un autre provider accepté")
 	}
 }

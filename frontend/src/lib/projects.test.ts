@@ -8,7 +8,7 @@ function project(over: Partial<Project> = {}, svc: Partial<Service['metadata']> 
     namespace: '', scm_provider: 'gitlab', ci_provider: 'gitlab-ci', registry_provider: '',
     runtime_provider: 'docker-local', repo_path: 'apps/payment-api',
     repo_url: 'http://gitlab/apps/payment-api.git', registry_url: '', golden_path: 'api-rest-go',
-    team: 'team-payments', created_by: 'bob', created_at: '',
+    team: 'team-payments', created_by: 'bob', created_at: '', environments: [],
     service: svc === null ? null : {
       api_version: 'symphony/v1', kind: 'Service',
       metadata: {
@@ -46,5 +46,19 @@ describe('projets', () => {
     expect(names({ search: 'identity', tier: '', lifecycle: '' })).toEqual(['auth-service'])
     expect(names({ search: '', tier: 'critical', lifecycle: '' })).toEqual(['payment-api'])
     expect(names({ search: '  ', tier: '', lifecycle: 'production' })).toHaveLength(2)
+  })
+})
+
+describe('environnements', () => {
+  it('rattache les déploiements au projet et à leur environnement', async () => {
+    const { deploymentIn, deploymentsOf } = await import('./projects')
+    const p = project()
+    const d = (name: string, proj: string, env: string) =>
+      ({ id: name, name, project: proj, environment: env, image: '', status: 'running', url: '', port: 0, created_at: '', provider: 'docker-local' })
+    const all = [d('payment-api-staging', 'payment-api', 'staging'), d('payment-api-production', 'payment-api', 'production'),
+      d('payment-api-v2-staging', 'payment-api-v2', 'staging')]
+    expect(deploymentsOf(p, all)).toHaveLength(2)
+    expect(deploymentIn(p, 'production', all)?.name).toBe('payment-api-production')
+    expect(deploymentIn(p, 'dev', all)).toBeUndefined()
   })
 })

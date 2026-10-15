@@ -13,6 +13,7 @@ import (
 	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/database"
+	"github.com/clemuscle/symphony/internal/environments"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/provider"
 	"github.com/clemuscle/symphony/internal/tasks"
@@ -96,6 +97,12 @@ func main() {
 	}
 	hooks := webhook.NewHolder(hookSettings)
 
+	// Environnements de déploiement (staging, production…), dans l'ordre de promotion
+	envs := environments.NewHolder(resolved.Environments)
+	if len(resolved.Environments) == 0 {
+		slog.Info("pas de section environments : un déploiement par projet")
+	}
+
 	// Catalogue : la fiche de chaque projet, lue dans son repo
 	store := catalogue.NewStore()
 	syncer := gitops.NewSyncer(providers, store, projectRefs(db), catalogueFile(cfg))
@@ -114,6 +121,8 @@ func main() {
 		Templates: tmplLoader,
 		Syncer:    syncer,
 		Webhooks:  hooks,
+		Store:     store,
+		Envs:      envs,
 	})
 	runner.Start(context.Background(), 4)
 
@@ -125,6 +134,7 @@ func main() {
 		templates: tmplLoader,
 		security:  security,
 		webhooks:  hooks,
+		envs:      envs,
 		codec:     codec,
 		interval:  15 * time.Second,
 		last:      raw,
@@ -138,7 +148,7 @@ func main() {
 	addr := ":" + getEnv("PORT", "8080")
 	slog.Info("Symphony démarré", "addr", addr)
 
-	if err := http.ListenAndServe(addr, api.NewServer(providers, store, db, syncer, tmplLoader, security, runner, hooks)); err != nil {
+	if err := http.ListenAndServe(addr, api.NewServer(providers, store, db, syncer, tmplLoader, security, runner, hooks, envs)); err != nil {
 		slog.Error("serveur HTTP", "error", err)
 		os.Exit(1)
 	}

@@ -27,7 +27,7 @@ spec:
       url: __REPO_URL__/-/pipelines
       icon: ci
     - title: Application Argo CD
-      url: __ARGOCD_URL__/applications/argocd/notification-service
+      url: __ARGOCD_URL__/applications/argocd/notification-service-production
       icon: web
   dependencies:
     - service: auth-service

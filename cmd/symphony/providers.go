@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/clemuscle/symphony/internal/config"
+	"github.com/clemuscle/symphony/internal/environments"
 	"github.com/clemuscle/symphony/internal/provider"
 	githubci "github.com/clemuscle/symphony/internal/provider/ci/githubactions"
 	gitlabci "github.com/clemuscle/symphony/internal/provider/ci/gitlabci"
@@ -101,6 +102,13 @@ func buildProviders(cfg *config.Config) (*provider.Registry, *config.Config, err
 			continue
 		}
 		providers.RegisterIdentity(instrumented.Identity(p), def.Default)
+	}
+	// Environnements : leurs runtimes doivent exister dans cette configuration
+	if err := environments.Validate(resolved.Environments, func(rt string) bool {
+		_, err := providers.Runtime(rt)
+		return rt != "" && err == nil
+	}); err != nil {
+		errs = append(errs, err)
 	}
 	if err := errors.Join(errs...); err != nil {
 		return nil, nil, err
@@ -203,6 +211,9 @@ func newArgoCD(def config.ProviderDef, providers *provider.Registry) (*argocdrt.
 		IngressDomain: c["ingress_domain"],
 		IngressClass:  c["ingress_class"],
 		IngressPort:   c["ingress_port"],
+
+		SecretStore:         c["secret_store"],
+		SecretStoreProvider: orDefault(c["secret_store_provider"], "vault"),
 	})
 }
 

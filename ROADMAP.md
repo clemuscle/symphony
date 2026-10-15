@@ -175,10 +175,10 @@ Objectif : le parcours complet d'une IDP, une évaluation possible en cinq minut
 rien installer, et plus aucun point faible visible à la relecture du code.
 
 **Parcours**
-- [ ] Secrets des applis : une variable d'un service référence `secret://vault/…` ; le
+- [x] Secrets des applis : une variable d'un service référence `secret://vault/…` ; le
       runtime `argocd` la fait lire dans le cluster (External Secrets), le runtime Docker
       la résout au déploiement ; jamais en clair dans Git ni dans l'API
-- [ ] Environnements : un projet a ses environnements (staging, production), chacun avec
+- [x] Environnements : un projet a ses environnements (staging, production), chacun avec
       son runtime ; une version déployée en staging se **promeut** en production
 - [x] GitHub à égalité avec GitLab : webhooks de workflow (plus de sondage seul), un
       deuxième golden path GitHub

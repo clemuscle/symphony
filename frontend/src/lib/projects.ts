@@ -34,7 +34,11 @@ export function ficheURL(p: Project): string {
 }
 
 export const deploymentsOf = (p: Project, all: Deployment[]): Deployment[] =>
-  all.filter(d => d.name === p.name)
+  all.filter(d => (d.project || d.name) === p.name)
+
+// Le déploiement du projet dans l'environnement env
+export const deploymentIn = (p: Project, env: string, all: Deployment[]): Deployment | undefined =>
+  deploymentsOf(p, all).find(d => d.environment === env)
 
 export interface ProjectFilter { search: string; tier: string; lifecycle: string }
 
