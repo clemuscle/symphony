@@ -19,8 +19,8 @@ providers:
       type: vault
       config:
         url: http://vault:8200
-        role_id_env: VAULT_ROLE_ID
-        secret_id_env: VAULT_SECRET_ID
+        role_id: secret://env/VAULT_ROLE_ID
+        secret_id: secret://env/VAULT_SECRET_ID
 config_source:
   scm:
     type: gitlab
@@ -40,7 +40,8 @@ un redémarrage.
 Les secrets ne sont jamais écrits dans ce repo. Toute valeur de configuration d'un
 provider peut être une référence `secret://<provider>/<chemin>#<clé>`, lue chez un
 provider de la section `secrets` : `vault` (KV v2, AppRole ou jeton), ou `env`
-(toujours présent : `secret://env/GITLAB_TOKEN`, comme l'ancien `token_env`). Les
+(toujours présent : `secret://env/GITLAB_TOKEN`). Une clé inconnue, une clé requise
+absente ou un type inconnu font refuser la configuration (la précédente reste). Les
 secrets sont relus à chaque cycle : un jeton changé dans Vault est appliqué à chaud.
 
 | Section | Types |

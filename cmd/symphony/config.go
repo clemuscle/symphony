@@ -46,6 +46,12 @@ func newConfigSource(path string) (*configSource, error) {
 	if src.SCM.ID == "" {
 		src.SCM.ID = "config-source"
 	}
+	if err := validateProviders(config.ProvidersConfig{Secrets: local.Providers.Secrets}); err != nil {
+		return nil, fmt.Errorf("bootstrap %s: %w", path, err)
+	}
+	if err := validateDef("scm", src.SCM); err != nil {
+		return nil, fmt.Errorf("config_source.scm: %w", err)
+	}
 	// Jeton du SCM : il peut venir des providers de secrets du bootstrap
 	secrets := provider.NewRegistry()
 	if err := registerSecrets(secrets, local.Providers.Secrets); err != nil {
@@ -123,13 +129,8 @@ func buildPolicy(cfg *config.Config, providers *provider.Registry, codec *auth.C
 	return p, nil
 }
 
-// catalogueFile : nom de la fiche catalogue dans le repo de chaque projet.
-// L'ancien dossier services/ du repo de config n'est plus lu : on le signale.
+// catalogueFile : nom de la fiche catalogue dans le repo de chaque projet
 func catalogueFile(cfg *config.Config) string {
-	if cfg.Catalogue.Repo != "" || cfg.Catalogue.Path != "" {
-		slog.Warn("catalogue.repo et catalogue.path ne sont plus lus : chaque projet porte sa fiche dans son repo",
-			"fichier", orDefault(cfg.Catalogue.File, gitops.DefaultCatalogueFile))
-	}
 	return orDefault(cfg.Catalogue.File, gitops.DefaultCatalogueFile)
 }
 
@@ -206,7 +207,7 @@ func (w *configWatcher) check() {
 // si l'un d'eux a changé dans son provider (rotation), elle est réappliquée.
 // Les providers de secrets en place servent à la relecture.
 func (w *configWatcher) checkSecrets(cfg *config.Config) {
-	resolved, err := resolveConfig(legacyAuth(cfg, false), w.providers.Secrets)
+	resolved, err := resolveConfig(cfg, w.providers.Secrets)
 	if err != nil {
 		if err.Error() != w.secretErr {
 			w.secretErr = err.Error()
@@ -254,19 +255,14 @@ func (w *configWatcher) apply(cfg *config.Config) error {
 
 // buildWebhooks : réglages des webhooks entrants (configuration résolue).
 // Sans section webhooks, les tâches suivent les pipelines par sondage. Le
-// secret (secret, sinon la variable secret_env, défaut WEBHOOK_SECRET) doit
-// être assez long pour ne pas se deviner.
+// secret doit être assez long pour ne pas se deviner.
 func buildWebhooks(cfg *config.Config) (*webhook.Settings, error) {
 	if cfg.Webhooks == nil || cfg.Webhooks.URL == "" {
 		return nil, nil
 	}
-	secret, from := cfg.Webhooks.Secret, "webhooks.secret"
-	if secret == "" {
-		from = orDefault(cfg.Webhooks.SecretEnv, "WEBHOOK_SECRET")
-		secret = os.Getenv(from)
-	}
+	secret := cfg.Webhooks.Secret
 	if len(secret) < 16 {
-		return nil, fmt.Errorf("webhooks: %s doit contenir un secret de 16 caractères au moins", from)
+		return nil, fmt.Errorf("webhooks.secret : 16 caractères au moins requis (ex. secret://env/WEBHOOK_SECRET)")
 	}
 	return &webhook.Settings{
 		Endpoint: strings.TrimRight(cfg.Webhooks.URL, "/") + "/webhooks/gitlab",

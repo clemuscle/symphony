@@ -3,6 +3,31 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
+## v0.8 — Prêt pour la prod (en cours)
+
+### Modifié
+- **Configuration stricte** : `symphony.yaml` est décodé sans tolérance (clé inconnue =
+  erreur) et chaque type de provider déclare ses clés autorisées et requises ; une faute
+  de frappe, une clé requise absente, un type inconnu ou un id en double font refuser la
+  configuration, avec toutes les erreurs d'un coup. Un provider impossible à construire
+  fait refuser la configuration au lieu d'être ignoré.
+- **Erreurs internes masquées** : le client reçoit l'opération en échec et l'identifiant
+  de requête ; le détail (SQL, réponse brute d'un provider) reste dans les logs.
+- Go 1.27 (`go.mod`, CI, image).
+- Un seul nom dans l'UI : « Internal Developer Platform ».
+
+### Retiré (compatibilité pré-1.0)
+- `token_env` et les autres clés `*_env` : `secret://env/<VARIABLE>` à la place.
+- Replis implicites sur `GITLAB_TOKEN`, `GITHUB_TOKEN`, `<scm_ref>_TOKEN`,
+  `ARGOCD_TOKEN` et `WEBHOOK_SECRET` : le jeton vient de `token` ou du SCM `scm_ref`,
+  le secret des webhooks de `webhooks.secret`.
+- Ancien format de `auth` (`issuer`, `client_id`…) : déclarer un provider `identity`.
+- `catalogue.repo`, `catalogue.branch`, `catalogue.path`.
+
+### Corrigé
+- Les réponses JSON illisibles des providers (GitLab, GitHub, GitLab CI, Docker) sont des
+  erreurs, au lieu de valeurs vides.
+
 ## v0.7 — Multi-plateforme et robustesse
 
 ### Ajouté

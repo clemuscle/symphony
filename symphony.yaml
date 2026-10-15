@@ -8,7 +8,7 @@ config_source:
     type: gitlab
     config:
       url: http://gitlab.local:8929
-      token_env: GITLAB_TOKEN
+      token: secret://env/GITLAB_TOKEN
   repo: root/symphony-config
   branch: main
   path: symphony.yaml

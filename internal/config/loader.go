@@ -1,8 +1,11 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -22,12 +25,16 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// Parse décode une configuration, après expansion des variables d'environnement
+// Parse décode une configuration, après expansion des variables
+// d'environnement. Une clé inconnue est une erreur : une faute de frappe ne
+// doit pas laisser un réglage de côté sans rien dire.
 func Parse(data []byte) (*Config, error) {
 	expanded := os.ExpandEnv(string(data))
 
 	var cfg Config
-	if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
+	dec := yaml.NewDecoder(strings.NewReader(expanded))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 	return &cfg, nil

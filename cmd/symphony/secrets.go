@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"strconv"
 
 	"github.com/clemuscle/symphony/internal/config"
@@ -61,9 +60,9 @@ func newSecrets(def config.ProviderDef) (provider.SecretsProvider, error) {
 			Namespace:    c["namespace"],
 			Mount:        c["mount"],
 			KVVersion:    kv,
-			Token:        secretValue(def, "token"),
-			RoleID:       secretValue(def, "role_id"),
-			SecretID:     secretValue(def, "secret_id"),
+			Token:        c["token"],
+			RoleID:       c["role_id"],
+			SecretID:     c["secret_id"],
 			AppRoleMount: c["approle_mount"],
 		})
 	}
@@ -129,34 +128,4 @@ func fingerprint(resolved *config.Config) string {
 	data, _ := yaml.Marshal(resolved)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
-}
-
-// legacyAuth convertit l'ancienne section auth (issuer, client_id…) en
-// provider identity de type oidc, d'id "oidc" ; warn : le signaler (pas à
-// chaque relecture des secrets)
-func legacyAuth(cfg *config.Config, warn bool) *config.Config {
-	a := cfg.Auth
-	if a == nil || a.Issuer == "" {
-		return cfg
-	}
-	if warn {
-		slog.Warn("auth.issuer et suivants sont dépréciés : déclarer un provider identity et le désigner par auth.identity")
-	}
-	out := *cfg
-	out.Providers.Identity = append([]config.ProviderDef{{
-		ID:   "oidc",
-		Type: "oidc",
-		Config: map[string]string{
-			"issuer":            a.Issuer,
-			"discovery_url":     a.DiscoveryURL,
-			"client_id":         a.ClientID,
-			"client_secret_env": a.ClientSecretEnv,
-			"redirect_url":      a.RedirectURL,
-			"groups_claim":      a.GroupsClaim,
-		},
-	}}, cfg.Providers.Identity...)
-	auth := *a
-	auth.Identity = "oidc"
-	out.Auth = &auth
-	return &out
 }

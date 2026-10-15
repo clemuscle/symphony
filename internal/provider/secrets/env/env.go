@@ -1,6 +1,5 @@
 // Package env : provider de secrets qui lit les variables d'environnement
-// (secret://env/GITLAB_TOKEN). Toujours disponible sous l'id "env" : c'est
-// l'équivalent des clés token_env de la configuration.
+// (secret://env/GITLAB_TOKEN). Toujours disponible sous l'id "env".
 package env
 
 import (

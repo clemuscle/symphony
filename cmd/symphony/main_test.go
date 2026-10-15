@@ -37,7 +37,7 @@ func fakeGitLab(t *testing.T, repo string, files map[string]string) *httptest.Se
 func writeBootstrap(t *testing.T, gitlabURL, path string) string {
 	f := filepath.Join(t.TempDir(), "symphony.yaml")
 	content := "config_source:\n" +
-		"  scm:\n    type: gitlab\n    config:\n      url: " + gitlabURL + "\n" +
+		"  scm:\n    type: gitlab\n    config:\n      url: " + gitlabURL + "\n      token: jeton\n" +
 		"  repo: root/symphony-config\n" +
 		"  path: " + path + "\n"
 	if err := os.WriteFile(f, []byte(content), 0o600); err != nil {
@@ -49,7 +49,7 @@ func writeBootstrap(t *testing.T, gitlabURL, path string) string {
 func TestLoadConfigFromGit(t *testing.T) {
 	srv := fakeGitLab(t, "root/symphony-config", map[string]string{
 		"symphony.yaml": "providers:\n  scm:\n    - id: gitlab-local\n      type: gitlab\n" +
-			"catalogue:\n  repo: root/symphony-config\n" +
+			"      config:\n        url: http://gitlab\n        token: jeton\n" +
 			"templates:\n  repo: root/symphony-templates\n",
 		"boucle.yaml": "config_source:\n  repo: root/autre\n",
 	})
@@ -76,7 +76,7 @@ func TestLoadConfigFromGit(t *testing.T) {
 
 func TestLoadConfigLocal(t *testing.T) {
 	f := filepath.Join(t.TempDir(), "symphony.yaml")
-	os.WriteFile(f, []byte("catalogue:\n  repo: root/c\ntemplates:\n  repo: root/local\n"), 0o600)
+	os.WriteFile(f, []byte("templates:\n  repo: root/local\n"), 0o600)
 	cfg, err := loadConfig(f)
 	if err != nil || cfg.Templates.Repo != "root/local" {
 		t.Errorf("config = %+v, err = %v", cfg, err)
@@ -88,11 +88,15 @@ func TestConfigWatcher(t *testing.T) {
   scm:
     - id: gitlab-a
       type: gitlab
+      config:
+        url: http://gitlab
+        token: jeton
   ci:
     - id: ci-a
       type: gitlab_ci
-catalogue:
-  repo: root/symphony-config
+      config:
+        url: http://gitlab
+        scm_ref: gitlab-a
 `
 	content, readErr := []byte(v1), error(nil)
 	source := &configSource{read: func() ([]byte, error) { return content, readErr }}
@@ -136,6 +140,7 @@ catalogue:
 	for _, bad := range []string{
 		"providers: [pas une map",                 // YAML
 		"catalogue:\n  file: catalog-info.yaml\n", // pas de SCM par défaut
+		"catalogue:\n  repo: root/c\n",            // clé inconnue (ancien format)
 	} {
 		content = []byte(bad)
 		w.check()
@@ -158,7 +163,6 @@ func TestCatalogueFile(t *testing.T) {
 	for content, want := range map[string]string{
 		"":                                     "catalog-info.yaml",
 		"catalogue:\n  file: .symphony.yaml\n": ".symphony.yaml",
-		"catalogue:\n  repo: root/c\n":         "catalog-info.yaml", // ancien format : ignoré
 	} {
 		cfg, err := config.Parse([]byte(content))
 		if err != nil {
@@ -174,12 +178,11 @@ func TestBuildWebhooks(t *testing.T) {
 	if s, err := buildWebhooks(&config.Config{}); err != nil || s.Enabled() {
 		t.Errorf("sans section webhooks : %+v, %v", s, err)
 	}
-	cfg := &config.Config{Webhooks: &config.WebhooksConfig{URL: "http://symphony:8080/", SecretEnv: "TEST_WEBHOOK_SECRET"}}
-	t.Setenv("TEST_WEBHOOK_SECRET", "court")
+	cfg := &config.Config{Webhooks: &config.WebhooksConfig{URL: "http://symphony:8080/", Secret: "court"}}
 	if _, err := buildWebhooks(cfg); err == nil {
 		t.Error("secret trop court accepté")
 	}
-	t.Setenv("TEST_WEBHOOK_SECRET", "0123456789abcdef")
+	cfg.Webhooks.Secret = "0123456789abcdef"
 	s, err := buildWebhooks(cfg)
 	if err != nil || !s.Enabled() || s.Endpoint != "http://symphony:8080/webhooks/gitlab" {
 		t.Errorf("webhooks : %+v, %v", s, err)

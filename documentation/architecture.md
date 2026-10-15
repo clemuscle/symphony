@@ -26,9 +26,12 @@ dit ce qui en a été repris, adapté ou écarté.
    commite des manifests, Argo CD les applique. Le runtime Docker local est l'exception
    assumée (voir les écarts).
 4. **Aucun secret dans la configuration.** Les fichiers ne contiennent que des références :
-   `secret://vault/symphony/gitlab#token` (lu dans Vault) ou le nom d'une variable
-   d'environnement (`token_env`, équivalent de `secret://env/…`).
-5. **Rester léger.** Pas de SDK lourd (l'API Docker est appelée directement sur le socket),
+   `secret://vault/symphony/gitlab#token` (lu dans Vault) ou `secret://env/GITLAB_TOKEN`
+   (variable d'environnement).
+5. **Une configuration stricte.** Chaque type de provider déclare ses clés : une faute de
+   frappe, une clé requise absente ou un type inconnu font refuser la configuration,
+   au lieu d'un réglage ignoré ou d'un repli silencieux sur une valeur par défaut.
+6. **Rester léger.** Pas de SDK lourd (l'API Docker est appelée directement sur le socket),
    pas d'ORM, un seul binaire (front embarqué, image d'environ 10 Mo) et PostgreSQL.
 
 ## Vue d'ensemble
@@ -234,8 +237,7 @@ journaux.
 La connexion passe par un provider `identity` : `oidc` (n'importe quel fournisseur OIDC) ou
 `keycloak` (issuer et découverte déduits de l'URL et du realm). La section `auth` ne garde
 que la politique : quel provider (`auth.identity`) et quels groupes donnent quels rôles
-(`auth.roles`). L'ancien format (`auth.issuer`, `auth.client_id`…) est converti en provider
-`oidc`, avec un avertissement.
+(`auth.roles`).
 
 1. Le front appelle `/api/v1/me` ; sans session, l'API répond 401 et le front envoie le
    navigateur sur `/auth/login?redirect=<page>`.

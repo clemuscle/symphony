@@ -61,9 +61,14 @@ docker build -t symphony .        # image complète (~10 Mo)
   utilisateur connecté sans rôle y a accès. Utilisateur : `auth.UserFrom(ctx)`.
 - Un handler qui modifie quelque chose écrit dans l'audit (`audit(db, r, …)`).
 - Jamais de secret dans un fichier, un log, `x.Set` (renvoyé par l'API) ni le repo de
-  déploiement. La config désigne ses secrets par `secret://<provider>/<chemin>#<clé>` ; un
-  provider les lit avec `secretValue(def, "token")`. Une référence introuvable fait
-  refuser **toute** la configuration : ne jamais résoudre provider par provider.
+  déploiement. La config désigne ses secrets par `secret://<provider>/<chemin>#<clé>`
+  (`secret://env/VAR` pour une variable d'environnement) ; les providers ne voient que la
+  config résolue. Une référence introuvable fait refuser **toute** la configuration.
+- Configuration stricte : `symphony.yaml` est décodé avec `KnownFields`, et chaque type de
+  provider déclare ses clés dans `cmd/symphony/schema.go`. Nouveau type ou nouvelle clé :
+  l'y déclarer. Pas de repli silencieux (jeton par défaut, provider ignoré) : une erreur
+  de construction fait refuser la configuration. `TestRepoConfigsValid` valide les configs
+  livrées.
 - `resolveInputs` refuse les entrées d'action non déclarées (injection de variables CI) :
   ne pas assouplir.
 
