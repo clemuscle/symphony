@@ -33,7 +33,7 @@ func TriggerPipeline(providers *provider.Registry, db *database.DB) http.Handler
 
 		pipeline, err := ci.TriggerPipeline(req.RepoPath, req.Ref, req.Vars)
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "trigger: "+err.Error())
+			providerError(w, r, "lancement de la pipeline", err)
 			return
 		}
 
@@ -77,7 +77,7 @@ func GetPipelineStatus(providers *provider.Registry, db *database.DB) http.Handl
 
 		pipeline, err := ci.GetPipeline(repoPath, pipelineID)
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, err.Error())
+			providerError(w, r, "état de la pipeline", err)
 			return
 		}
 
@@ -92,7 +92,7 @@ func ListPipelines(db *database.DB) http.HandlerFunc {
 		project := chi.URLParam(r, "*")
 		pipelines, err := db.ListPipelines(project, 20)
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, err.Error())
+			internalError(w, r, err)
 			return
 		}
 		if pipelines == nil {

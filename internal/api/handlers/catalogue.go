@@ -86,7 +86,7 @@ func TriggerAction(store *catalogue.Store, providers *provider.Registry, db *dat
 
 		// Une action à la fois par service ; elle s'exécute en tâche (202)
 		resource := svcName
-		if busy(w, runner, resource) {
+		if busy(w, r, runner, resource) {
 			return
 		}
 		switch {
