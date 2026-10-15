@@ -3,6 +3,13 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
+## Non publié
+
+### Corrigé
+- Migrations sérialisées par un verrou consultatif PostgreSQL : deux instances (ou deux
+  paquets de tests) démarrées ensemble sur une base neuve créaient les mêmes tables en
+  même temps et l'une échouait.
+
 ## v0.9 — La vitrine
 
 ### Ajouté
