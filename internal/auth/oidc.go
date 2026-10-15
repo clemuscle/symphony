@@ -153,7 +153,8 @@ func (a *Authenticator) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	value, err := a.codec.Encode(ls, loginTTL)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("connexion : état de connexion impossible à signer", "error", err)
+		http.Error(w, "Erreur interne, réessayer plus tard.", http.StatusInternalServerError)
 		return
 	}
 	a.setCookie(w, r, loginCookie, value, "/auth/", loginTTL)

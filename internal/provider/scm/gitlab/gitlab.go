@@ -128,7 +128,9 @@ func (p *Provider) CreateRepo(req provider.CreateRepoRequest) (*provider.Repo, e
 		WebURL            string `json:"web_url"`
 		DefaultBranch     string `json:"default_branch"`
 	}
-	json.Unmarshal(data, &proj)
+	if err := json.Unmarshal(data, &proj); err != nil {
+		return nil, fmt.Errorf("gitlab createRepo : réponse illisible: %w", err)
+	}
 
 	return &provider.Repo{
 		ID:            fmt.Sprintf("%d", proj.ID),
@@ -256,7 +258,9 @@ func (p *Provider) ListRepos() ([]provider.Repo, error) {
 		WebURL            string `json:"web_url"`
 		DefaultBranch     string `json:"default_branch"`
 	}
-	json.Unmarshal(data, &projects)
+	if err := json.Unmarshal(data, &projects); err != nil {
+		return nil, fmt.Errorf("gitlab listRepos : réponse illisible: %w", err)
+	}
 
 	repos := make([]provider.Repo, len(projects))
 	for i, proj := range projects {
@@ -395,7 +399,9 @@ func (p *Provider) removePermanently(id int) error {
 		PathWithNamespace   string `json:"path_with_namespace"`
 		MarkedForDeletionOn string `json:"marked_for_deletion_on"`
 	}
-	json.Unmarshal(data, &proj)
+	if err := json.Unmarshal(data, &proj); err != nil {
+		return fmt.Errorf("gitlab removePermanently : réponse illisible: %w", err)
+	}
 	if proj.MarkedForDeletionOn == "" {
 		return nil
 	}
@@ -427,7 +433,9 @@ func (p *Provider) CreateWebhook(repoPath, hookURL, secret string) error {
 	var existing []struct {
 		URL string `json:"url"`
 	}
-	json.Unmarshal(data, &existing)
+	if err := json.Unmarshal(data, &existing); err != nil {
+		return fmt.Errorf("gitlab createWebhook : réponse illisible: %w", err)
+	}
 	for _, h := range existing {
 		if h.URL == hookURL {
 			return nil
@@ -470,7 +478,9 @@ func (p *Provider) DeleteRepo(repoPath string) error {
 	var proj struct {
 		ID int `json:"id"`
 	}
-	json.Unmarshal(data, &proj)
+	if err := json.Unmarshal(data, &proj); err != nil {
+		return fmt.Errorf("gitlab deleteRepo : réponse illisible: %w", err)
+	}
 
 	data, status, err = p.api("GET", "/projects/"+encoded+"/registry/repositories", nil)
 	if err != nil {
@@ -480,7 +490,9 @@ func (p *Provider) DeleteRepo(repoPath string) error {
 		var repos []struct {
 			ID int `json:"id"`
 		}
-		json.Unmarshal(data, &repos)
+		if err := json.Unmarshal(data, &repos); err != nil {
+			return fmt.Errorf("gitlab deleteRepo : réponse illisible: %w", err)
+		}
 		for _, r := range repos {
 			if _, st, err := p.api("DELETE",
 				fmt.Sprintf("/projects/%s/registry/repositories/%d", encoded, r.ID), nil); err != nil || st != 202 {

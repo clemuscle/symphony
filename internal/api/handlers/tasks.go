@@ -91,7 +91,7 @@ func submit(w http.ResponseWriter, r *http.Request, runner *tasks.Runner, db *da
 	kind, resource string, params any, details map[string]any) {
 	task, err := runner.Submit(kind, resource, params, userID(r))
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		internalError(w, r, err)
 		return
 	}
 	if details == nil {
@@ -103,10 +103,10 @@ func submit(w http.ResponseWriter, r *http.Request, runner *tasks.Runner, db *da
 }
 
 // busy répond 409 si une tâche est déjà en cours sur resource
-func busy(w http.ResponseWriter, runner *tasks.Runner, resource string) bool {
+func busy(w http.ResponseWriter, r *http.Request, runner *tasks.Runner, resource string) bool {
 	active, err := runner.Active(resource)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "tâches: "+err.Error())
+		internalError(w, r, err)
 		return true
 	}
 	if active != nil {
@@ -612,7 +612,7 @@ func ListTasks(db *database.DB) http.HandlerFunc {
 		}
 		list, err := db.ListTasks(database.TaskFilter{Resource: r.URL.Query().Get("resource"), Limit: limit})
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, err.Error())
+			internalError(w, r, err)
 			return
 		}
 		respond(w, http.StatusOK, list)
@@ -632,7 +632,7 @@ func GetTask(db *database.DB) http.HandlerFunc {
 			return
 		}
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, err.Error())
+			internalError(w, r, err)
 			return
 		}
 		respond(w, http.StatusOK, t)

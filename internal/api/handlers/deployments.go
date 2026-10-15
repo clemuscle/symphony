@@ -77,7 +77,7 @@ func Deploy(providers *provider.Registry, db *database.DB, runner *tasks.Runner)
 			respondError(w, http.StatusBadRequest, "runtime provider: "+err.Error())
 			return
 		}
-		if busy(w, runner, req.ProjectName) {
+		if busy(w, r, runner, req.ProjectName) {
 			return
 		}
 
@@ -108,7 +108,7 @@ func StopDeployment(providers *provider.Registry, db *database.DB) http.HandlerF
 			return
 		}
 		if err := rt.Stop(id); err != nil {
-			respondError(w, http.StatusInternalServerError, err.Error())
+			providerError(w, r, "arrêt du déploiement", err)
 			return
 		}
 
@@ -129,7 +129,7 @@ func RestartDeployment(providers *provider.Registry, db *database.DB) http.Handl
 			return
 		}
 		if err := rt.Restart(id); err != nil {
-			respondError(w, http.StatusInternalServerError, err.Error())
+			providerError(w, r, "relance du déploiement", err)
 			return
 		}
 
@@ -151,7 +151,7 @@ func GetLogs(providers *provider.Registry) http.HandlerFunc {
 
 		logs, err := rt.Logs(id, 200)
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, err.Error())
+			providerError(w, r, "lecture des logs", err)
 			return
 		}
 		respond(w, http.StatusOK, map[string]string{"logs": logs, "id": id})

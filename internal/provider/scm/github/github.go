@@ -104,7 +104,9 @@ func (p *Provider) CreateRepo(req provider.CreateRepoRequest) (*provider.Repo, e
 		SSHURL        string `json:"ssh_url"`
 		DefaultBranch string `json:"default_branch"`
 	}
-	json.Unmarshal(data, &repo)
+	if err := json.Unmarshal(data, &repo); err != nil {
+		return nil, fmt.Errorf("github createRepo : réponse illisible: %w", err)
+	}
 
 	return &provider.Repo{
 		ID:            repo.FullName,
@@ -128,7 +130,9 @@ func (p *Provider) PushFile(repoPath, branch, filePath, content, commitMsg strin
 		var f struct {
 			SHA string `json:"sha"`
 		}
-		json.Unmarshal(existing, &f)
+		if err := json.Unmarshal(existing, &f); err != nil {
+			return fmt.Errorf("github pushFile : réponse illisible: %w", err)
+		}
 		sha = f.SHA
 	}
 
@@ -247,7 +251,9 @@ func (p *Provider) ListRepos() ([]provider.Repo, error) {
 		CloneURL      string `json:"clone_url"`
 		DefaultBranch string `json:"default_branch"`
 	}
-	json.Unmarshal(data, &repos)
+	if err := json.Unmarshal(data, &repos); err != nil {
+		return nil, fmt.Errorf("github listRepos : réponse illisible: %w", err)
+	}
 
 	out := make([]provider.Repo, len(repos))
 	for i, r := range repos {
@@ -280,7 +286,9 @@ func (p *Provider) GetFileContent(repoPath, branch, filePath string) (string, er
 		Content  string `json:"content"`
 		Encoding string `json:"encoding"`
 	}
-	json.Unmarshal(data, &f)
+	if err := json.Unmarshal(data, &f); err != nil {
+		return "", fmt.Errorf("github getFile : réponse illisible: %w", err)
+	}
 
 	if f.Encoding == "base64" {
 		decoded, err := base64.StdEncoding.DecodeString(
@@ -311,7 +319,9 @@ func (p *Provider) ListFiles(repoPath, branch, dirPath string) ([]string, error)
 		Path string `json:"path"`
 		Type string `json:"type"`
 	}
-	json.Unmarshal(data, &items)
+	if err := json.Unmarshal(data, &items); err != nil {
+		return nil, fmt.Errorf("github listFiles : réponse illisible: %w", err)
+	}
 
 	// L'API contents n'est pas récursive : on descend dans les sous-dossiers
 	var paths []string
@@ -346,7 +356,9 @@ func (p *Provider) DeleteFile(repoPath, branch, filePath, commitMsg string) erro
 	var f struct {
 		SHA string `json:"sha"`
 	}
-	json.Unmarshal(existing, &f)
+	if err := json.Unmarshal(existing, &f); err != nil {
+		return fmt.Errorf("github deleteFile : réponse illisible: %w", err)
+	}
 
 	_, status, err = p.api("DELETE", fmt.Sprintf("/repos/%s/contents/%s", repoPath, filePath),
 		map[string]any{"message": commitMsg, "sha": f.SHA, "branch": branch})

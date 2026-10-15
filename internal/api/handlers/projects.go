@@ -109,10 +109,10 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			respondError(w, http.StatusConflict, "le projet existe déjà: "+req.Name)
 			return
 		} else if !errors.Is(err, sql.ErrNoRows) {
-			respondError(w, http.StatusInternalServerError, "db: "+err.Error())
+			internalError(w, r, err)
 			return
 		}
-		if busy(w, runner, req.Name) {
+		if busy(w, r, runner, req.Name) {
 			return
 		}
 
@@ -206,10 +206,10 @@ func DeleteProject(db *database.DB, runner *tasks.Runner) http.HandlerFunc {
 			return
 		}
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "db: "+err.Error())
+			internalError(w, r, err)
 			return
 		}
-		if busy(w, runner, name) {
+		if busy(w, r, runner, name) {
 			return
 		}
 		submit(w, r, runner, db, KindDeleteProject, name, deleteParams{
@@ -231,13 +231,13 @@ func ListProjects(db *database.DB, store *catalogue.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		projects, err := db.ListProjects()
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, err.Error())
+			internalError(w, r, err)
 			return
 		}
 		// Suppressions en cours : tâches delete_project non terminées
 		active, err := db.ListTasks(database.TaskFilter{Unfinished: true, Limit: 1000})
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, err.Error())
+			internalError(w, r, err)
 			return
 		}
 		deleting := map[string]bool{}
@@ -269,7 +269,7 @@ func GetProjectImage(providers *provider.Registry, db *database.DB) http.Handler
 			return
 		}
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "db: "+err.Error())
+			internalError(w, r, err)
 			return
 		}
 		// Projets créés avant le registry provider : registry par défaut
@@ -284,7 +284,7 @@ func GetProjectImage(providers *provider.Registry, db *database.DB) http.Handler
 			return
 		}
 		if err != nil {
-			respondError(w, http.StatusBadGateway, "registry: "+err.Error())
+			providerError(w, r, "tags du registry", err)
 			return
 		}
 		respond(w, http.StatusOK, map[string]any{
@@ -307,7 +307,7 @@ func ListRepos(providers *provider.Registry) http.HandlerFunc {
 		}
 		repos, err := scm.ListRepos()
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, err.Error())
+			providerError(w, r, "liste des repos", err)
 			return
 		}
 		respond(w, http.StatusOK, repos)

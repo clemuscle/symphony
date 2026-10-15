@@ -48,7 +48,7 @@ func ListIdentityGroups(providers *provider.Registry) http.HandlerFunc {
 			return
 		}
 		if err != nil {
-			respondError(w, http.StatusBadGateway, "annuaire "+idp.ID()+": "+err.Error())
+			providerError(w, r, "annuaire "+idp.ID(), err)
 			return
 		}
 		respond(w, http.StatusOK, map[string]any{"provider": idp.ID(), "supported": true, "groups": groups})
@@ -69,7 +69,7 @@ func ListAudit(db *database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		entries, err := db.ListAudit(50)
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, err.Error())
+			internalError(w, r, err)
 			return
 		}
 		if entries == nil {

@@ -83,7 +83,9 @@ func (p *Provider) TriggerPipeline(repoPath, ref string, vars map[string]string)
 		WebURL string `json:"web_url"`
 		Ref    string `json:"ref"`
 	}
-	json.Unmarshal(data, &result)
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("gitlab triggerPipeline : réponse illisible: %w", err)
+	}
 
 	return &provider.Pipeline{
 		ID:        fmt.Sprintf("%d", result.ID),
@@ -113,7 +115,9 @@ func (p *Provider) GetPipeline(repoPath, pipelineID string) (*provider.Pipeline,
 		CreatedAt  time.Time  `json:"created_at"`
 		FinishedAt *time.Time `json:"finished_at"`
 	}
-	json.Unmarshal(data, &result)
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("gitlab getPipeline : réponse illisible: %w", err)
+	}
 
 	return &provider.Pipeline{
 		ID:         fmt.Sprintf("%d", result.ID),
@@ -143,7 +147,9 @@ func (p *Provider) ListPipelines(repoPath string, limit int) ([]provider.Pipelin
 		Ref       string    `json:"ref"`
 		CreatedAt time.Time `json:"created_at"`
 	}
-	json.Unmarshal(data, &results)
+	if err := json.Unmarshal(data, &results); err != nil {
+		return nil, fmt.Errorf("gitlab listPipelines : réponse illisible: %w", err)
+	}
 
 	pipelines := make([]provider.Pipeline, len(results))
 	for i, r := range results {

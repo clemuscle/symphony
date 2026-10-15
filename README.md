@@ -133,5 +133,5 @@ connexion unique à GitLab), v0.7 (secrets et identité en providers : Vault, Ke
 son annuaire ; golden path GitHub de bout en bout ; bascule Docker sur le `HEALTHCHECK`).
 Détail : [ROADMAP.md](ROADMAP.md) et [CHANGELOG.md](CHANGELOG.md).
 
-**Stack** : Go 1.22+, chi, go-oidc, PostgreSQL, Prometheus client, Vue 3 + Vite, GitLab CE,
+**Stack** : Go 1.27, chi, go-oidc, PostgreSQL, Prometheus client, Vue 3 + Vite, GitLab CE,
 Keycloak, Vault, Docker, k3s, Argo CD.

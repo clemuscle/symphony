@@ -4,7 +4,7 @@
       <div class="brand">
         <span class="logo">🎼</span>
         <span class="name">Symphony</span>
-        <span class="subtitle">Internal Developer Portal</span>
+        <span class="subtitle">Internal Developer Platform</span>
       </div>
       <nav class="nav">
         <RouterLink to="/" class="nav-link">🗂 Projets</RouterLink>

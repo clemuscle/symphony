@@ -194,7 +194,9 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 	var created struct {
 		ID string `json:"Id"`
 	}
-	json.Unmarshal(data, &created)
+	if err := json.Unmarshal(data, &created); err != nil {
+		return nil, fmt.Errorf("docker create : réponse illisible: %w", err)
+	}
 
 	// Bascule : l'ancien est arrêté (il libère le port hôte) mais conservé
 	// jusqu'à ce que le nouveau soit prêt (startAndWatch)
@@ -443,7 +445,9 @@ func (p *Provider) List() ([]provider.Deployment, error) {
 		Labels  map[string]string `json:"Labels"`
 		Created int64             `json:"Created"`
 	}
-	json.Unmarshal(data, &containers)
+	if err := json.Unmarshal(data, &containers); err != nil {
+		return nil, fmt.Errorf("docker list : réponse illisible: %w", err)
+	}
 
 	deployments := make([]provider.Deployment, 0, len(containers))
 	for _, c := range containers {
@@ -538,7 +542,10 @@ func (p *Provider) removeImages(repo string) {
 	var images []struct {
 		RepoTags []string `json:"RepoTags"`
 	}
-	json.Unmarshal(data, &images)
+	if err := json.Unmarshal(data, &images); err != nil {
+		slog.Warn("docker images : réponse illisible", "error", err)
+		return
+	}
 	for _, img := range images {
 		for _, tag := range img.RepoTags {
 			// 409 : image utilisée par un autre container, elle reste
