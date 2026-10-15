@@ -15,7 +15,7 @@
         </RouterLink>
       </nav>
       <div class="user" v-if="session.loaded">
-        <template v-if="session.authEnabled">
+        <template v-if="session.authEnabled && session.user">
           <span class="user-name">{{ session.user.name || session.user.email }}</span>
           <span class="role-badge" :class="session.user.role || 'none'">{{ session.user.role || 'aucun rôle' }}</span>
           <!-- POST : une simple image ou un lien d'un autre site ne peut pas déconnecter -->
@@ -35,7 +35,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { onMounted } from 'vue'
 import { session, loadSession } from './stores/session'
 import { connectTasks, activeTasks } from './stores/tasks'

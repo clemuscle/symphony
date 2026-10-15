@@ -16,6 +16,7 @@ fonctionnalités.
 go build ./... && go vet ./... && go test -race ./...   # aucun test ne demande GitLab ni Docker
 go run ./cmd/symphony             # depuis la racine ; lit symphony.yaml (bootstrap) et .env
 cd frontend && npm run dev        # front en dev, relaie /api et /auth vers :8080
+cd frontend && npm run typecheck && npm run lint && npm test   # vue-tsc, ESLint, Vitest
 cd frontend && npm run build      # front compilé dans internal/web/dist, embarqué au go build
 docker build -t symphony .        # image complète (~10 Mo)
 helm lint deploy/helm/symphony    # chart ; la CI l'installe sur kind (deploy/helm/e2e)
@@ -93,7 +94,9 @@ helm lint deploy/helm/symphony    # chart ; la CI l'installe sur kind (deploy/he
 **Tâches et API**
 - Une étape de tâche peut être rejouée après un redémarrage : tester `x.Get` avant d'agir,
   `x.Set` juste après.
-- Le front lit exactement les clés JSON : tags `json` en snake_case.
+- Le front lit exactement les clés JSON : tags `json` en snake_case, et `frontend/src/types.ts`
+  décrit chaque réponse (à mettre à jour avec les structs Go). Logique pure dans
+  `src/lib/` (testée), composants dans `src/components/`, pages dans `src/views/`.
 - Migration SQL : fichier `migrations/00N_*.sql`, sa variable `//go:embed` **et** la liste
   de `db.go`.
 

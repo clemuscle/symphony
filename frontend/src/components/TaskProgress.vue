@@ -28,23 +28,26 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { kindLabels } from '../stores/tasks'
+import type { Task } from '../types'
 
-const props = defineProps({
-  task: { type: Object, required: true },
-  compact: { type: Boolean, default: false }, // tâche finie : une ligne, sans les étapes
-})
+const props = withDefaults(defineProps<{
+  task: Task
+  compact?: boolean // tâche finie : une ligne, sans les étapes
+}>(), { compact: false })
 
-const icons = { done: '✓', current: '◐', waiting: '○', failed: '✗' }
+type StepState = 'done' | 'current' | 'waiting' | 'failed'
+const icons: Record<StepState, string> = { done: '✓', current: '◐', waiting: '○', failed: '✗' }
 const done = computed(() => props.task.status === 'SUCCESS' || props.task.status === 'FAILED')
 
-const statusLabel = computed(() => ({
+const statusLabels: Record<string, string> = {
   PENDING: 'en file', RUNNING: 'en cours', SUCCESS: 'terminée', FAILED: 'échouée',
-})[props.task.status] || props.task.status)
+}
+const statusLabel = computed(() => statusLabels[props.task.status] || props.task.status)
 
-function stepState(i) {
+function stepState(i: number): StepState {
   const t = props.task
   if (t.status === 'SUCCESS' || i < t.step) return 'done'
   if (i === t.step) return t.status === 'FAILED' ? 'failed' : (t.status === 'RUNNING' ? 'current' : 'waiting')
@@ -52,9 +55,17 @@ function stepState(i) {
 }
 
 // Liens utiles selon le type de tâche : repo, pipeline en cours, service déployé
+// Résultats des étapes utiles à l'affichage (le reste n'est pas lu)
+interface TaskResult {
+  repo?: { web_url?: string }
+  pipeline?: { web_url?: string }
+  pipelines_url?: string
+  deployment?: { url?: string }
+}
+
 const links = computed(() => {
-  const r = props.task.result || {}
-  const out = []
+  const r = (props.task.result ?? {}) as TaskResult
+  const out: { label: string; url: string }[] = []
   if (r.repo?.web_url) out.push({ label: 'Repo', url: r.repo.web_url })
   const pipeline = props.task.wait?.web_url || r.pipeline?.web_url || r.pipelines_url
   if (pipeline) out.push({ label: 'Pipeline', url: pipeline })
@@ -64,14 +75,14 @@ const links = computed(() => {
 
 // Durée rafraîchie chaque seconde tant que la tâche tourne
 const now = ref(Date.now())
-let timer
+let timer: ReturnType<typeof setInterval> | undefined
 onMounted(() => { timer = setInterval(() => { now.value = Date.now() }, 1000) })
 onUnmounted(() => clearInterval(timer))
 
 const when = computed(() => new Date(props.task.created_at).toLocaleTimeString())
 const duration = computed(() => {
-  const end = props.task.finished_at ? new Date(props.task.finished_at) : now.value
-  const s = Math.max(0, Math.round((end - new Date(props.task.created_at)) / 1000))
+  const end = props.task.finished_at ? new Date(props.task.finished_at).getTime() : now.value
+  const s = Math.max(0, Math.round((end - new Date(props.task.created_at).getTime()) / 1000))
   return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`
 })
 </script>

@@ -1,2 +1,17 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: sans-serif; background: #f5f5f5; color: #1a1a1a; }
+
+/* Badges et pastilles d'état, partagés par les cartes et le panneau des projets */
+.tier-badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 500; }
+.tier-badge.critical { background: #fff5f5; color: #c53030; }
+.tier-badge.standard { background: #fffbeb; color: #92400e; }
+.tier-badge.internal { background: #f4f4f4; color: #666; }
+.lifecycle-badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: #f4f4f4; color: #666; }
+.lifecycle-badge.production { background: #f0fff4; color: #276749; }
+.lifecycle-badge.staging { background: #ebf8ff; color: #2b6cb0; }
+.lifecycle-badge.experimental { background: #faf5ff; color: #6b46c1; }
+.lifecycle-badge.deprecated { color: #999; text-decoration: line-through; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #cbd5e0; flex-shrink: 0; }
+.dot.running { background: #38a169; }
+.dot.deploying { background: #ecc94b; }
+.dot.error { background: #e53e3e; }

@@ -22,7 +22,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from 'vue'
 import TaskProgress from '../components/TaskProgress.vue'
 import { taskStore, allTasks, activeTasks } from '../stores/tasks'
