@@ -25,6 +25,11 @@ image `ghcr.io/clemuscle/symphony:X.Y`.
 - **Réabonnement après rotation** : quand l'URL ou le secret des webhooks change (par
   exemple dans Vault), les repos de tous les projets sont réabonnés avec le nouveau
   secret ; GitLab et GitHub mettent à jour un webhook existant au lieu de l'ignorer.
+- **Tests d'intégration** : le parcours complet par l'API (création, pipeline, fiche,
+  staging, refus d'un déploiement direct en production, promotion, action Day-2,
+  suppression) tourne en CI sur une vraie base, avec des providers simulés
+  (`internal/provider/fake`) ; les droits par équipe sont testés route par route. Couverture
+  des paquets de l'API : de 10 % à 76 %.
 - **API décrite en OpenAPI 3.1** (`internal/api/openapi.yaml`, servie sur
   `/api/openapi.yaml`) : chaque route, son rôle minimum (`x-symphony-role`), ses réponses.
   `TestOpenAPICoversRoutes` vérifie qu'elle couvre exactement les routes du serveur ; la
