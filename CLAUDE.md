@@ -61,7 +61,9 @@ helm lint deploy/helm/symphony    # chart ; la CI l'installe sur kind (deploy/he
 
 **Sécurité**
 - Toute route `/api/v1` déclare son rôle (`r.With(viewer|developer|admin)`) ; sinon un
-  utilisateur connecté sans rôle y a accès. Utilisateur : `auth.UserFrom(ctx)`.
+  utilisateur connecté sans rôle y a accès. Utilisateur : `auth.UserFrom(ctx)`. Toute route
+  est décrite dans `internal/api/openapi.yaml` (servie sur `/api/openapi.yaml`, avec son
+  `x-symphony-role`) : `TestOpenAPICoversRoutes` échoue sinon.
 - Un handler qui agit sur un projet (déployer, pipeline, action, logs…) appelle
   `authorizeProject` : admin, ou developer membre de l'équipe du projet (`projects.team`).
 - Un handler qui modifie quelque chose écrit dans l'audit (`audit(db, r, …)`).

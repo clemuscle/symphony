@@ -59,6 +59,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - name: Spécification OpenAPI
+        run: npx -y @redocly/cli@2.57.0 lint ../internal/api/openapi.yaml
       - run: npm run build
 
   helm:

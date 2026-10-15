@@ -1,0 +1,652 @@
+openapi: 3.1.0
+info:
+  title: Symphony
+  version: "0.9"
+  summary: API d'une Internal Developer Platform
+  description: |
+    API de Symphony : golden paths, projets et leur fiche catalogue, déploiements par
+    environnement, tâches asynchrones, actions Day-2.
+
+    **Authentification** : cookie de session posé par `/auth/login` (navigateur), ou jeton
+    OIDC en `Authorization: Bearer` (scripts, CI). Chaque route `/api/v1` exige un rôle
+    minimum (`x-symphony-role`) : `viewer` < `developer` < `admin`. Agir sur un projet
+    (déployer, promouvoir, lancer une pipeline ou une action) demande en plus d'être membre
+    de son équipe, sauf pour un admin.
+
+    **Erreurs** : `{"error": "…"}`. Une erreur interne (500) ou d'un provider (502) ne
+    donne que l'opération et l'identifiant de requête (`request_id`, aussi dans l'en-tête
+    `X-Request-ID`) ; le détail est dans les logs.
+
+    **Tâches** : les opérations longues (création, déploiement, promotion, suppression,
+    actions) répondent `202` avec une tâche, suivie sur `/api/v1/tasks/{id}` ou en direct sur
+    `/api/v1/tasks/events` (Server-Sent Events).
+  license:
+    name: Code source
+    url: https://github.com/clemuscle/symphony
+servers:
+  - url: /
+security:
+  - session: []
+  - bearer: []
+
+tags:
+  - name: Session
+    description: Connexion OIDC (Backend-for-Frontend) et utilisateur courant
+  - name: Projets
+    description: Projets créés depuis les golden paths, leur équipe et leur fiche
+  - name: Catalogue
+    description: Golden paths, fiches catalogue et actions Day-2
+  - name: Déploiements
+    description: Déploiements par environnement, promotion, arrêt, relance, journaux
+  - name: Pipelines
+    description: Pipelines CI des projets
+  - name: Tâches
+    description: Opérations longues, suivies étape par étape
+  - name: Plateforme
+    description: Providers, annuaire, synchronisation, audit
+  - name: Public
+    description: Santé, métriques, webhooks entrants, cette spécification
+
+paths:
+  /healthz:
+    get:
+      tags: [Public]
+      summary: Santé du serveur
+      operationId: getHealthz
+      security: []
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { status: { type: string, const: ok } } } } } }
+  /metrics:
+    get:
+      tags: [Public]
+      summary: Métriques Prometheus (à protéger au niveau réseau)
+      operationId: getMetrics
+      security: []
+      responses:
+        "200": { description: Format texte de Prometheus, content: { text/plain: { schema: { type: string } } } }
+  /api/openapi.yaml:
+    get:
+      tags: [Public]
+      summary: Cette spécification
+      operationId: getApiOpenapiYaml
+      security: []
+      responses:
+        "200": { description: OpenAPI 3.1, content: { application/yaml: { schema: { type: string } } } }
+  /webhooks/gitlab:
+    post:
+      tags: [Public]
+      summary: Événements de pipeline GitLab
+      operationId: postWebhooksGitlab
+      description: Authentifiés par le secret partagé (`X-Gitlab-Token`), comparé en temps constant.
+      security: []
+      responses:
+        "204": { description: Traité ou ignoré }
+        "401": { $ref: "#/components/responses/Error" }
+  /webhooks/github:
+    post:
+      tags: [Public]
+      summary: Événements workflow_run GitHub
+      operationId: postWebhooksGithub
+      description: Corps signé en HMAC-SHA256 (`X-Hub-Signature-256`).
+      security: []
+      responses:
+        "204": { description: Traité ou ignoré }
+        "401": { $ref: "#/components/responses/Error" }
+  /auth/login:
+    get:
+      tags: [Session]
+      summary: Connexion OIDC (redirige vers le fournisseur d'identité)
+      operationId: getAuthLogin
+      security: []
+      parameters:
+        - { name: redirect, in: query, schema: { type: string }, description: Chemin local où revenir }
+      responses:
+        "302": { description: Vers le fournisseur d'identité }
+  /auth/callback:
+    get:
+      tags: [Session]
+      summary: Retour du fournisseur d'identité (pose le cookie de session)
+      operationId: getAuthCallback
+      security: []
+      responses:
+        "302": { description: Vers la page demandée }
+  /auth/logout:
+    post:
+      tags: [Session]
+      summary: Déconnexion (efface la session, puis celle du fournisseur)
+      operationId: postAuthLogout
+      responses:
+        "303": { description: Vers le fournisseur d'identité ou l'accueil }
+
+  /api/v1/me:
+    get:
+      tags: [Session]
+      summary: Utilisateur courant, son rôle et ses équipes
+      operationId: getMe
+      x-symphony-role: ""
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Me" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /api/v1/golden-paths:
+    get:
+      tags: [Catalogue]
+      summary: Golden paths (le catalogue)
+      operationId: getGoldenPaths
+      x-symphony-role: viewer
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/GoldenPath" } } } } }
+  /api/v1/services:
+    get:
+      tags: [Catalogue]
+      summary: Fiches catalogue des projets
+      operationId: getServices
+      x-symphony-role: viewer
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: tier, in: query, schema: { type: string } }
+        - { name: lifecycle, in: query, schema: { type: string } }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Service" } } } } }
+  /api/v1/services/{name}:
+    get:
+      tags: [Catalogue]
+      summary: Fiche d'un projet
+      operationId: getServicesName
+      x-symphony-role: viewer
+      parameters: [{ $ref: "#/components/parameters/name" }]
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Service" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/services/{name}/actions/{action}:
+    post:
+      tags: [Catalogue]
+      summary: Lancer une action Day-2 de la fiche
+      operationId: postServicesNameActionsAction
+      description: Entrées validées contre leur déclaration ; une entrée non déclarée est refusée.
+      x-symphony-role: developer
+      parameters:
+        - { $ref: "#/components/parameters/name" }
+        - { name: action, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content: { application/json: { schema: { type: object, additionalProperties: true, description: Entrées de l'action } } }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "202": { $ref: "#/components/responses/Task" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/projects:
+    get:
+      tags: [Projets]
+      summary: Projets, avec leur fiche et leurs environnements
+      operationId: getProjects
+      x-symphony-role: viewer
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Project" } } } } }
+    post:
+      tags: [Projets]
+      summary: Créer un projet depuis un golden path
+      operationId: postProjects
+      description: Repo, squelette et fiche en un commit, webhook, première pipeline (tâche).
+      x-symphony-role: developer
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateProjectRequest" } } }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "202": { $ref: "#/components/responses/Task" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/projects/{name}:
+    delete:
+      tags: [Projets]
+      summary: Supprimer un projet et tout ce qu'il a créé
+      operationId: deleteProjectsName
+      description: Déploiements de chaque environnement, repo, images, fiche (tâche).
+      x-symphony-role: admin
+      parameters: [{ $ref: "#/components/parameters/name" }]
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "202": { $ref: "#/components/responses/Task" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/projects/{name}/image:
+    get:
+      tags: [Projets]
+      summary: Image du projet dans son registry, et ses tags
+      operationId: getProjectsNameImage
+      x-symphony-role: viewer
+      parameters: [{ $ref: "#/components/parameters/name" }]
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ProjectImage" } } } }
+  /api/v1/projects/{name}/promote:
+    post:
+      tags: [Projets, Déploiements]
+      summary: Promouvoir l'image saine de l'environnement précédent
+      operationId: postProjectsNamePromote
+      description: Seul moyen d'atteindre un environnement protégé (tâche de déploiement).
+      x-symphony-role: developer
+      parameters: [{ $ref: "#/components/parameters/name" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [to], properties: { to: { type: string, examples: [production] } } } } }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "202": { $ref: "#/components/responses/Task" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/environments:
+    get:
+      tags: [Déploiements]
+      summary: Environnements, dans l'ordre de promotion
+      operationId: getEnvironments
+      x-symphony-role: viewer
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Environment" } } } } }
+  /api/v1/deployments:
+    get:
+      tags: [Déploiements]
+      summary: Déploiements de tous les runtimes
+      operationId: getDeployments
+      x-symphony-role: viewer
+      parameters:
+        - { name: provider, in: query, schema: { type: string }, description: Un seul runtime }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Deployment" } } } } }
+    post:
+      tags: [Déploiements]
+      summary: Déployer une image dans un environnement (non protégé)
+      operationId: postDeployments
+      description: Les variables de l'appli viennent de sa fiche, pas de la demande.
+      x-symphony-role: developer
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DeployRequest" } } }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "202": { $ref: "#/components/responses/Task" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/deployments/{id}:
+    delete:
+      tags: [Déploiements]
+      summary: Arrêter un déploiement
+      operationId: deleteDeploymentsId
+      x-symphony-role: developer
+      parameters: [{ $ref: "#/components/parameters/deploymentId" }, { $ref: "#/components/parameters/provider" }]
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "200": { description: Arrêté }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/deployments/{id}/restart:
+    post:
+      tags: [Déploiements]
+      summary: Relancer un déploiement
+      operationId: postDeploymentsIdRestart
+      x-symphony-role: developer
+      parameters: [{ $ref: "#/components/parameters/deploymentId" }, { $ref: "#/components/parameters/provider" }]
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "200": { description: Relancé }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/deployments/{id}/logs:
+    get:
+      tags: [Déploiements]
+      summary: Derniers journaux d'un déploiement
+      operationId: getDeploymentsIdLogs
+      x-symphony-role: developer
+      parameters: [{ $ref: "#/components/parameters/deploymentId" }, { $ref: "#/components/parameters/provider" }]
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { id: { type: string }, logs: { type: string } } } } } }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/v1/repos:
+    get:
+      tags: [Pipelines]
+      summary: Repos des providers SCM
+      operationId: getRepos
+      x-symphony-role: viewer
+      parameters:
+        - { name: provider, in: query, schema: { type: string } }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { type: object } } } } }
+  /api/v1/pipelines/trigger:
+    post:
+      tags: [Pipelines]
+      summary: Relancer la pipeline d'un projet
+      operationId: postPipelinesTrigger
+      description: Sur son repo, avec son CI, sans variables (une pipeline paramétrée passe par une action).
+      x-symphony-role: developer
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [project], properties: { project: { type: string }, ref: { type: string, default: main } } } } }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "200": { description: Lancée, content: { application/json: { schema: { $ref: "#/components/schemas/Pipeline" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/pipelines/status:
+    get:
+      tags: [Pipelines]
+      summary: État d'une pipeline
+      operationId: getPipelinesStatus
+      x-symphony-role: viewer
+      parameters:
+        - { name: repo, in: query, required: true, schema: { type: string } }
+        - { name: id, in: query, required: true, schema: { type: string } }
+        - { name: ci_provider, in: query, schema: { type: string } }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Pipeline" } } } }
+  /api/v1/pipelines/{repo}:
+    get:
+      tags: [Pipelines]
+      summary: Pipelines lancées par Symphony sur un repo
+      operationId: getPipelinesRepo
+      description: "`repo` est le chemin du repo, barres obliques comprises (`apps/payment-api`)."
+      x-symphony-role: viewer
+      parameters:
+        - { name: repo, in: path, required: true, schema: { type: string } }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { type: object } } } } }
+
+  /api/v1/tasks:
+    get:
+      tags: [Tâches]
+      summary: Tâches récentes
+      operationId: getTasks
+      x-symphony-role: viewer
+      parameters:
+        - { name: resource, in: query, schema: { type: string }, description: Un projet ou un service }
+        - { name: limit, in: query, schema: { type: integer, maximum: 200, default: 50 } }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Task" } } } } }
+  /api/v1/tasks/events:
+    get:
+      tags: [Tâches]
+      summary: Flux des changements de tâches (Server-Sent Events, événement task)
+      operationId: getTasksEvents
+      x-symphony-role: viewer
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: Flux, content: { text/event-stream: { schema: { type: string } } } }
+  /api/v1/tasks/{id}:
+    get:
+      tags: [Tâches]
+      summary: Une tâche, ses étapes et ses résultats
+      operationId: getTasksId
+      x-symphony-role: viewer
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/providers:
+    get:
+      tags: [Plateforme]
+      summary: Providers configurés, par type
+      operationId: getProviders
+      x-symphony-role: viewer
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: { type: array, items: { type: string } } } } } }
+  /api/v1/identity/groups:
+    get:
+      tags: [Plateforme]
+      summary: Équipes de l'annuaire (groupes hors groupes de rôles)
+      operationId: getIdentityGroups
+      x-symphony-role: viewer
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/IdentityGroups" } } } }
+  /api/v1/sync:
+    post:
+      tags: [Plateforme]
+      summary: Relire tout de suite les fiches et les golden paths
+      operationId: postSync
+      x-symphony-role: admin
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: Relecture lancée }
+  /api/v1/audit:
+    get:
+      tags: [Plateforme]
+      summary: Journal d'audit (qui a fait quoi)
+      operationId: getAudit
+      x-symphony-role: admin
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AuditEntry" } } } } }
+
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: symphony_session
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT (jeton d'accès OIDC)
+  parameters:
+    name: { name: name, in: path, required: true, schema: { type: string }, description: Nom du projet }
+    deploymentId: { name: id, in: path, required: true, schema: { type: string }, description: Id du déploiement (champ id de la liste) }
+    provider: { name: provider, in: query, required: true, schema: { type: string }, description: Runtime du déploiement (champ provider de la liste) }
+  responses:
+    Error:
+      description: Erreur
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Task:
+      description: Tâche lancée
+      content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        request_id: { type: string, description: Présent pour une erreur interne ou d'un provider }
+    User:
+      type: object
+      properties:
+        subject: { type: string }
+        name: { type: string }
+        email: { type: string }
+        groups: { type: [array, "null"], items: { type: string } }
+        teams: { type: array, items: { type: string }, description: Groupes qui ne donnent pas de rôle }
+        role: { type: string, enum: ["", viewer, developer, admin] }
+    Me:
+      type: object
+      properties:
+        auth_enabled: { type: boolean }
+        user: { oneOf: [{ $ref: "#/components/schemas/User" }, { type: "null" }] }
+    Environment:
+      type: object
+      properties:
+        name: { type: string, examples: [production] }
+        runtime: { type: string, examples: [argocd-k3s] }
+        protected: { type: boolean, description: Promotion seulement }
+    GoldenPath:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        icon: { type: string }
+        language: { type: string }
+        type: { type: string }
+        scm_provider: { type: string }
+        ci_provider: { type: string }
+        registry_provider: { type: string }
+        runtime_provider: { type: string }
+        environments: { type: object, additionalProperties: { type: string }, description: Runtime par environnement }
+    Service:
+      type: object
+      description: Fiche catalogue (catalog-info.yaml du repo du projet)
+      properties:
+        api_version: { type: string }
+        kind: { type: string, const: Service }
+        metadata:
+          type: object
+          properties:
+            name: { type: string }
+            owner: { type: string }
+            tier: { type: string }
+            lifecycle: { type: string }
+            tags: { type: [array, "null"], items: { type: string } }
+        spec:
+          type: object
+          properties:
+            repo: { type: string }
+            links: { type: [array, "null"], items: { type: object } }
+            actions: { type: [array, "null"], items: { type: object } }
+            environments:
+              type: [array, "null"]
+              items:
+                type: object
+                properties:
+                  name: { type: string }
+                  env: { type: object, additionalProperties: { type: string }, description: "Valeurs, ou secret://<provider>/apps/<projet>/…" }
+    Project:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: string }
+        language: { type: string }
+        team: { type: string, description: Équipe propriétaire }
+        golden_path: { type: string }
+        repo_path: { type: string }
+        repo_url: { type: string }
+        scm_provider: { type: string }
+        ci_provider: { type: string }
+        registry_provider: { type: string }
+        runtime_provider: { type: string }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+        deleting: { type: boolean }
+        service: { oneOf: [{ $ref: "#/components/schemas/Service" }, { type: "null" }] }
+        environments: { type: array, items: { $ref: "#/components/schemas/Environment" } }
+    CreateProjectRequest:
+      type: object
+      required: [name, golden_path_id]
+      properties:
+        name: { type: string, pattern: "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$" }
+        description: { type: string }
+        golden_path_id: { type: string }
+        owner: { type: string, description: "Équipe propriétaire : l'une de celles de l'utilisateur (un admin : n'importe laquelle)" }
+        tier: { type: string, enum: [critical, standard, internal] }
+        lifecycle: { type: string, enum: [production, staging, experimental, deprecated] }
+        port: { type: integer, default: 8080 }
+        namespace: { type: string }
+    DeployRequest:
+      type: object
+      required: [project_name, image]
+      properties:
+        project_name: { type: string }
+        environment: { type: string, description: Requis si des environnements sont configurés }
+        image: { type: string }
+        tag: { type: string }
+        port: { type: integer }
+        host_port: { type: integer, description: Runtime docker ; 0 = celui du conteneur remplacé }
+        runtime_provider: { type: string, description: Sans environnements seulement }
+    Deployment:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, description: "<projet>-<environnement>" }
+        project: { type: string }
+        environment: { type: string }
+        image: { type: string }
+        status: { type: string, enum: [running, deploying, stopped, error] }
+        url: { type: string }
+        port: { type: integer }
+        provider: { type: string, description: Runtime }
+        sync: { type: string, description: Argo CD }
+        health: { type: string, description: Argo CD }
+        created_at: { type: string, format: date-time }
+    ProjectImage:
+      type: object
+      properties:
+        image: { type: string }
+        tags: { type: array, items: { type: string } }
+        port: { type: integer }
+        registry_provider: { type: string }
+        runtime_provider: { type: string }
+    Pipeline:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [pending, running, success, failed, canceled, skipped] }
+        web_url: { type: string }
+        ref: { type: string }
+        created_at: { type: string, format: date-time }
+        finished_at: { type: [string, "null"], format: date-time }
+    Task:
+      type: object
+      properties:
+        id: { type: integer }
+        kind: { type: string, enum: [create_project, deploy, delete_project, action_webhook, action_pipeline] }
+        resource: { type: string }
+        status: { type: string, enum: [PENDING, RUNNING, SUCCESS, FAILED] }
+        steps: { type: array, items: { type: string } }
+        step: { type: integer }
+        detail: { type: string }
+        result: { type: [object, "null"], description: Résultats des étapes (jamais de secret) }
+        error: { type: string }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    IdentityGroups:
+      type: object
+      properties:
+        provider: { type: string }
+        supported: { type: boolean }
+        groups: { type: array, items: { type: object, properties: { name: { type: string }, path: { type: string } } } }
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: integer }
+        action: { type: string }
+        resource: { type: string }
+        details: { type: [object, "null"] }
+        user_id: { type: string }
+        ip_address: { type: string }
+        created_at: { type: string, format: date-time }
