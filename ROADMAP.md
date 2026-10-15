@@ -169,24 +169,55 @@ Fini quand : `helm install` donne une instance qui marche, une faute de frappe d
 `symphony.yaml` est refusée avec un message clair, et bob ne peut pas supprimer un projet
 d'une autre équipe.
 
-## v1.0 — La vitrine
+## v0.9 — La vitrine
 
-Objectif : le parcours complet d'une IDP, et une évaluation possible en cinq minutes sans
-rien installer.
+Objectif : le parcours complet d'une IDP, une évaluation possible en cinq minutes sans
+rien installer, et plus aucun point faible visible à la relecture du code.
 
+**Parcours**
 - [ ] Secrets des applis : une variable d'un service référence `secret://vault/…` ; le
       runtime `argocd` la fait lire dans le cluster (External Secrets), le runtime Docker
       la résout au déploiement ; jamais en clair dans Git ni dans l'API
 - [ ] Environnements : un projet a ses environnements (staging, production), chacun avec
       son runtime ; une version déployée en staging se **promeut** en production
-- [ ] Tests : handlers de l'API et base de données couverts ; tests d'intégration de bout
-      en bout dans la CI (GitLab éphémère ou providers simulés)
-- [ ] API décrite en OpenAPI, servie par Symphony
-- [ ] Vitrine : nom unique (« Internal Developer Platform »), repo nettoyé, nouveau GIF,
-      mode visite sans GitLab (données de démo, lecture seule) pour essayer en une minute
-- [ ] Documentation et démo à jour de toutes les fonctionnalités ; release `v1.0`
+- [ ] GitHub à égalité avec GitLab : webhooks de workflow (plus de sondage seul), un
+      deuxième golden path GitHub
+- [ ] Rotation du secret des webhooks : les repos des projets sont réabonnés avec le
+      nouveau secret
+
+**Qualité et sécurité**
+- [ ] Tests : handlers de l'API couverts ; tests d'intégration de bout en bout dans la CI
+      (GitLab éphémère ou providers simulés)
+- [ ] Front : TypeScript, ESLint en CI, tests des stores et des vues clés, vues découpées
+      en composants (`Projects.vue`)
+- [ ] Image non-root par défaut ; risque du socket Docker (runtime `docker`) documenté,
+      avec un proxy de socket limité en démo
+- [ ] API décrite en OpenAPI, servie par Symphony ; identifiants de requête courts (sans
+      le nom de la machine)
+
+**Vitrine**
+- [ ] Mode visite sans GitLab (données de démo, lecture seule) pour essayer en une minute
+- [ ] Nouveau GIF, documentation et démo à jour de toutes les fonctionnalités
+
+## v1.0 — Utilisable par de vraies équipes
+
+Objectif : une équipe plateforme peut installer Symphony, le mettre à jour et s'y fier
+sans lire son code. La v1.0 fige ce qu'elle promet : API `/api/v1`, format de
+`symphony.yaml`, des golden paths et des fiches. Critères à affiner avant de la commencer.
+
+- [ ] Contrat stable : API, configuration et formats versionnés, toute rupture annoncée
+      et accompagnée d'une migration
+- [ ] Montée de version sûre : migrations testées d'une version à l'autre, retour
+      arrière documenté, sauvegarde et restauration de la base
+- [ ] Guide d'exploitation : installation (Helm), configuration de référence, métriques et
+      alertes, dépannage
+- [ ] Sécurité revue : audit des droits par route, dépendances surveillées (Dependabot,
+      govulncheck), politique de signalement des failles
+- [ ] Utilisé pour de vrai : au moins une instance réelle (pas la démo) sur plusieurs
+      semaines, et ses retours traités
 
 ## Hors périmètre
 
 Haute disponibilité multi-réplicas (le catalogue est en mémoire, un seul processus
-exécute les tâches), Harbor, Jenkins, Terraform. Voir [les écarts avec KoreIDP](documentation/architecture.md#écarts-avec-la-proposition-koreidp).
+exécute les tâches), Harbor, Jenkins, Terraform. Symphony lui-même dans le k3s de la démo
+(le chart Helm est installé et vérifié par la CI sur kind). Voir [les écarts avec KoreIDP](documentation/architecture.md#écarts-avec-la-proposition-koreidp).
