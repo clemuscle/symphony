@@ -148,7 +148,7 @@ webhooks, temps réel), v0.6 (vrais projets de démo, fiche catalogue dans le re
 connexion unique à GitLab), v0.7 (secrets et identité en providers : Vault, Keycloak et
 son annuaire ; golden path GitHub de bout en bout ; bascule Docker sur le `HEALTHCHECK`),
 v0.8 (chart Helm testé en CI, configuration stricte, droits par équipe, erreurs masquées).
-À venir, v1.0 : secrets des applis, environnements et promotion, mode visite.
+À venir, v0.9 : secrets des applis, environnements et promotion, mode visite ; puis v1.0, quand Symphony sera utilisable par de vraies équipes.
 Détail : [ROADMAP.md](ROADMAP.md) et [CHANGELOG.md](CHANGELOG.md).
 
 **Stack** : Go 1.27, chi, go-oidc, PostgreSQL, Prometheus client, Vue 3 + Vite, GitLab CE,
