@@ -54,8 +54,12 @@ func New(id, endpoint string) *Provider {
 	}
 }
 
-func (p *Provider) ID() string   { return p.id }
-func (p *Provider) Type() string { return "docker" }
+func (p *Provider) ID() string { return p.id }
+
+// SecretRefs : non, Symphony résout les secrets et les passe dans EnvVars (le
+// conteneur les reçoit dans son environnement, comme toute variable)
+func (p *Provider) SecretRefs() bool { return false }
+func (p *Provider) Type() string     { return "docker" }
 
 func (p *Provider) docker(method, path string, body any) ([]byte, int, error) {
 	var buf io.Reader
@@ -187,8 +191,9 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 			"RestartPolicy": map[string]string{"Name": restartPolicy},
 		},
 		"Labels": map[string]string{
-			"symphony":         "true",
-			"symphony.project": req.Name,
+			"symphony":             "true",
+			"symphony.project":     orName(req.Project, req.Name),
+			"symphony.environment": req.Environment,
 		},
 	}
 
@@ -423,19 +428,18 @@ func (p *Provider) Status(deploymentID string) (*provider.Deployment, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Nom du projet : label posé à la création (le conteneur peut garder son
-	// nom provisoire <nom>-next si le renommage a échoué)
-	name := info.Config.Labels["symphony.project"]
-	if name == "" {
-		name = strings.TrimPrefix(info.Name, "/")
-	}
+	name := strings.TrimPrefix(info.Name, "/")
 	d := &provider.Deployment{
-		ID:        info.ID[:12],
-		Name:      name,
-		Image:     info.Config.Image,
-		Status:    info.State.Status,
-		Port:      info.hostPort(),
-		CreatedAt: info.Created,
+		ID:   info.ID[:12],
+		Name: name,
+		// Projet et environnement : labels posés à la création (le conteneur
+		// peut garder son nom provisoire <nom>-next si le renommage a échoué)
+		Project:     orName(info.Config.Labels["symphony.project"], name),
+		Environment: info.Config.Labels["symphony.environment"],
+		Image:       info.Config.Image,
+		Status:      info.State.Status,
+		Port:        info.hostPort(),
+		CreatedAt:   info.Created,
 	}
 	if d.Port != 0 {
 		d.URL = fmt.Sprintf("http://localhost:%d", d.Port)
@@ -481,13 +485,15 @@ func (p *Provider) List() ([]provider.Deployment, error) {
 			}
 		}
 		deployments = append(deployments, provider.Deployment{
-			ID:        c.ID[:12],
-			Name:      name,
-			Image:     c.Image,
-			Status:    c.State,
-			URL:       depURL,
-			Port:      port,
-			CreatedAt: time.Unix(c.Created, 0),
+			ID:          c.ID[:12],
+			Name:        name,
+			Project:     orName(c.Labels["symphony.project"], name),
+			Environment: c.Labels["symphony.environment"],
+			Image:       c.Image,
+			Status:      c.State,
+			URL:         depURL,
+			Port:        port,
+			CreatedAt:   time.Unix(c.Created, 0),
 		})
 	}
 	return deployments, nil
@@ -508,10 +514,10 @@ func (p *Provider) Logs(deploymentID string, lines int) (string, error) {
 	return cleanLogs(string(data)), nil
 }
 
-// Remove supprime les containers du service (y compris un "-next" resté d'une
-// bascule ratée), leurs volumes anonymes et toutes les images locales de leur
-// repo, quel que soit le tag. Une image encore utilisée par un autre container
-// est gardée.
+// Remove supprime les containers du projet, dans tous ses environnements (y
+// compris un "-next" resté d'une bascule ratée), leurs volumes anonymes et
+// toutes les images locales de leur repo, quel que soit le tag. Une image
+// encore utilisée par un autre container est gardée.
 func (p *Provider) Remove(name string) error {
 	filters := url.QueryEscape(fmt.Sprintf(`{"label":["symphony.project=%s"]}`, name))
 	data, status, err := p.docker("GET", "/containers/json?all=true&filters="+filters, nil)
@@ -570,4 +576,12 @@ func (p *Provider) removeImages(repo string) {
 			}
 		}
 	}
+}
+
+// orName : v, sinon fallback (conteneurs créés avant les environnements)
+func orName(v, fallback string) string {
+	if v != "" {
+		return v
+	}
+	return fallback
 }

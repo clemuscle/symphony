@@ -39,7 +39,17 @@
           <label>Port hôte (docker)</label>
           <input v-model.number="form.host_port" type="number" placeholder="auto" />
         </div>
-        <div class="field">
+        <!-- Avec des environnements : la cible est un environnement (son runtime),
+             les environnements protégés ne reçoivent que des promotions -->
+        <div class="field" v-if="projectEnvs.length">
+          <label>Environnement *</label>
+          <select v-model="form.environment" required>
+            <option v-for="e in projectEnvs" :key="e.name" :value="e.name" :disabled="e.protected">
+              {{ e.name }} ({{ e.runtime }}){{ e.protected ? ' — promotion seulement' : '' }}
+            </option>
+          </select>
+        </div>
+        <div class="field" v-else>
           <label>Runtime</label>
           <select v-model="form.runtime_provider">
             <option value="">celui du projet</option>
@@ -63,7 +73,10 @@
     <div class="grid" v-else>
       <div class="deploy-card" v-for="d in deployments" :key="d.provider + '/' + d.id">
         <div class="deploy-header">
-          <span class="deploy-name">{{ d.name || d.id }}</span>
+          <span class="deploy-name">
+            {{ d.project || d.name || d.id }}
+            <span class="env-badge" v-if="d.environment">{{ d.environment }}</span>
+          </span>
           <span :class="['status', d.status]">{{ d.status }}</span>
         </div>
         <div class="deploy-runtime">
@@ -74,7 +87,7 @@
         </div>
         <div class="deploy-image">{{ d.sync ? '☸️' : '🐳' }} {{ d.image || '—' }}</div>
         <a v-if="d.url" :href="d.url" target="_blank" class="deploy-url">{{ d.url }} ↗</a>
-        <div class="deploy-footer" v-if="canOperate(teamOf(d.name))">
+        <div class="deploy-footer" v-if="canOperate(teamOf(d.project || d.name))">
           <button class="btn-stop" v-if="isUp(d)" @click="stop(d)">⏹ Stop</button>
           <button class="btn-restart" @click="restart(d)">↻ {{ isUp(d) ? 'Redémarrer' : 'Relancer' }}</button>
         </div>
@@ -105,7 +118,7 @@ const deployTask = computed(() => (deployTaskId.value ? taskStore.byId[deployTas
 const deployError = ref<string | null>(null)
 
 const form = ref({
-  project_name: '', image: '', tag: 'latest',
+  project_name: '', environment: '', image: '', tag: 'latest',
   port: 8080 as number | '', host_port: null as number | '' | null, runtime_provider: '',
 })
 const runtimes = ref<string[]>([])
@@ -113,6 +126,14 @@ const runtimes = ref<string[]>([])
 const projects = ref<Project[]>([])
 // Équipe du projet d'un déploiement (le déploiement porte le nom du projet)
 const teamOf = (name: string) => projects.value.find(p => p.name === name)?.team
+// Environnements du projet saisi (avec son runtime dans chacun)
+const projectEnvs = computed(() => projects.value.find(p => p.name === form.value.project_name)?.environments ?? [])
+// Environnement par défaut : le premier qui accepte un déploiement direct
+watch(projectEnvs, (envs) => {
+  if (!envs.some(e => e.name === form.value.environment && !e.protected)) {
+    form.value.environment = envs.find(e => !e.protected)?.name ?? ''
+  }
+})
 const tags = ref<string[]>([])
 const imageHint = ref('')
 let autoImage = '' // dernière image préremplie : écrasée seulement si l'utilisateur ne l'a pas modifiée
@@ -202,6 +223,7 @@ async function restart(d: Deployment) {
 </script>
 
 <style scoped>
+.env-badge { font-size: 11px; font-weight: 500; padding: 1px 8px; border-radius: 20px; background: #ebf4ff; color: #4c51bf; margin-left: 6px; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
 h2 { font-size: 22px; font-weight: 700; }
 .subtitle { color: #888; font-size: 13px; margin-top: 4px; }

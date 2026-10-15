@@ -63,8 +63,14 @@ export interface Service {
     actions: Action[] | null
     dependencies: { service: string; type: string }[] | null
     slo: { availability: string; latency_p99: string; error_budget: string }
-    environments: { name: string; url: string; type: string }[] | null
+    environments: { name: string; url: string; type: string; env?: Record<string, string> }[] | null
   }
+}
+
+export interface Environment {
+  name: string
+  runtime: string // runtime du projet dans cet environnement
+  protected: boolean // promotion seulement
 }
 
 export interface Project {
@@ -88,6 +94,7 @@ export interface Project {
   created_at: string
   deleting?: boolean
   service: Service | null // fiche catalogue, absente si le repo n'en a pas
+  environments: Environment[] // vide : pas d'environnements configurés
 }
 
 export interface GoldenPath {
@@ -109,7 +116,9 @@ export interface GoldenPath {
 
 export interface Deployment {
   id: string
-  name: string // nom du projet
+  name: string // nom du déploiement : <projet>-<environnement>
+  project: string
+  environment: string // vide : sans environnement
   image: string
   status: string // running, deploying, stopped, error
   url: string
@@ -179,12 +188,12 @@ export interface CreateProjectRequest {
 
 export interface DeployRequest {
   project_name: string
+  environment?: string
   image: string
   tag: string
   port?: number
   host_port?: number
   runtime_provider?: string
-  env_vars?: Record<string, string>
 }
 
 export interface AuditEntry {

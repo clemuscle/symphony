@@ -26,9 +26,6 @@ spec:
     - title: Pipelines
       url: __REPO_URL__/-/pipelines
       icon: ci
-    - title: Documentation de l'API (Swagger)
-      url: __APP_URL__/docs
-      icon: docs
   dependencies:
     - service: postgres-identity
       type: database

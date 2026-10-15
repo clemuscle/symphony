@@ -30,7 +30,40 @@
       <div class="info-row" v-if="project.created_by"><span>Créé par</span><strong>{{ project.created_by }}</strong></div>
     </section>
 
-    <section>
+    <!-- Environnements : un déploiement par environnement, promotion de l'un à l'autre -->
+    <section v-if="project.environments.length">
+      <h4>Environnements</h4>
+      <div class="env-item" v-for="(e, i) in project.environments" :key="e.name">
+        <div class="deploy-head">
+          <span><strong>{{ e.name }}</strong> <span class="muted">· {{ runtimeLabel(e.runtime) }}</span>
+            <span class="lock" v-if="e.protected" title="Protégé : promotion seulement">🔒</span></span>
+          <span class="muted" v-if="byEnv(e.name)">
+            <span :class="['dot', byEnv(e.name)!.status]"></span> {{ byEnv(e.name)!.status }}
+          </span>
+          <span class="muted" v-else>non déployé</span>
+        </div>
+        <template v-if="byEnv(e.name)">
+          <a v-if="byEnv(e.name)!.url" :href="byEnv(e.name)!.url" target="_blank" class="deploy-url">{{ byEnv(e.name)!.url }} ↗</a>
+          <code class="deploy-image">{{ byEnv(e.name)!.image }}</code>
+        </template>
+        <button class="btn-ghost block" v-if="i > 0 && allowed"
+          :disabled="!canPromote(i) || promoting"
+          :title="canPromote(i) ? '' : 'Rien de sain à promouvoir en ' + project.environments[i - 1].name"
+          @click="promote(e.name)">
+          ⬆ Promouvoir depuis {{ project.environments[i - 1].name }}
+        </button>
+      </div>
+      <TaskProgress v-if="promoteTask" :task="promoteTask" />
+      <div class="feedback err" v-if="promoteError">❌ {{ promoteError }}</div>
+      <RouterLink v-if="allowed" :to="{ path: '/deployments', query: { project: project.name } }" class="btn-ghost block">
+        🚀 Déployer une version
+      </RouterLink>
+      <div class="muted small" v-else-if="can('developer')">
+        Déploiement et actions réservés à l'équipe {{ project.team || 'propriétaire' }} et aux admins.
+      </div>
+    </section>
+
+    <section v-else>
       <h4>Déploiements</h4>
       <div class="deploy-item" v-for="d in deployments" :key="d.provider + d.id">
         <div class="deploy-head">
@@ -121,9 +154,10 @@ import { computed, onUnmounted, ref } from 'vue'
 import { api, errorMessage } from '../api'
 import { depIcon, ficheURL, lifecycle, linkIcon, pipelinesURL, repoWebURL, runtimeLabel, tier, tierIcon } from '../lib/projects'
 import { can, canOperate } from '../stores/session'
-import { activeTaskFor, trackTask } from '../stores/tasks'
+import { activeTaskFor, taskStore, trackTask } from '../stores/tasks'
 import type { Deployment, Project } from '../types'
 import DayTwoAction from './DayTwoAction.vue'
+import TaskProgress from './TaskProgress.vue'
 
 const props = defineProps<{ project: Project; deployments: Deployment[] }>()
 const emit = defineEmits<{ close: [] }>()
@@ -134,6 +168,27 @@ const deleting = computed(() => !!props.project.deleting || !!activeTaskFor(prop
 // Repo et Pipelines ont déjà leurs boutons
 const extraLinks = computed(() =>
   (svc.value?.spec.links ?? []).filter(l => !['Repository', 'Pipelines'].includes(l.title)))
+
+// Environnements : le déploiement de chacun, et la promotion depuis le précédent
+const byEnv = (env: string) => props.deployments.find(d => d.environment === env)
+const canPromote = (i: number) => byEnv(props.project.environments[i - 1].name)?.status === 'running'
+const promoting = ref(false)
+const promoteError = ref('')
+const promoteTaskId = ref<number | null>(null)
+const promoteTask = computed(() => (promoteTaskId.value ? taskStore.byId[promoteTaskId.value] : undefined))
+
+async function promote(to: string) {
+  promoting.value = true
+  promoteError.value = ''
+  try {
+    const { data } = await api.promote(props.project.name, to)
+    promoteTaskId.value = trackTask(data)
+  } catch (e) {
+    promoteError.value = errorMessage(e)
+  } finally {
+    promoting.value = false
+  }
+}
 
 // Relance manuelle de la pipeline (projet sans fiche) : suivie par sondage
 const pipeline = ref<{ id: string; status: string } | null>(null)
@@ -202,6 +257,10 @@ h4 { font-size: 11px; text-transform: uppercase; color: #aaa; letter-spacing: .0
 .status-badge.success { background: #f0fff4; color: #276749; }
 .status-badge.failed { background: #fff5f5; color: #c53030; }
 .status-badge.running { background: #ebf8ff; color: #2b6cb0; }
+.env-item { background: #f8f9fb; border-radius: 10px; padding: 12px; margin-bottom: 8px; font-size: 13px; }
+.lock { margin-left: 4px; }
+.feedback { margin-top: 8px; padding: 8px 12px; border-radius: 6px; font-size: 13px; }
+.feedback.err { background: #fff5f5; color: #c53030; }
 .deploy-item { background: #f8f9fb; border-radius: 10px; padding: 12px; margin-bottom: 8px; font-size: 13px; }
 .deploy-head { display: flex; justify-content: space-between; margin-bottom: 6px; }
 .deploy-url { display: block; color: #667eea; text-decoration: none; font-weight: 500; margin-bottom: 4px; word-break: break-all; }

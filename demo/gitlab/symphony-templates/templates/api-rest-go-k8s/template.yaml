@@ -15,3 +15,6 @@ spec:
     runtime: argocd-k3s
   skeleton: skeleton
   ci_template: ci.gitlab-ci.yml
+  # Kubernetes dès staging (la configuration met staging sur Docker)
+  environments:
+    staging: argocd-k3s

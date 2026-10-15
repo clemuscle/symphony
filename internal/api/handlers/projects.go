@@ -15,6 +15,7 @@ import (
 	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/database"
+	"github.com/clemuscle/symphony/internal/environments"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/provider"
 	"github.com/clemuscle/symphony/internal/tasks"
@@ -267,9 +268,11 @@ func DeleteProject(db *database.DB, runner *tasks.Runner) http.HandlerFunc {
 type projectView struct {
 	database.Project
 	Service *catalogue.Service `json:"service"`
+	// Environnements du projet, avec son runtime dans chacun
+	Environments []environments.Environment `json:"environments"`
 }
 
-func ListProjects(db *database.DB, store *catalogue.Store) http.HandlerFunc {
+func ListProjects(db *database.DB, store *catalogue.Store, templates *gitops.TemplateLoader, envs *environments.Holder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		projects, err := db.ListProjects()
 		if err != nil {
@@ -291,7 +294,7 @@ func ListProjects(db *database.DB, store *catalogue.Store) http.HandlerFunc {
 		views := make([]projectView, len(projects))
 		for i, p := range projects {
 			p.Deleting = deleting[p.Name]
-			views[i] = projectView{Project: p}
+			views[i] = projectView{Project: p, Environments: projectEnvironments(envs, templates, &p)}
 			if svc, ok := store.Get(p.Name); ok {
 				views[i].Service = &svc
 			}

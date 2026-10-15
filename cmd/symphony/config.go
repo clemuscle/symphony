@@ -9,6 +9,7 @@ import (
 
 	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/config"
+	"github.com/clemuscle/symphony/internal/environments"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/metrics"
 	"github.com/clemuscle/symphony/internal/provider"
@@ -151,6 +152,7 @@ type configWatcher struct {
 	templates *gitops.TemplateLoader
 	security  *auth.Holder
 	webhooks  *webhook.Holder
+	envs      *environments.Holder
 	codec     *auth.Codec
 	interval  time.Duration
 
@@ -248,6 +250,9 @@ func (w *configWatcher) apply(cfg *config.Config) error {
 	w.providers.Replace(next)
 	w.security.Set(policy)
 	w.webhooks.Set(hooks)
+	if w.envs != nil {
+		w.envs.Set(resolved.Environments)
+	}
 	if hooks.Enabled() && (old.URL != hooks.URL || old.Secret != hooks.Secret) && w.resubscribe != nil {
 		go w.resubscribe(hooks)
 	}

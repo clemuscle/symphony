@@ -63,40 +63,55 @@ liste toutes, avec leur auteur et leur durée.
 (`docker compose restart symphony` dans `demo/`). La page se reconnecte seule et la
 création reprend là où elle en était, sans recréer de repo.
 
-## 3. Déployer (1 min)
+## 3. Déployer en staging (1 min)
 
 Tâche terminée : le lien **déployer hello-api →** ouvre la page **Déploiements** avec le
-projet saisi ; l'image et ses tags sont préremplis depuis le registry. **Déployer** : la
-tâche tire l'image, démarre le conteneur, puis attend qu'il tourne ; le service apparaît
-dans la liste avec son URL (`/healthz` répond).
+projet saisi ; l'image et ses tags sont préremplis depuis le registry, l'environnement
+proposé est **staging** (production est grisée : « promotion seulement »). **Déployer** :
+la tâche tire l'image, démarre le conteneur `hello-api-staging`, puis attend qu'il tourne ;
+le service apparaît avec son URL (`/healthz` répond).
 
-Redéployer ensuite le même service : la bascule garde le même port et attend que le
-nouveau conteneur soit `healthy` (le `HEALTHCHECK` du Dockerfile du golden path) avant de
-supprimer l'ancien ; s'il ne le devient pas, l'ancien est relancé et la tâche montre la
-sortie du healthcheck.
+Redéployer ensuite : la bascule garde le même port et attend que le nouveau conteneur soit
+`healthy` (le `HEALTHCHECK` du Dockerfile du golden path) avant de supprimer l'ancien ;
+s'il ne le devient pas, l'ancien est relancé et la tâche montre la sortie du healthcheck.
 
-## 3 bis. Déployer sur Kubernetes, en GitOps (2 min)
+## 3 bis. Promouvoir en production, sur Kubernetes en GitOps (2 min)
 
-Créer un second service, `hello-k8s`, avec le golden path **API REST Go (Kubernetes)** :
-son runtime est `argocd-k3s`. Pipeline verte, page **Déploiements**, saisir `hello-k8s` :
-image, tags **et runtime** sont préremplis. **Déployer** : la tâche montre
-`Argo CD : OutOfSync / Missing` puis `Synced / Healthy` en quelques secondes, et le
-service répond sur http://hello-k8s.localhost:8081/healthz.
+Dans **Projets**, `hello-api` : la section **Environnements** montre staging (Docker,
+running) et production (Kubernetes, 🔒, non déployé). **⬆ Promouvoir depuis staging** :
+la même image part en production, sur l'autre runtime. La tâche montre
+`Argo CD : OutOfSync / Missing` puis `Synced / Healthy`, et le service répond sur
+http://hello-api-production.localhost:8081/healthz. Un déploiement direct en production
+est refusé (`403`, l'API le dit : « production est protégé »).
 
 Symphony n'a rien appliqué lui-même :
 
 - dans GitLab, `platform/symphony-deployments` a reçu un commit
-  `deploy: hello-k8s localhost:5050/apps/hello-k8s:<sha>` avec `apps/hello-k8s/` ;
+  `deploy: hello-api-production …` avec `apps/hello-api-production/` ;
 - dans Argo CD (http://localhost:8088, identifiants affichés par `up.sh`), l'Application
-  `hello-k8s` pointe sur ce dossier.
+  `hello-api-production` pointe sur ce dossier.
 
 **Stop** commite `count: 0` dans `kustomization.yaml`, **Relancer** remet un réplica.
 Modifier le cluster à la main ne tient pas : Argo CD le ramène à l'état de Git.
 
 ```bash
 export KUBECONFIG=demo/k3s/kubeconfig.yaml
-kubectl -n symphony-apps scale deploy hello-k8s --replicas=3   # revient à 1 en quelques secondes
+kubectl -n symphony-apps scale deploy hello-api-production --replicas=3   # revient à 1 en quelques secondes
 ```
+
+**Secrets de l'appli.** `payment-api` (amorcé par la démo) lit son mot de passe de base dans
+Vault : sa fiche déclare `DB_PASSWORD: secret://vault/apps/payment-api/db#password` pour
+chaque environnement. En production (Kubernetes), le repo de déploiement ne contient
+qu'une `ExternalSecret` (des références) ; External Secrets Operator crée le Secret dans
+le cluster :
+
+```bash
+kubectl -n symphony-apps get externalsecret,secret payment-api-production-env
+```
+
+Une fiche qui viserait `secret://vault/symphony/gitlab#token` (le jeton de Symphony) ou les
+secrets d'un autre projet ferait échouer le déploiement : un projet ne lit que
+`apps/<projet>/`.
 
 ## 4. Côté plateforme : tout se pilote par Git (2 min)
 
@@ -154,18 +169,18 @@ par `bob@demo.symphony`.
 
 ## 5 bis. Supprimer pour de bon (1 min)
 
-Toujours en **alice** : **Projets**, supprimer `hello-k8s`. La tâche montre ses étapes :
+Toujours en **alice** : **Projets**, supprimer `hello-api`. La tâche montre ses étapes :
 
 1. **Déploiements** : l'Application Argo CD est supprimée avec ses ressources (pods,
-   Service, Ingress), et `apps/hello-k8s/` quitte `platform/symphony-deployments` (commits
-   `remove: hello-k8s`). Pour un service Docker : conteneur et images locales.
+   Service, Ingress), et `apps/hello-api-production/` quitte `platform/symphony-deployments` (commits
+   `remove: hello-api-production`). Pour staging (Docker) : conteneur et images locales ; tous les environnements partent.
 2. **Repo et images** : purge du registry (2 à 3 min sur GitLab), puis suppression
    **définitive** du repo : GitLab 18 ne ferait sinon que la programmer
    (`-deletion_scheduled-`, gardé plusieurs jours).
 3. **Fiche catalogue** et **Projet** : la fiche est partie avec le repo ; plus rien en base.
 
-À la fin, `kubectl -n symphony-apps get all` ne montre plus rien de `hello-k8s`, et
-http://hello-k8s.localhost:8081 ne répond plus.
+À la fin, `kubectl -n symphony-apps get all` ne montre plus rien de `hello-api`, et
+http://hello-api-production.localhost:8081 ne répond plus.
 
 ## 6. Observer (30 s)
 

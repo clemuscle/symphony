@@ -221,6 +221,38 @@ synchronisé et pods prêts, ou conteneur démarré), 5 min au plus.
    dépassé) l'ancien redémarre et l'erreur contient les derniers logs du nouveau et la
    sortie de son healthcheck.
 
+### Environnements et promotion
+
+L'équipe plateforme déclare les environnements dans `symphony.yaml`, dans l'ordre de
+promotion (`environments: [{name, runtime, protected}]`) ; un golden path peut changer le
+runtime d'un environnement (`spec.environments`, ex. `staging: argocd-k3s`). Un
+déploiement vise un environnement : il s'appelle `<projet>-<environnement>` (conteneur,
+Application Argo CD, hôte de l'Ingress) et porte le projet et l'environnement en labels,
+ce qui permet de tout retrouver et de tout supprimer avec le projet.
+
+Un environnement **protégé** (la production) refuse le déploiement direct : on y
+**promeut** (`POST /api/v1/projects/{nom}/promote`) l'image exacte qui tourne, saine, dans
+l'environnement précédent, éventuellement d'un runtime à l'autre (Docker en staging,
+Kubernetes en production). Sans section `environments`, un projet a un seul déploiement,
+comme avant.
+
+### Variables et secrets des applications
+
+Les variables d'une appli sont déclarées par environnement dans sa fiche, dans Git
+(`spec.environments[].env`) : la demande de déploiement n'en porte pas. Une valeur peut
+être une référence `secret://vault/apps/<projet>/<chemin>#<clé>`. Un projet ne lit que
+ses secrets (`apps/<projet>/…`), jamais le provider `env` (l'environnement de Symphony,
+avec ses jetons) ni les secrets d'un autre projet. Le runtime décide du transport
+(`SecretRefs()`) :
+
+- **Docker** : Symphony lit le secret au moment du déploiement et le passe au conteneur ;
+  la valeur n'est jamais enregistrée (ni dans la tâche, ni en base).
+- **Argo CD** : la valeur ne doit jamais aller dans Git. Le runtime écrit une
+  `ExternalSecret` (références seules) ; External Secrets Operator, dans le cluster, lit
+  Vault par le `ClusterSecretStore` configuré (`secret_store`) et crée le Secret
+  `<déploiement>-env`, que le Deployment lit (`secretKeyRef`). Sans `secret_store`, un
+  déploiement avec des secrets est refusé plutôt que d'écrire une valeur dans Git.
+
 ### Déployer sur Kubernetes (runtime `argocd`, GitOps)
 
 Le runtime d'un projet vient de son golden path (`spec.providers.runtime`) ; le formulaire
@@ -328,7 +360,8 @@ implémentations n'en savent rien.
 | Autorisations | rôles `viewer` < `developer` < `admin` déduits des groupes OIDC (configuration), vérifiés par route ; agir sur un projet (déployer, pipeline, actions) est réservé aux developers de son équipe et aux admins | — |
 | CSRF | requête modifiante avec cookie : `Origin` (ou `Sec-Fetch-Site`) doit être Symphony | — |
 | CORS | aucune origine tierce par défaut ; liste `cors_origins`, sans cookies | — |
-| Secrets | providers de secrets (Vault par AppRole en démo, variables d'environnement) ; références `secret://` dans la configuration, résolues dans une copie ; jamais dans les fichiers, les logs, les résultats de tâches ni le repo de déploiement | — |
+| Secrets | providers de secrets (Vault par AppRole en démo, variables d'environnement) ; références `secret://` dans la configuration, résolues dans une copie ; jamais dans les fichiers, les logs, les résultats de tâches ni le repo de déploiement. Secrets des applis : limités à `apps/<projet>/`, passés par External Secrets sur Kubernetes | — |
+| Production | environnement protégé : seule une image saine en staging y est promue | — |
 | Argo CD | compte de service à jeton (`apiKey`), limité aux Applications du projet `default` et à leurs journaux | — |
 | Runtime `docker` | créer un conteneur sur un daemon Docker équivaut à un accès root à la machine : runtime réservé à un poste ou à une démo (en production, `argocd`). Image non-root ; en démo, pas de socket monté dans Symphony mais un proxy qui n'ouvre que les conteneurs et les images | — |
 | Fuite de token | l'auth du registry n'est envoyée qu'au registry qui héberge l'image | — |

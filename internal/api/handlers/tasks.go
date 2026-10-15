@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/database"
+	"github.com/clemuscle/symphony/internal/environments"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/metrics"
 	"github.com/clemuscle/symphony/internal/provider"
@@ -34,6 +36,8 @@ type TaskDeps struct {
 	Templates *gitops.TemplateLoader
 	Syncer    *gitops.Syncer
 	Webhooks  *webhook.Holder
+	Store     *catalogue.Store // fiches : variables des applications
+	Envs      *environments.Holder
 }
 
 // startupTimeout : délai pour qu'un service déployé soit prêt (pull de

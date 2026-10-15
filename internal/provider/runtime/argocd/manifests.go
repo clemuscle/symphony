@@ -20,6 +20,7 @@ const (
 	deploymentFile    = "deployment.yaml"
 	serviceFile       = "service.yaml"
 	ingressFile       = "ingress.yaml"
+	secretFile        = "externalsecret.yaml"
 )
 
 // restartAnnotation : changer sa valeur relance les pods (nouveau ReplicaSet)
@@ -45,9 +46,17 @@ type service struct {
 	Env          []envVar
 	IngressHost  string // vide : pas d'Ingress
 	IngressClass string // vide : classe par défaut du cluster
+	// Variables secrètes : lues dans le coffre par External Secrets Operator
+	// (ClusterSecretStore SecretStore) dans le Secret <nom>-env ; seules les
+	// références vont dans Git
+	Secrets     []secretVar
+	SecretStore string
 }
 
 type envVar struct{ Name, Value string }
+
+// secretVar : variable Name = clé Key du secret Path du coffre
+type secretVar struct{ Name, Path, Key string }
 
 func sortedEnv(vars map[string]string) []envVar {
 	env := make([]envVar, 0, len(vars))
@@ -124,6 +133,14 @@ func (s service) files() (map[string]string, error) {
 		files[ingressFile] = b.String()
 		resources = append(resources, ingressFile)
 	}
+	if len(s.Secrets) > 0 {
+		var b strings.Builder
+		if err := secretTmpl.Execute(&b, s); err != nil {
+			return nil, fmt.Errorf("%s: %w", secretFile, err)
+		}
+		files[secretFile] = b.String()
+		resources = append(resources, secretFile)
+	}
 
 	k, err := kustomization{
 		APIVersion: "kustomize.config.k8s.io/v1beta1",
@@ -172,11 +189,18 @@ spec:
           ports:
             - name: http
               containerPort: {{.Port}}
-{{- if .Env}}
+{{- if or .Env .Secrets}}
           env:
 {{- range .Env}}
             - name: {{q .Name}}
               value: {{q .Value}}
+{{- end}}
+{{- range .Secrets}}
+            - name: {{q .Name}}
+              valueFrom:
+                secretKeyRef:
+                  name: {{$.Name}}-env
+                  key: {{q .Name}}
 {{- end}}
 {{- end}}
           readinessProbe:
@@ -228,4 +252,33 @@ spec:
                 name: {{.Name}}
                 port:
                   name: http
+`))
+
+// secretTmpl : ExternalSecret (External Secrets Operator) qui crée le Secret
+// <nom>-env à partir du coffre ; aucune valeur dans Git
+var secretTmpl = template.Must(template.New(secretFile).Funcs(funcs).Parse(`# Généré par Symphony : références des secrets, lus dans le coffre par
+# External Secrets Operator (aucune valeur dans Git)
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{.Name}}-env
+  labels:
+    app.kubernetes.io/name: {{.Name}}
+    app.kubernetes.io/managed-by: symphony
+spec:
+  refreshInterval: 1m
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: {{q .SecretStore}}
+  target:
+    name: {{.Name}}-env
+  data:
+{{- range .Secrets}}
+    - secretKey: {{q .Name}}
+      remoteRef:
+        key: {{q .Path}}
+{{- if .Key}}
+        property: {{q .Key}}
+{{- end}}
+{{- end}}
 `))

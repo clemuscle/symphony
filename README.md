@@ -24,6 +24,10 @@ de les remplacer.
 - **Déploiement sur Kubernetes en GitOps** : Symphony commite les manifests du service dans
   un repo de déploiement et crée l'`Application` Argo CD ; Argo CD applique, corrige les
   dérives, et l'UI affiche son état (Synced, Healthy). Symphony n'a aucun accès au cluster.
+- **Environnements et promotion** : staging, puis production protégée, où l'on ne fait que
+  **promouvoir** l'image qui tourne saine en staging, d'un runtime à l'autre. Les variables
+  de chaque environnement vivent dans la fiche du projet ; ses secrets viennent de Vault
+  (External Secrets sur Kubernetes, jamais de valeur dans Git).
 - **Déploiement Docker** pour aller vite en local : port stable d'une version à l'autre,
   bascule quand la nouvelle version est `healthy` (le `HEALTHCHECK` de l'image), retour
   automatique à l'ancienne sinon.

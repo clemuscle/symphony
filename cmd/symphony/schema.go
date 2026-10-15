@@ -38,7 +38,8 @@ var schemas = map[string]map[string]providerSchema{
 		"argocd": {
 			required: []string{"url", "token", "repo", "repo_url"},
 			optional: []string{"scm_ref", "insecure", "branch", "path", "project", "cluster",
-				"namespace", "ingress_domain", "ingress_class", "ingress_port"},
+				"namespace", "ingress_domain", "ingress_class", "ingress_port",
+				"secret_store", "secret_store_provider"},
 		},
 	},
 	"secrets": {

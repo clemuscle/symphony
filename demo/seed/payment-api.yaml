@@ -27,11 +27,8 @@ spec:
       url: __REPO_URL__/-/pipelines
       icon: ci
     - title: Application Argo CD
-      url: __ARGOCD_URL__/applications/argocd/payment-api
+      url: __ARGOCD_URL__/applications/argocd/payment-api-production
       icon: web
-    - title: Métriques
-      url: __APP_URL__/metrics
-      icon: monitoring
   dependencies:
     - service: auth-service
       type: api
@@ -39,6 +36,17 @@ spec:
       type: database
     - service: kafka-events
       type: queue
+  # Variables par environnement ; les secrets sont des références, lues dans
+  # Vault au déploiement (Docker) ou par External Secrets Operator (Kubernetes)
+  environments:
+    - name: staging
+      env:
+        LOG_LEVEL: debug
+        DB_PASSWORD: secret://vault/apps/payment-api/db#password
+    - name: production
+      env:
+        LOG_LEVEL: info
+        DB_PASSWORD: secret://vault/apps/payment-api/db#password
   slo:
     availability: "99.99%"
     latency_p99: 200ms

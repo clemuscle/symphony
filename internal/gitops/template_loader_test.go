@@ -2,6 +2,7 @@ package gitops
 
 import (
 	"errors"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -84,7 +85,7 @@ func TestParseTemplate(t *testing.T) {
 		Skeleton:   "templates/api-rest-go/skeleton",
 		CITemplate: "templates/api-rest-go/ci.gitlab-ci.yml",
 	}
-	if gp != want {
+	if !reflect.DeepEqual(gp, want) {
 		t.Errorf("parseTemplate = %+v\nattendu %+v", gp, want)
 	}
 }

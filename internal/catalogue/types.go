@@ -78,4 +78,7 @@ type Environment struct {
 	Name string `yaml:"name"           json:"name"`
 	URL  string `yaml:"url,omitempty"  json:"url"`
 	Type string `yaml:"type,omitempty" json:"type"` // production, staging, dev
+	// Variables de l'application dans cet environnement : valeurs, ou
+	// secret://<provider>/apps/<projet>/<chemin>#<clé>
+	Env map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
 }

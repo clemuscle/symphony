@@ -8,6 +8,7 @@ import (
 	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/database"
+	"github.com/clemuscle/symphony/internal/environments"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/metrics"
 	"github.com/clemuscle/symphony/internal/provider"
@@ -35,6 +36,7 @@ func NewServer(
 	security *auth.Holder,
 	runner *tasks.Runner,
 	hooks *webhook.Holder,
+	envs *environments.Holder,
 ) http.Handler {
 	s := &Server{
 		providers: providers,
@@ -80,10 +82,14 @@ func NewServer(
 		r.With(viewer).Get("/golden-paths", handlers.ListGoldenPaths(templates))
 
 		// Projets
-		r.With(viewer).Get("/projects", handlers.ListProjects(db, store))
+		r.With(viewer).Get("/projects", handlers.ListProjects(db, store, templates, envs))
 		r.With(developer).Post("/projects", handlers.CreateProject(providers, db, templates, runner))
 		r.With(admin).Delete("/projects/{name}", handlers.DeleteProject(db, runner))
 		r.With(viewer).Get("/projects/{name}/image", handlers.GetProjectImage(providers, db))
+		r.With(developer).Post("/projects/{name}/promote", handlers.Promote(providers, db, templates, envs, runner))
+
+		// Environnements (staging, production…), dans l'ordre de promotion
+		r.With(viewer).Get("/environments", handlers.ListEnvironments(envs))
 
 		// Repos (liste depuis les SCM providers)
 		r.With(viewer).Get("/repos", handlers.ListRepos(providers))
@@ -95,7 +101,7 @@ func NewServer(
 
 		// Déploiements (les logs peuvent contenir des données sensibles : developer)
 		r.With(viewer).Get("/deployments", handlers.ListDeployments(providers, db))
-		r.With(developer).Post("/deployments", handlers.Deploy(providers, db, runner))
+		r.With(developer).Post("/deployments", handlers.Deploy(providers, db, templates, envs, runner))
 		r.With(developer).Delete("/deployments/{id}", handlers.StopDeployment(providers, db))
 		r.With(developer).Get("/deployments/{id}/logs", handlers.GetLogs(providers, db))
 		r.With(developer).Post("/deployments/{id}/restart", handlers.RestartDeployment(providers, db))

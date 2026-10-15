@@ -36,6 +36,9 @@ type GoldenPath struct {
 	Branch      string `json:"branch"`
 	Skeleton    string `json:"skeleton"`
 	CITemplate  string `json:"ci_template"`
+	// Environments : runtime par environnement qui remplace celui de la
+	// configuration
+	Environments map[string]string `json:"environments,omitempty"`
 }
 
 // templateDoc est le format de <dossier>/template.yaml
@@ -59,6 +62,9 @@ type templateDoc struct {
 		} `yaml:"providers"`
 		Skeleton   string `yaml:"skeleton"`
 		CITemplate string `yaml:"ci_template"`
+		// Runtime par environnement, à la place de celui de la configuration
+		// (ex. production: docker-local pour un worker sans Ingress)
+		Environments map[string]string `yaml:"environments"`
 	} `yaml:"spec"`
 }
 
@@ -105,18 +111,19 @@ func parseTemplate(dir, content string) (GoldenPath, error) {
 		title = name
 	}
 	return GoldenPath{
-		ID:          name,
-		Name:        title,
-		Description: doc.Metadata.Description,
-		Icon:        doc.Metadata.Icon,
-		Language:    doc.Spec.Language,
-		Type:        doc.Spec.Type,
-		SCMProvider: doc.Spec.Providers.SCM,
-		CIProvider:  doc.Spec.Providers.CI,
-		RegProvider: doc.Spec.Providers.Registry,
-		RTProvider:  doc.Spec.Providers.Runtime,
-		Skeleton:    skeletonPath,
-		CITemplate:  ciPath,
+		ID:           name,
+		Name:         title,
+		Description:  doc.Metadata.Description,
+		Icon:         doc.Metadata.Icon,
+		Language:     doc.Spec.Language,
+		Type:         doc.Spec.Type,
+		SCMProvider:  doc.Spec.Providers.SCM,
+		CIProvider:   doc.Spec.Providers.CI,
+		RegProvider:  doc.Spec.Providers.Registry,
+		RTProvider:   doc.Spec.Providers.Runtime,
+		Skeleton:     skeletonPath,
+		CITemplate:   ciPath,
+		Environments: doc.Spec.Environments,
 	}, nil
 }
 
@@ -156,7 +163,21 @@ func checkProviders(gp GoldenPath, providers *provider.Registry) error {
 	if _, err := providers.Runtime(gp.RTProvider); err != nil {
 		return fmt.Errorf("runtime provider: %w", err)
 	}
+	for env, rt := range gp.Environments {
+		if _, err := providers.Runtime(rt); err != nil {
+			return fmt.Errorf("environments.%s: runtime provider: %w", env, err)
+		}
+	}
 	return nil
+}
+
+// RuntimeFor : le runtime du golden path pour l'environnement env, sinon
+// celui de la configuration (fallback)
+func (gp GoldenPath) RuntimeFor(env, fallback string) string {
+	if rt := gp.Environments[env]; rt != "" {
+		return rt
+	}
+	return fallback
 }
 
 // TemplateLoader charge les golden paths depuis le repo de templates

@@ -6,6 +6,19 @@ image `ghcr.io/clemuscle/symphony:X.Y`.
 ## v0.9 — La vitrine (en cours)
 
 ### Ajouté
+- **Environnements et promotion** : `environments` dans `symphony.yaml` (ordre de
+  promotion, runtime, `protected`) ; un golden path peut changer le runtime d'un
+  environnement. Un déploiement s'appelle `<projet>-<environnement>` ; un environnement
+  protégé ne reçoit que des promotions (`POST /api/v1/projects/{nom}/promote`) de l'image
+  saine de l'environnement précédent, y compris d'un runtime à l'autre. L'UI montre chaque
+  environnement du projet et propose la promotion.
+- **Variables et secrets des applications** : déclarés par environnement dans la fiche
+  (`spec.environments[].env`), valeurs ou `secret://vault/apps/<projet>/…` (un projet ne lit
+  que ses secrets, jamais l'environnement de Symphony). Docker : résolus au déploiement,
+  jamais enregistrés. Argo CD : `ExternalSecret` (External Secrets Operator), aucune valeur
+  dans Git (`secret_store`). Démo : External Secrets installé dans k3s et branché sur Vault ;
+  `payment-api` lit son mot de passe de base dans Vault ; projets déployés en staging puis
+  promus en production.
 - **Webhooks GitHub** : les repos GitHub sont abonnés aux événements `workflow_run`
   (`/webhooks/github`, signature HMAC-SHA256 vérifiée en temps constant) ; les tâches
   avancent sans attendre le sondage.
@@ -28,6 +41,9 @@ image `ghcr.io/clemuscle/symphony:X.Y`.
 
 ### Modifié
 - `SCMProvider.CreateWebhook` devient `EnsureWebhook` (crée ou met à jour le secret).
+- `POST /api/v1/deployments` ne prend plus de variables (`env_vars`) : elles viennent de la
+  fiche ; il prend `environment`. `RuntimeProvider.Remove(projet)` supprime tous ses
+  environnements ; les déploiements portent `project` et `environment`.
 - Dépendances du front à jour : les failles connues d'axios, vue et de leurs dépendances
   sont corrigées (`npm audit` vide) ; restes du gabarit Vite supprimés.
 
