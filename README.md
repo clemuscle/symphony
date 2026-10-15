@@ -111,6 +111,10 @@ flowchart LR
   API --> DB[(PostgreSQL)]
 ```
 
+L'API est décrite en OpenAPI 3.1 ([internal/api/openapi.yaml](internal/api/openapi.yaml),
+servie sur `/api/openapi.yaml`) : chaque route, son rôle minimum et ses réponses ; un test
+vérifie qu'elle couvre exactement les routes du serveur.
+
 Chaque outil est derrière une interface Go (`SCMProvider`, `CIProvider`,
 `RegistryProvider`, `RuntimeProvider`, `SecretsProvider`, `IdentityProvider`) : pas de
 plugins dynamiques, ajouter un outil c'est

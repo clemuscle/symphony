@@ -192,7 +192,7 @@ rien installer, et plus aucun point faible visible à la relecture du code.
       en composants (`Projects.vue`)
 - [x] Image non-root par défaut ; risque du socket Docker (runtime `docker`) documenté,
       avec un proxy de socket limité en démo
-- [ ] API décrite en OpenAPI, servie par Symphony ; identifiants de requête courts (sans
+- [x] API décrite en OpenAPI, servie par Symphony ; identifiants de requête courts (sans
       le nom de la machine)
 
 **Vitrine**

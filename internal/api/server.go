@@ -1,6 +1,7 @@
 package api
 
 import (
+	_ "embed"
 	"log/slog"
 	"net/http"
 
@@ -56,7 +57,9 @@ func NewServer(
 
 	// Health et métriques Prometheus (publics : à protéger au niveau réseau)
 	r.Get("/healthz", s.healthz)
-	r.Handle("/metrics", metrics.Handler())
+	r.Method(http.MethodGet, "/metrics", metrics.Handler())
+	// Spécification OpenAPI de l'API (publique : elle ne décrit que des routes)
+	r.Get("/api/openapi.yaml", serveOpenAPI)
 
 	// Webhooks entrants : hors /api/v1, authentifiés par leur secret partagé
 	r.Post("/webhooks/gitlab", webhook.GitLab(hooks, runner, db))
@@ -129,4 +132,15 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, map[string]string{
 		"status": "ok",
 	})
+}
+
+// openAPISpec : la spécification de l'API, tenue à jour avec les routes
+// (TestOpenAPICoversRoutes)
+//
+//go:embed openapi.yaml
+var openAPISpec []byte
+
+func serveOpenAPI(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+	w.Write(openAPISpec)
 }

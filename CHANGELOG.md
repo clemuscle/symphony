@@ -25,6 +25,10 @@ image `ghcr.io/clemuscle/symphony:X.Y`.
 - **Réabonnement après rotation** : quand l'URL ou le secret des webhooks change (par
   exemple dans Vault), les repos de tous les projets sont réabonnés avec le nouveau
   secret ; GitLab et GitHub mettent à jour un webhook existant au lieu de l'ignorer.
+- **API décrite en OpenAPI 3.1** (`internal/api/openapi.yaml`, servie sur
+  `/api/openapi.yaml`) : chaque route, son rôle minimum (`x-symphony-role`), ses réponses.
+  `TestOpenAPICoversRoutes` vérifie qu'elle couvre exactement les routes du serveur ; la
+  CI la valide (Redocly).
 - Golden path `api-rest-python-github` (FastAPI, GitHub Actions, GHCR).
 - **Front en TypeScript strict** (`vue-tsc`), ESLint (règles Vue et TypeScript), tests
   Vitest (logique des projets, droits, tâches, composants) ; la CI les lance avec
@@ -38,6 +42,7 @@ image `ghcr.io/clemuscle/symphony:X.Y`.
   conteneurs et les images.
 - Identifiants de requête courts (16 caractères hexadécimaux) ; ceux de chi contenaient
   le nom de la machine. Un `X-Request-ID` fourni et sûr est repris.
+- `/metrics` ne répond plus qu'en GET (il acceptait toutes les méthodes).
 
 ### Modifié
 - `SCMProvider.CreateWebhook` devient `EnsureWebhook` (crée ou met à jour le secret).
