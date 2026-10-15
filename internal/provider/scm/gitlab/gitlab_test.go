@@ -152,3 +152,34 @@ func TestCreateRepoNamespace(t *testing.T) {
 		t.Error("repo créé malgré un groupe introuvable")
 	}
 }
+
+// TestEnsureWebhook : crée le webhook, ou met à jour le secret de celui qui
+// vise déjà la même URL (rotation)
+func TestEnsureWebhook(t *testing.T) {
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.EscapedPath())
+		switch {
+		case r.Method == "GET":
+			w.Write([]byte(`[{"id":5,"url":"http://symphony/webhooks/gitlab"}]`))
+		case r.Method == "PUT":
+			w.Write([]byte(`{}`))
+		case r.Method == "POST":
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{}`))
+		}
+	}))
+	defer srv.Close()
+	p := New("gitlab", srv.URL, "token")
+	if err := p.EnsureWebhook("apps/api", "http://symphony/webhooks/gitlab", "nouveau"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.EnsureWebhook("apps/api", "http://autre/webhooks/gitlab", "s"); err != nil {
+		t.Fatal(err)
+	}
+	want := "GET /api/v4/projects/apps%2Fapi/hooks,PUT /api/v4/projects/apps%2Fapi/hooks/5," +
+		"GET /api/v4/projects/apps%2Fapi/hooks,POST /api/v4/projects/apps%2Fapi/hooks"
+	if strings.Join(calls, ",") != want {
+		t.Errorf("appels : %v", calls)
+	}
+}

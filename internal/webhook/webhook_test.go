@@ -1,6 +1,9 @@
 package webhook
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -42,7 +45,7 @@ func post(h http.Handler, token, event, body string) *httptest.ResponseRecorder 
 func TestGitLab(t *testing.T) {
 	sink := &fakeSink{}
 	recorder := &fakeRecorder{updates: map[string]string{}}
-	holder := NewHolder(&Settings{Endpoint: "http://symphony/webhooks/gitlab", Secret: "s3cret"})
+	holder := NewHolder(&Settings{URL: "http://symphony", Secret: "s3cret"})
 	h := GitLab(holder, sink, recorder)
 
 	cases := []struct {
@@ -76,5 +79,46 @@ func TestGitLab(t *testing.T) {
 	}
 	if len(sink.events) != 1 {
 		t.Error("événement transmis alors que les webhooks sont désactivés")
+	}
+}
+
+func sign(secret, body string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(body))
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+func TestGitHub(t *testing.T) {
+	sink := &fakeSink{}
+	recorder := &fakeRecorder{updates: map[string]string{}}
+	h := GitHub(NewHolder(&Settings{URL: "http://symphony", Secret: "s3cret"}), sink, recorder)
+	send := func(signature, event, body string) int {
+		req := httptest.NewRequest("POST", "/webhooks/github", strings.NewReader(body))
+		req.Header.Set("X-Hub-Signature-256", signature)
+		req.Header.Set("X-GitHub-Event", event)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	run := `{"action":"completed","workflow_run":{"id":7,"status":"completed","conclusion":"failure","html_url":"https://github.com/me/api/actions/runs/7"},"repository":{"full_name":"me/api"}}`
+
+	if c := send(sign("autre", run), "workflow_run", run); c != http.StatusUnauthorized {
+		t.Errorf("mauvaise signature : %d", c)
+	}
+	if c := send("", "workflow_run", run); c != http.StatusUnauthorized {
+		t.Errorf("sans signature : %d", c)
+	}
+	if c := send(sign("s3cret", `{"zen":"ok"}`), "ping", `{"zen":"ok"}`); c != http.StatusNoContent {
+		t.Errorf("ping : %d", c)
+	}
+	if len(sink.events) != 0 {
+		t.Fatalf("événements transmis avant un workflow_run valide : %v", sink.events)
+	}
+	if c := send(sign("s3cret", run), "workflow_run", run); c != http.StatusNoContent {
+		t.Fatalf("workflow_run : %d", c)
+	}
+	want := event{"me/api", "7", "failed", "https://github.com/me/api/actions/runs/7"}
+	if len(sink.events) != 1 || sink.events[0] != want || recorder.updates["7"] != "failed" {
+		t.Errorf("événements %v, historique %v", sink.events, recorder.updates)
 	}
 }

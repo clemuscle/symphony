@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/catalogue"
@@ -198,5 +199,60 @@ providers:
 	w.check()
 	if w.fingerprint != second || w.secretErr == "" {
 		t.Errorf("secret illisible : empreinte changée ou erreur non retenue (%q)", w.secretErr)
+	}
+}
+
+// TestWebhookSecretRotationResubscribes : un nouveau secret des webhooks dans
+// Vault fait réabonner les repos, avec ce secret
+func TestWebhookSecretRotationResubscribes(t *testing.T) {
+	data := map[string]string{"symphony/webhook": `{"secret":"premier-secret-1234"}`}
+	vault := fakeVaultKV(t, data)
+	content := []byte(`
+providers:
+  secrets:
+    - id: vault
+      type: vault
+      config: {url: ` + vault.URL + `, token: root}
+  scm:
+    - id: gitlab
+      type: gitlab
+      config: {url: http://gitlab, token: t}
+webhooks:
+  url: http://symphony:8080
+  secret: secret://vault/symphony/webhook#secret
+`)
+	source := &configSource{read: func() ([]byte, error) { return content, nil }}
+	cfg, raw, err := source.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	providers, resolved, err := buildProviders(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hooks, _ := buildWebhooks(resolved)
+	codec, _, _ := auth.NewCodec("")
+	got := make(chan string, 1)
+	w := &configWatcher{
+		source:      source,
+		providers:   providers,
+		syncer:      gitops.NewSyncer(providers, catalogue.NewStore(), func() ([]gitops.ProjectRef, error) { return nil, nil }, ""),
+		templates:   gitops.NewTemplateLoader(providers, "root/symphony-templates", "main", "templates"),
+		security:    auth.NewHolder(&auth.Policy{}),
+		webhooks:    webhook.NewHolder(hooks),
+		codec:       codec,
+		last:        raw,
+		fingerprint: fingerprint(resolved),
+		resubscribe: func(s *webhook.Settings) { got <- s.Secret },
+	}
+	data["symphony/webhook"] = `{"secret":"second-secret-5678"}`
+	w.check()
+	select {
+	case s := <-got:
+		if s != "second-secret-5678" {
+			t.Errorf("réabonnement avec %q", s)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("pas de réabonnement après la rotation du secret")
 	}
 }

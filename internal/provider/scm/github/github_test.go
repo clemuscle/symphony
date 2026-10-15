@@ -99,3 +99,35 @@ func TestCreateRepo(t *testing.T) {
 func providerReq(name, ns string) provider.CreateRepoRequest {
 	return provider.CreateRepoRequest{Name: name, Namespace: ns, Private: true}
 }
+
+func TestEnsureWebhook(t *testing.T) {
+	var calls []string
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		switch r.Method {
+		case "GET":
+			w.Write([]byte(`[{"id":9,"config":{"url":"https://symphony/webhooks/github"}}]`))
+		case "PATCH":
+			json.NewDecoder(r.Body).Decode(&body)
+			w.Write([]byte(`{}`))
+		case "POST":
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{}`))
+		}
+	}))
+	defer srv.Close()
+	p := New("gh", "tok", "").WithAPIURL(srv.URL)
+	if err := p.EnsureWebhook("me/api", "https://symphony/webhooks/github", "nouveau"); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := body["config"].(map[string]any); cfg["secret"] != "nouveau" || cfg["content_type"] != "json" {
+		t.Errorf("mise à jour : %v", body)
+	}
+	if err := p.EnsureWebhook("me/api", "https://ailleurs/webhooks/github", "s"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(calls, ",") != "GET /repos/me/api/hooks,PATCH /repos/me/api/hooks/9,GET /repos/me/api/hooks,POST /repos/me/api/hooks" {
+		t.Errorf("appels : %v", calls)
+	}
+}

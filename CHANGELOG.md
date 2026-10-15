@@ -3,6 +3,28 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
+## v0.9 — La vitrine (en cours)
+
+### Ajouté
+- **Webhooks GitHub** : les repos GitHub sont abonnés aux événements `workflow_run`
+  (`/webhooks/github`, signature HMAC-SHA256 vérifiée en temps constant) ; les tâches
+  avancent sans attendre le sondage.
+- **Réabonnement après rotation** : quand l'URL ou le secret des webhooks change (par
+  exemple dans Vault), les repos de tous les projets sont réabonnés avec le nouveau
+  secret ; GitLab et GitHub mettent à jour un webhook existant au lieu de l'ignorer.
+- Golden path `api-rest-python-github` (FastAPI, GitHub Actions, GHCR).
+- Le runtime `docker` accepte `socket: tcp://<hôte:port>` (proxy de socket).
+
+### Sécurité
+- **Image non-root** (`USER 65532`). En démo, Symphony ne monte plus le socket Docker :
+  il passe par un proxy (`tecnativa/docker-socket-proxy`) qui n'ouvre que les
+  conteneurs et les images.
+- Identifiants de requête courts (16 caractères hexadécimaux) ; ceux de chi contenaient
+  le nom de la machine. Un `X-Request-ID` fourni et sûr est repris.
+
+### Modifié
+- `SCMProvider.CreateWebhook` devient `EnsureWebhook` (crée ou met à jour le secret).
+
 ## v0.8 — Prêt pour la prod
 
 ### Ajouté

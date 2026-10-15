@@ -416,9 +416,9 @@ func (p *Provider) removePermanently(id int) error {
 	return nil
 }
 
-// CreateWebhook ajoute un webhook de projet sur les événements de pipeline,
-// sauf si un webhook vers url existe déjà
-func (p *Provider) CreateWebhook(repoPath, hookURL, secret string) error {
+// EnsureWebhook abonne url aux événements de pipeline du projet ; un webhook
+// vers url qui existe déjà reçoit le secret courant
+func (p *Provider) EnsureWebhook(repoPath, hookURL, secret string) error {
 	hooks := "/projects/" + url.PathEscape(repoPath) + "/hooks"
 	data, status, err := p.api("GET", hooks, nil)
 	if err != nil {
@@ -431,23 +431,33 @@ func (p *Provider) CreateWebhook(repoPath, hookURL, secret string) error {
 		return fmt.Errorf("liste des webhooks: status %d — %s", status, string(data))
 	}
 	var existing []struct {
+		ID  int64  `json:"id"`
 		URL string `json:"url"`
 	}
 	if err := json.Unmarshal(data, &existing); err != nil {
 		return fmt.Errorf("gitlab createWebhook : réponse illisible: %w", err)
 	}
-	for _, h := range existing {
-		if h.URL == hookURL {
-			return nil
-		}
-	}
-	data, status, err = p.api("POST", hooks, map[string]any{
+	hook := map[string]any{
 		"url":                     hookURL,
 		"token":                   secret, // renvoyé dans l'en-tête X-Gitlab-Token
 		"pipeline_events":         true,
 		"push_events":             false,
 		"enable_ssl_verification": strings.HasPrefix(hookURL, "https://"),
-	})
+	}
+	// Déjà abonné : GitLab ne rend pas le secret, on le réécrit (rotation)
+	for _, h := range existing {
+		if h.URL == hookURL {
+			data, status, err = p.api("PUT", fmt.Sprintf("%s/%d", hooks, h.ID), hook)
+			if err != nil {
+				return err
+			}
+			if status != 200 {
+				return fmt.Errorf("mise à jour du webhook: status %d — %s", status, string(data))
+			}
+			return nil
+		}
+	}
+	data, status, err = p.api("POST", hooks, hook)
 	if err != nil {
 		return err
 	}

@@ -177,7 +177,7 @@ func (d TaskDeps) registerProject(_ context.Context, x *tasks.Exec) error {
 		x.Progress("webhook de pipeline")
 		scm, err := d.Providers.SCM(p.SCMProvider)
 		if err == nil {
-			err = scm.CreateWebhook(repo.Path, s.Endpoint, s.Secret)
+			err = scm.EnsureWebhook(repo.Path, s.Endpoint(scm.Platform()), s.Secret)
 		}
 		if err != nil {
 			slog.Warn("webhook de pipeline", "project", p.Name, "error", err)

@@ -1,0 +1,17 @@
+apiVersion: symphony/v1
+kind: GoldenPath
+metadata:
+  name: api-rest-python-github
+  title: API REST Python (GitHub)
+  description: API FastAPI hébergée sur GitHub, testée par GitHub Actions, image publiée sur GHCR
+  icon: python
+spec:
+  language: python
+  type: api
+  providers:
+    scm: github
+    ci: github-actions
+    registry: ghcr
+    runtime: docker-local
+  skeleton: skeleton
+  ci_template: ci.github-actions.yml

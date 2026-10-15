@@ -21,6 +21,7 @@ import (
 
 type Provider struct {
 	id         string
+	base       string // http://localhost (socket unix) ou http://<hôte:port> (tcp://)
 	client     *http.Client
 	pullClient *http.Client // pull : peut durer bien plus que 30 s
 
@@ -29,14 +30,23 @@ type Provider struct {
 	HealthTimeout time.Duration
 }
 
-func New(id, socketPath string) *Provider {
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return net.DialTimeout("unix", socketPath, 5*time.Second)
-		},
+// New : endpoint est le chemin du socket unix du daemon (/var/run/docker.sock,
+// ou unix:///…), ou tcp://<hôte:port>, par exemple un proxy de socket qui
+// n'ouvre que l'API utile au runtime
+func New(id, endpoint string) *Provider {
+	base := "http://localhost"
+	transport := &http.Transport{}
+	if addr, ok := strings.CutPrefix(endpoint, "tcp://"); ok {
+		base = "http://" + addr
+	} else {
+		socket := strings.TrimPrefix(endpoint, "unix://")
+		transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return net.DialTimeout("unix", socket, 5*time.Second)
+		}
 	}
 	return &Provider{
 		id:         id,
+		base:       base,
 		client:     &http.Client{Timeout: 30 * time.Second, Transport: transport},
 		pullClient: &http.Client{Timeout: 10 * time.Minute, Transport: transport},
 
@@ -53,7 +63,7 @@ func (p *Provider) docker(method, path string, body any) ([]byte, int, error) {
 		b, _ := json.Marshal(body)
 		buf = bytes.NewReader(b)
 	}
-	req, err := http.NewRequest(method, "http://localhost/v1.43"+path, buf)
+	req, err := http.NewRequest(method, p.base+"/v1.43"+path, buf)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -70,7 +80,7 @@ func (p *Provider) docker(method, path string, body any) ([]byte, int, error) {
 // pull télécharge l'image. Docker renvoie 200 puis signale une erreur en
 // cours de flux : chaque ligne JSON est lue pour la détecter.
 func (p *Provider) pull(repo, tag string, auth *provider.RegistryAuth) error {
-	req, err := http.NewRequest("POST", "http://localhost/v1.43/images/create?"+url.Values{
+	req, err := http.NewRequest("POST", p.base+"/v1.43/images/create?"+url.Values{
 		"fromImage": {repo}, "tag": {tag},
 	}.Encode(), nil)
 	if err != nil {

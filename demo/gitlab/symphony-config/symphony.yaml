@@ -82,7 +82,9 @@ providers:
       type: docker
       default: true
       config:
-        socket: /var/run/docker.sock
+        # Proxy de socket (docker-compose.yml) : pas de socket Docker monté
+        # dans Symphony
+        socket: tcp://docker-proxy:2375
 
     # k8s:début — retiré par up.sh --no-k8s (supprimer un projet passe par
     # chaque runtime : un runtime injoignable la bloquerait)

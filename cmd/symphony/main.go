@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/gitops"
+	"github.com/clemuscle/symphony/internal/provider"
 	"github.com/clemuscle/symphony/internal/tasks"
 	"github.com/clemuscle/symphony/internal/webhook"
 	"github.com/joho/godotenv"
@@ -128,6 +130,7 @@ func main() {
 		last:      raw,
 
 		fingerprint: fingerprint(resolved),
+		resubscribe: resubscribeWebhooks(db, providers),
 	}
 	go watcher.Start()
 
@@ -190,5 +193,37 @@ func projectRefs(db *database.DB) func() ([]gitops.ProjectRef, error) {
 			})
 		}
 		return refs, nil
+	}
+}
+
+// resubscribeWebhooks réabonne le repo de chaque projet aux webhooks, avec
+// l'URL et le secret courants (après une rotation du secret, les forges
+// enverraient sinon l'ancien, refusé). Un provider sans webhooks est sauté.
+func resubscribeWebhooks(db *database.DB, providers *provider.Registry) func(*webhook.Settings) {
+	return func(s *webhook.Settings) {
+		projects, err := db.ListProjects()
+		if err != nil {
+			slog.Error("réabonnement des webhooks : projets illisibles", "error", err)
+			return
+		}
+		done, failed := 0, 0
+		for _, p := range projects {
+			if p.RepoPath == "" {
+				continue
+			}
+			scm, err := providers.SCM(p.SCMProvider)
+			if err == nil {
+				err = scm.EnsureWebhook(p.RepoPath, s.Endpoint(scm.Platform()), s.Secret)
+			}
+			switch {
+			case err == nil:
+				done++
+			case errors.Is(err, provider.ErrUnsupported):
+			default:
+				failed++
+				slog.Warn("réabonnement du webhook", "project", p.Name, "error", err)
+			}
+		}
+		slog.Info("webhooks réabonnés (nouveau secret ou nouvelle URL)", "projets", done, "échecs", failed)
 	}
 }

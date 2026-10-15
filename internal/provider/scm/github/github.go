@@ -371,10 +371,35 @@ func (p *Provider) DeleteFile(repoPath, branch, filePath, commitMsg string) erro
 	return nil
 }
 
-// CreateWebhook : Symphony ne reçoit pas encore les webhooks de GitHub ; les
-// tâches suivent les workflows par sondage
-func (p *Provider) CreateWebhook(repoPath, url, secret string) error {
-	return provider.ErrUnsupported
+// EnsureWebhook abonne url aux événements workflow_run du repo, signés avec
+// secret (X-Hub-Signature-256) ; un webhook vers url qui existe déjà reçoit
+// le secret courant (GitHub ne le rend pas)
+func (p *Provider) EnsureWebhook(repoPath, hookURL, secret string) error {
+	var existing []struct {
+		ID     int64 `json:"id"`
+		Config struct {
+			URL string `json:"url"`
+		} `json:"config"`
+	}
+	if err := p.git("GET", repoPath, "/hooks", nil, http.StatusOK, &existing); err != nil {
+		return err
+	}
+	config := map[string]string{
+		"url":          hookURL,
+		"content_type": "json",
+		"secret":       secret,
+		"insecure_ssl": "0",
+	}
+	for _, h := range existing {
+		if h.Config.URL == hookURL {
+			return p.git("PATCH", repoPath, fmt.Sprintf("/hooks/%d", h.ID), map[string]any{
+				"config": config, "events": []string{"workflow_run"}, "active": true,
+			}, http.StatusOK, nil)
+		}
+	}
+	return p.git("POST", repoPath, "/hooks", map[string]any{
+		"name": "web", "config": config, "events": []string{"workflow_run"}, "active": true,
+	}, http.StatusCreated, nil)
 }
 
 // DeleteRepo nécessite un token avec le scope delete_repo
