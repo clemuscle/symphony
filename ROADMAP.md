@@ -150,8 +150,9 @@ package).
 Objectif (revue du 15 octobre 2026) : ce qu'un lead DevOps vérifie avant d'installer
 Symphony chez lui tient debout.
 
-- [ ] Symphony s'installe sur Kubernetes : chart Helm (`deploy/helm/symphony`), et dans la
-      démo Symphony tourne dans k3s, déployé par Argo CD comme les services
+- [x] Symphony s'installe sur Kubernetes : chart Helm (`deploy/helm/symphony` : non-root,
+      système de fichiers en lecture seule, aucun accès à l'API Kubernetes), installé et
+      vérifié par la CI sur un cluster kind
 - [x] Configuration des providers validée au chargement : clé inconnue ou valeur requise
       absente refusée (comme les templates), plus de repli silencieux sur un jeton
 - [x] Erreurs internes masquées : le client reçoit un message et un identifiant de requête,

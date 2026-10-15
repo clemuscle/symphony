@@ -18,6 +18,7 @@ go run ./cmd/symphony             # depuis la racine ; lit symphony.yaml (bootst
 cd frontend && npm run dev        # front en dev, relaie /api et /auth vers :8080
 cd frontend && npm run build      # front compilé dans internal/web/dist, embarqué au go build
 docker build -t symphony .        # image complète (~10 Mo)
+helm lint deploy/helm/symphony    # chart ; la CI l'installe sur kind (deploy/helm/e2e)
 ./demo/up.sh / ./demo/down.sh     # démo complète ; --no-k8s, --no-seed ; down.sh --purge
 ```
 

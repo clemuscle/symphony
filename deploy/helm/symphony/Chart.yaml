@@ -1,0 +1,10 @@
+apiVersion: v2
+name: symphony
+description: Symphony, une Internal Developer Platform en Go (golden paths, GitOps, Vault, Keycloak)
+type: application
+version: 0.8.0
+appVersion: "0.8"
+home: https://github.com/clemuscle/symphony
+sources:
+  - https://github.com/clemuscle/symphony
+keywords: [idp, platform-engineering, gitops, argocd, golden-paths]

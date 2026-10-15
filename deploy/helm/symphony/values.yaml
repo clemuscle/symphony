@@ -1,0 +1,75 @@
+# Valeurs du chart Symphony. Les secrets ne sont jamais dans ces valeurs :
+# ils vivent dans un Secret Kubernetes existant (existingSecret), et la
+# configuration de Symphony y fait référence par secret://env/<VARIABLE>.
+
+image:
+  repository: ghcr.io/clemuscle/symphony
+  tag: "" # défaut : appVersion du chart
+  pullPolicy: IfNotPresent
+
+replicaCount: 1 # une instance : catalogue en mémoire, tâches exécutées par un seul processus
+
+# Bootstrap de Symphony (symphony.yaml) : où lire la vraie configuration dans
+# Git (config_source), ou une configuration complète. ${VAR} est remplacé par
+# l'environnement du conteneur.
+bootstrap: |
+  config_source:
+    scm:
+      type: gitlab
+      config:
+        url: https://gitlab.example.com
+        token: secret://env/GITLAB_TOKEN
+    repo: platform/symphony-config
+    branch: main
+    path: symphony.yaml
+
+# Base PostgreSQL (non fournie par le chart). Le mot de passe vient de
+# existingSecret (clé DB_PASSWORD).
+database:
+  host: postgres
+  port: 5432
+  name: symphony
+  user: symphony
+
+# Secret existant, chargé dans l'environnement : DB_PASSWORD, SESSION_SECRET
+# (32 caractères min.), et ce que la configuration référence par secret://env/
+# (GITLAB_TOKEN, VAULT_ROLE_ID, VAULT_SECRET_ID…). Vide : aucun.
+existingSecret: ""
+
+# Variables d'environnement en clair (ports, URL publiques…)
+env: {}
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: symphony.example.com
+  tls: [] # ex. [{secretName: symphony-tls, hosts: [symphony.example.com]}]
+
+resources:
+  requests: {cpu: 50m, memory: 64Mi}
+  limits: {memory: 256Mi}
+
+# Image scratch : un binaire, rien à écrire sur le disque
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile: {type: RuntimeDefault}
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: {drop: [ALL]}
+
+serviceAccount:
+  create: true
+  name: ""
+  automountToken: false # Symphony n'appelle jamais l'API Kubernetes (GitOps par Argo CD)
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

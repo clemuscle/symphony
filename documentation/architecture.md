@@ -78,6 +78,18 @@ Le `symphony.yaml` local n'est qu'un **bootstrap** (section `config_source`) : c
 joindre GitLab et où lire la configuration. C'est le seul fichier qui demande un
 redémarrage, comme l'`app-config` de Backstage.
 
+### Installer Symphony
+
+Deux façons : `docker compose` (la démo) ou le chart Helm `deploy/helm/symphony` pour un
+cluster Kubernetes. Le chart crée un Deployment à une réplique (`Recreate` : une seule
+instance exécute les tâches), un Service, un Ingress en option, et monte le bootstrap
+depuis une ConfigMap (son empreinte relance le pod quand il change). Les secrets restent
+dans un Secret existant chargé dans l'environnement, que la configuration référence par
+`secret://env/…`. Le pod tourne en non-root, avec un système de fichiers en lecture seule,
+toutes les capacités retirées et sans jeton de compte de service : Symphony n'appelle
+jamais l'API Kubernetes (Argo CD applique). Le runtime `docker` n'a pas de sens dans un
+cluster ; on y utilise `argocd`.
+
 ## Composants
 
 | Paquet | Rôle |

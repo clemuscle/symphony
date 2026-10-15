@@ -1,0 +1,15 @@
+Symphony {{ .Chart.AppVersion }} est déployé ({{ include "symphony.fullname" . }}).
+
+{{- if .Values.ingress.enabled }}
+  URL : http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}
+{{- else }}
+  Accès local : kubectl port-forward svc/{{ include "symphony.fullname" . }} 8080:{{ .Values.service.port }}
+  puis http://localhost:8080
+{{- end }}
+
+Santé : /healthz ; métriques Prometheus : /metrics (à ne pas exposer publiquement).
+{{- if not .Values.existingSecret }}
+
+Attention : pas de existingSecret. DB_PASSWORD et SESSION_SECRET manquent ; les
+sessions ne survivront pas à un redémarrage.
+{{- end }}

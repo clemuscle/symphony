@@ -1,0 +1,32 @@
+# Test du chart en CI (kind) : PostgreSQL jetable et le Secret de Symphony
+apiVersion: v1
+kind: Secret
+metadata: {name: symphony}
+stringData:
+  DB_PASSWORD: e2e-password
+  SESSION_SECRET: 0123456789abcdef0123456789abcdef
+  GITLAB_TOKEN: jeton-factice
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: postgres}
+spec:
+  selector: {matchLabels: {app: postgres}}
+  template:
+    metadata: {labels: {app: postgres}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - {name: POSTGRES_USER, value: symphony}
+            - {name: POSTGRES_DB, value: symphony}
+            - {name: POSTGRES_PASSWORD, valueFrom: {secretKeyRef: {name: symphony, key: DB_PASSWORD}}}
+          ports: [{containerPort: 5432}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: postgres}
+spec:
+  selector: {app: postgres}
+  ports: [{port: 5432}]

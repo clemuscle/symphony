@@ -57,6 +57,35 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+  helm:
+    name: Chart Helm (lint, installation sur kind)
+    needs: [go, front]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v5.0.1
+      - run: helm lint deploy/helm/symphony
+      - uses: helm/kind-action@v1.15.0
+      - name: Image de Symphony dans kind
+        run: |
+          docker build -t symphony:ci .
+          kind load docker-image symphony:ci --name chart-testing
+      - name: Installation (PostgreSQL jetable, configuration hors ligne)
+        run: |
+          kubectl create namespace symphony
+          kubectl -n symphony apply -f deploy/helm/e2e/postgres.yaml
+          helm install symphony deploy/helm/symphony -n symphony -f deploy/helm/e2e/values.yaml --wait --timeout 5m
+      - name: Symphony répond (santé, API, UI)
+        run: |
+          kubectl -n symphony port-forward svc/symphony 8080:80 &
+          sleep 5
+          curl -sf localhost:8080/healthz
+          curl -sf localhost:8080/api/v1/me | grep -q '"role":"admin"'
+          curl -sf localhost:8080/ | grep -q '<title>Symphony</title>'
+      - name: Logs en cas d'échec
+        if: failure()
+        run: kubectl -n symphony describe pods; kubectl -n symphony logs deploy/symphony --all-containers || true
+
   image:
     name: Image Docker
     needs: [go, front]

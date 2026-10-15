@@ -1,0 +1,13 @@
+# Test du chart en CI : l'image construite par le job, une configuration
+# complète hors ligne (SCM GitLab factice, authentification désactivée)
+image: {repository: symphony, tag: ci, pullPolicy: Never}
+existingSecret: symphony
+bootstrap: |
+  providers:
+    scm:
+      - id: gitlab
+        type: gitlab
+        default: true
+        config:
+          url: http://gitlab.invalid
+          token: secret://env/GITLAB_TOKEN
