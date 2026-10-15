@@ -184,7 +184,7 @@ func TestBuildWebhooks(t *testing.T) {
 	}
 	cfg.Webhooks.Secret = "0123456789abcdef"
 	s, err := buildWebhooks(cfg)
-	if err != nil || !s.Enabled() || s.Endpoint != "http://symphony:8080/webhooks/gitlab" {
+	if err != nil || !s.Enabled() || s.Endpoint("gitlab") != "http://symphony:8080/webhooks/gitlab" {
 		t.Errorf("webhooks : %+v, %v", s, err)
 	}
 }

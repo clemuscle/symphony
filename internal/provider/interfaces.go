@@ -25,10 +25,10 @@ type SCMProvider interface {
 	ListFiles(repoPath, branch, dirPath string) ([]string, error)  // ErrNotFound si le dossier est absent
 	DeleteFile(repoPath, branch, filePath, commitMsg string) error // ErrNotFound si absent
 	DeleteRepo(repoPath string) error                              // ErrNotFound si absent
-	// CreateWebhook abonne url aux événements de pipeline du repo, avec secret
-	// (vérifié à la réception) ; sans effet si url y est déjà abonnée.
-	// ErrUnsupported si le provider ne sait pas le faire.
-	CreateWebhook(repoPath, url, secret string) error
+	// EnsureWebhook abonne url aux événements de pipeline du repo, avec secret
+	// (vérifié à la réception) ; si url y est déjà abonnée, son secret est mis
+	// à jour (rotation). ErrUnsupported si le provider ne sait pas le faire.
+	EnsureWebhook(repoPath, url, secret string) error
 }
 
 type CreateRepoRequest struct {

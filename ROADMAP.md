@@ -180,9 +180,9 @@ rien installer, et plus aucun point faible visible à la relecture du code.
       la résout au déploiement ; jamais en clair dans Git ni dans l'API
 - [ ] Environnements : un projet a ses environnements (staging, production), chacun avec
       son runtime ; une version déployée en staging se **promeut** en production
-- [ ] GitHub à égalité avec GitLab : webhooks de workflow (plus de sondage seul), un
+- [x] GitHub à égalité avec GitLab : webhooks de workflow (plus de sondage seul), un
       deuxième golden path GitHub
-- [ ] Rotation du secret des webhooks : les repos des projets sont réabonnés avec le
+- [x] Rotation du secret des webhooks : les repos des projets sont réabonnés avec le
       nouveau secret
 
 **Qualité et sécurité**
@@ -190,7 +190,7 @@ rien installer, et plus aucun point faible visible à la relecture du code.
       (GitLab éphémère ou providers simulés)
 - [ ] Front : TypeScript, ESLint en CI, tests des stores et des vues clés, vues découpées
       en composants (`Projects.vue`)
-- [ ] Image non-root par défaut ; risque du socket Docker (runtime `docker`) documenté,
+- [x] Image non-root par défaut ; risque du socket Docker (runtime `docker`) documenté,
       avec un proxy de socket limité en démo
 - [ ] API décrite en OpenAPI, servie par Symphony ; identifiants de requête courts (sans
       le nom de la machine)

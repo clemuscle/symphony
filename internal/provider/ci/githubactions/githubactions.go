@@ -88,7 +88,7 @@ type run struct {
 func (r run) pipeline() provider.Pipeline {
 	pl := provider.Pipeline{
 		ID:        strconv.FormatInt(r.ID, 10),
-		Status:    normalize(r.Status, r.Conclusion),
+		Status:    Normalize(r.Status, r.Conclusion),
 		WebURL:    r.HTMLURL,
 		Ref:       r.HeadBranch,
 		CreatedAt: r.CreatedAt,
@@ -100,9 +100,9 @@ func (r run) pipeline() provider.Pipeline {
 	return pl
 }
 
-// normalize traduit statut et conclusion GitHub en statut Symphony (ceux de
+// Normalize traduit statut et conclusion GitHub en statut Symphony (ceux de
 // GitLab CI) : pending, running, success, failed, canceled, skipped
-func normalize(status, conclusion string) string {
+func Normalize(status, conclusion string) string {
 	switch status {
 	case "completed":
 		switch conclusion {

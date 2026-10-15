@@ -58,8 +58,8 @@ func (s scm) DeleteFile(repoPath, branch, filePath, commitMsg string) error {
 	return call0("scm", s.ID(), "DeleteFile", func() error { return s.SCMProvider.DeleteFile(repoPath, branch, filePath, commitMsg) })
 }
 
-func (s scm) CreateWebhook(repoPath, url, secret string) error {
-	return call0("scm", s.ID(), "CreateWebhook", func() error { return s.SCMProvider.CreateWebhook(repoPath, url, secret) })
+func (s scm) EnsureWebhook(repoPath, url, secret string) error {
+	return call0("scm", s.ID(), "EnsureWebhook", func() error { return s.SCMProvider.EnsureWebhook(repoPath, url, secret) })
 }
 
 func (s scm) DeleteRepo(repoPath string) error {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/clemuscle/symphony/internal/auth"
@@ -160,6 +159,10 @@ type configWatcher struct {
 	lastErr     string // dernière erreur de lecture, pour ne la journaliser qu'une fois
 	fingerprint string // empreinte de la configuration en place, secrets résolus
 	secretErr   string // dernière erreur de relecture des secrets
+
+	// resubscribe : appelé (en arrière-plan) quand l'URL ou le secret des
+	// webhooks change, pour réabonner les repos des projets
+	resubscribe func(*webhook.Settings)
 }
 
 func (w *configWatcher) Start() {
@@ -241,9 +244,13 @@ func (w *configWatcher) apply(cfg *config.Config) error {
 		return err
 	}
 	w.fingerprint = fingerprint(resolved)
+	old := w.webhooks.Get()
 	w.providers.Replace(next)
 	w.security.Set(policy)
 	w.webhooks.Set(hooks)
+	if hooks.Enabled() && (old.URL != hooks.URL || old.Secret != hooks.Secret) && w.resubscribe != nil {
+		go w.resubscribe(hooks)
+	}
 	w.syncer.SetFile(catalogueFile(cfg))
 	w.templates.SetSource(templatesSource(cfg))
 	logProviders("configuration rechargée", w.providers)
@@ -265,7 +272,7 @@ func buildWebhooks(cfg *config.Config) (*webhook.Settings, error) {
 		return nil, fmt.Errorf("webhooks.secret : 16 caractères au moins requis (ex. secret://env/WEBHOOK_SECRET)")
 	}
 	return &webhook.Settings{
-		Endpoint: strings.TrimRight(cfg.Webhooks.URL, "/") + "/webhooks/gitlab",
-		Secret:   secret,
+		URL:    cfg.Webhooks.URL,
+		Secret: secret,
 	}, nil
 }

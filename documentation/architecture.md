@@ -132,7 +132,7 @@ PENDING ──► RUNNING ──► SUCCESS
 - Une étape peut **attendre une pipeline** sans occuper de goroutine : la tâche est mise
   en attente (`wait` en base). Le webhook de GitLab la fait avancer à chaque changement
   d'état ; un sondage toutes les 15 s rattrape un webhook perdu et suffit seul pour une CI
-  sans webhook (GitHub Actions). Au-delà d'une heure, la tâche échoue.
+  sans webhook. Au-delà d'une heure, la tâche échoue.
 - Une seule tâche à la fois par projet ou service (`409` sinon).
 - **Supprimer un projet** efface tout ce que Symphony a créé pour lui, dans l'ordre :
   ses déploiements sur chaque runtime (`Remove` : conteneurs et images locales pour
@@ -170,7 +170,8 @@ sur GHCR (`ghcr.io/<owner>/<repo>`, provider `ghcr` : tags et identifiants de pu
 l'API des packages). Il déclare les entrées `SYMPHONY_*` de `workflow_dispatch` : GitHub
 refuse une entrée non déclarée. Les statuts de GitHub Actions sont ramenés à ceux de
 Symphony (`failure` → `failed`…) et l'id du run lancé est retrouvé (réponse de l'API ou
-liste des runs). Pas de webhook GitHub : les tâches suivent les runs par sondage. À la
+liste des runs). Le repo est abonné aux événements `workflow_run` (`/webhooks/github`, corps signé en
+HMAC-SHA256 avec le secret des webhooks) ; le sondage reste en secours. À la
 suppression du projet, le package GHCR est supprimé aussi (`DeleteImages`), ce que la
 suppression du repo ne fait pas.
 
@@ -329,9 +330,10 @@ implémentations n'en savent rien.
 | CORS | aucune origine tierce par défaut ; liste `cors_origins`, sans cookies | — |
 | Secrets | providers de secrets (Vault par AppRole en démo, variables d'environnement) ; références `secret://` dans la configuration, résolues dans une copie ; jamais dans les fichiers, les logs, les résultats de tâches ni le repo de déploiement | — |
 | Argo CD | compte de service à jeton (`apiKey`), limité aux Applications du projet `default` et à leurs journaux | — |
+| Runtime `docker` | créer un conteneur sur un daemon Docker équivaut à un accès root à la machine : runtime réservé à un poste ou à une démo (en production, `argocd`). Image non-root ; en démo, pas de socket monté dans Symphony mais un proxy qui n'ouvre que les conteneurs et les images | — |
 | Fuite de token | l'auth du registry n'est envoyée qu'au registry qui héberge l'image | — |
 | Injection CI | entrées d'action validées, clés inconnues refusées | — |
-| Webhooks entrants | secret partagé (16 caractères min.), comparé en temps constant ; route hors `/api/v1`, sans session | — |
+| Webhooks entrants | GitLab : secret partagé (16 caractères min.) comparé en temps constant ; GitHub : signature HMAC-SHA256 du corps ; routes hors `/api/v1`, sans session ; repos réabonnés quand le secret change | — |
 | Configuration | une config invalide est refusée, la précédente reste en place | — |
 | Traçabilité | `audit_log` des actions mutantes, avec l'utilisateur OIDC et son adresse | — |
 | `/metrics` | public | à protéger au niveau réseau |

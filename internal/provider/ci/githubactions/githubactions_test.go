@@ -21,8 +21,8 @@ func TestNormalize(t *testing.T) {
 		{"completed", "skipped"}:         "skipped",
 	}
 	for in, want := range cases {
-		if got := normalize(in[0], in[1]); got != want {
-			t.Errorf("normalize(%s, %s) = %s, attendu %s", in[0], in[1], got, want)
+		if got := Normalize(in[0], in[1]); got != want {
+			t.Errorf("Normalize(%s, %s) = %s, attendu %s", in[0], in[1], got, want)
 		}
 	}
 }

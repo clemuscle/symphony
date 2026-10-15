@@ -4,6 +4,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -139,5 +140,24 @@ func TestStartAndWatchHealth(t *testing.T) {
 				t.Fatalf("erreur = %v, attendu %q", err, c.wantErr)
 			}
 		})
+	}
+}
+
+// TestTCPEndpoint : tcp://<hôte:port> (proxy de socket) au lieu d'un socket unix
+func TestTCPEndpoint(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1.43/containers/abc/json" {
+			http.NotFound(w, r)
+			return
+		}
+		io.WriteString(w, `{"Id":"abcdefabcdef1","Name":"/x-next","State":{"Status":"running"},"Config":{"Labels":{"symphony.project":"x"}}}`)
+	}))
+	defer srv.Close()
+	d, err := New("docker", "tcp://"+strings.TrimPrefix(srv.URL, "http://")).Status("abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Name != "x" {
+		t.Errorf("nom = %q, attendu le label symphony.project", d.Name)
 	}
 }

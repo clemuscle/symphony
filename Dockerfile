@@ -22,6 +22,10 @@ FROM scratch
 COPY --from=builder /app/symphony /symphony
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
+# Utilisateur non privilégié (nonroot des images distroless) : rien à écrire
+# sur le disque. Le runtime docker joint le daemon par un proxy de socket
+# (tcp://…) plutôt qu'en montant /var/run/docker.sock.
+USER 65532:65532
 EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
     CMD ["/symphony", "-healthcheck"]

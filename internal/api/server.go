@@ -45,7 +45,7 @@ func NewServer(
 	}
 
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID)
+	r.Use(requestID)
 	r.Use(middleware.RealIP)
 	r.Use(requestLogger)
 	r.Use(metrics.Middleware) // avant Recoverer : une panique rattrapée compte comme un 500
@@ -58,6 +58,7 @@ func NewServer(
 
 	// Webhooks entrants : hors /api/v1, authentifiés par leur secret partagé
 	r.Post("/webhooks/gitlab", webhook.GitLab(hooks, runner, db))
+	r.Post("/webhooks/github", webhook.GitHub(hooks, runner, db))
 
 	// Connexion OIDC (Backend-for-Frontend : le navigateur ne voit pas de jeton)
 	r.Get("/auth/login", security.Login)

@@ -87,7 +87,8 @@ helm lint deploy/helm/symphony    # chart ; la CI l'installe sur kind (deploy/he
 - Runtime `argocd` : jamais d'appel à l'API Kubernetes, tout passe par Git ; `repo_url` est
   l'URL vue par Argo CD ; Argo CD répond 403 pour une Application absente.
 - GitHub : un workflow lancé par `workflow_dispatch` déclare toutes les entrées envoyées
-  (`SYMPHONY_*` compris), sinon 422.
+  (`SYMPHONY_*` compris), sinon 422. Webhooks : `/webhooks/<plateforme>` ; une forge qui
+  ne peut pas joindre Symphony (GitHub et une démo locale) laisse le sondage travailler.
 
 **Tâches et API**
 - Une étape de tâche peut être rejouée après un redémarrage : tester `x.Get` avant d'agir,
