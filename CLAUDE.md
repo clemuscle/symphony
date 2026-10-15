@@ -53,6 +53,9 @@ helm lint deploy/helm/symphony    # chart ; la CI l'installe sur kind (deploy/he
   en Backend-for-Frontend, rôles, CSRF), `internal/gitops` (`Syncer` des fiches
   `catalog-info.yaml`, `TemplateLoader` des golden paths), `internal/webhook`,
   `internal/metrics`, `internal/database` (migrations embarquées).
+- `frontend/src/visit/` : mode visite (GitHub Pages, `npm run build:visit`) : l'API servie
+  par `fixtures.json`, capturé sur une démo (`demo/visit/capture-fixtures.sh`), lecture
+  seule. À recapturer quand l'API change.
 - `demo/` : `up.sh` (rejouable), `seed.sh` (projets de démo par l'API), `gitlab/` (contenu
   poussé dans le groupe `platform` de la GitLab de démo : config, golden paths, repo de
   déploiement ; à tenir à jour avec les golden paths), `keycloak/`, `k3s/`, `capture/`

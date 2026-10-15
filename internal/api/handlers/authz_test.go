@@ -50,8 +50,18 @@ func TestTeamRights(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.DeleteProject(name, "apps/"+name) })
+	// Les tâches lancées ici ne doivent pas être reprises par le runner d'un
+	// autre test (même base)
+	t.Cleanup(func() { db.Exec(`DELETE FROM tasks WHERE resource LIKE $1`, name+"%") })
 	forge.SCM().CreateRepo(provider.CreateRepoRequest{Name: name, Namespace: "apps"})
 	rt.Deploy(provider.DeployRequest{Name: name + "-staging", Project: name, Environment: "staging", Image: "img:1"})
+	// Un second projet, qui tourne en latest en staging : pas de promotion
+	mobile := name + "-latest"
+	if err := db.CreateProject(&database.Project{Name: mobile, RepoPath: "apps/" + mobile, Team: "team-payments"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.DeleteProject(mobile, "apps/"+mobile) })
+	rt.Deploy(provider.DeployRequest{Name: mobile + "-staging", Project: mobile, Environment: "staging", Image: "img", Tag: "latest"})
 
 	r := chi.NewRouter()
 	r.Post("/deployments", Deploy(providers, db, templates, envs, runner))
@@ -95,6 +105,7 @@ func TestTeamRights(t *testing.T) {
 		{"bob déploie en production", bob, "POST", "/deployments", deploy("production"), 403, "protégé"},
 		{"bob sans environnement", bob, "POST", "/deployments", deploy(""), 400, "staging, production"},
 		{"bob lit les logs", bob, "GET", logs, nil, 200, "prêt"},
+		{"bob promeut une image latest", bob, "POST", "/projects/" + mobile + "/promote", map[string]any{"to": "production"}, 409, "tag immuable"},
 		{"bob relance la pipeline", bob, "POST", "/pipelines/trigger", map[string]any{"project": name}, 200, ""},
 		{"bob déploie en staging", bob, "POST", "/deployments", deploy("staging"), 202, "deploy"},
 		{"bob promeut (tâche déjà en cours)", bob, "POST", "/projects/" + name + "/promote", map[string]any{"to": "production"}, 409, "déjà en cours"},

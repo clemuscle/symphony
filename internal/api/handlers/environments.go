@@ -146,11 +146,18 @@ func Promote(providers *provider.Registry, db *database.DB, templates *gitops.Te
 			respondError(w, http.StatusConflict, fmt.Sprintf("le déploiement en %s n'est pas sain (%s) : promotion refusée", from.Name, current.Status))
 			return
 		}
+		image, tag := provider.SplitImage(current.Image, "")
+		// Un tag mobile (latest) ne désigne pas une version : la production
+		// pourrait changer sans nouvelle promotion
+		if tag == "" || tag == "latest" {
+			respondError(w, http.StatusConflict, fmt.Sprintf("%s tourne en %s : déployer un tag immuable (sha) en %s pour pouvoir le promouvoir",
+				from.Name, current.Image, from.Name))
+			return
+		}
 		toRT, _ := environmentRuntime(envs, templates, proj, to.Name)
 		if busy(w, r, runner, proj.Name) {
 			return
 		}
-		image, tag := provider.SplitImage(current.Image, "")
 		submit(w, r, runner, db, KindDeploy, proj.Name, deployParams{
 			ProjectName:  proj.Name,
 			Environment:  to.Name,

@@ -39,7 +39,8 @@ de les remplacer.
   place.
 - **Sécurisé** : connexion OIDC (Keycloak en démo, tout fournisseur OIDC), rôles
   `viewer` / `developer` / `admin` déduits des groupes de l'annuaire, **droits par équipe**
-  (on ne déploie que les projets de ses équipes), audit de qui a fait quoi. En démo, GitLab se connecte au même Keycloak : un seul compte pour les deux.
+  (on ne déploie que les projets de ses équipes), audit de qui a fait quoi. En démo, GitLab
+  se connecte au même Keycloak : un seul compte pour les deux.
 - **Aucun secret dans la configuration** : elle désigne ses jetons par référence
   (`secret://vault/symphony/gitlab#token`), lus dans Vault (AppRole) et relus à chaud
   après une rotation.
@@ -51,7 +52,10 @@ de les remplacer.
 
 ## Essayer
 
-Prérequis : Docker avec Compose v2, `curl`, `jq`, ~6 Go de RAM libres (GitLab, Keycloak,
+**En une minute, sans rien installer** : le [mode visite](https://clemuscle.github.io/symphony/),
+la vraie interface sur des données capturées en démo, en lecture seule.
+
+**Pour de vrai**, sur ta machine. Prérequis : Docker avec Compose v2, `curl`, `jq`, ~6 Go de RAM libres (GitLab, Keycloak,
 Vault, k3s et Argo CD ; `--no-k8s` en économise 1,5 Go).
 
 ```bash
@@ -61,13 +65,14 @@ git clone https://github.com/clemuscle/symphony.git && cd symphony
 
 Le script affiche les URL et identifiants. Comptes de démo, pour Symphony comme pour
 GitLab (bouton « Keycloak ») et mot de passe = identifiant : `alice` (admin), `bob`
-(developer), `carol` (viewer), `dave` (sans rôle). Trois projets sont déjà créés et
-déployés depuis les golden paths, avec leur repo, leurs pipelines et leur URL
-(`--no-seed` pour partir de zéro). Suivre ensuite le [scénario de démo](demo/SCENARIO.md)
+(developer), `carol` (viewer), `dave` (sans rôle). Trois projets de trois équipes sont
+déjà créés depuis les golden paths, déployés en staging et, pour deux d'entre eux, promus
+en production sur Kubernetes, avec leur repo, leurs pipelines et leur URL (`--no-seed`
+pour partir de zéro). Suivre ensuite le [scénario de démo](demo/SCENARIO.md)
 (15 min). Ports déjà pris ? `up.sh` dit lequel, et comment le changer
 (`K8S_API_PORT=16443 ./demo/up.sh`, par exemple).
-Avec `GITHUB_TOKEN=<jeton> ./demo/up.sh`, la démo ajoute GitHub et le golden path
-`api-rest-go-github` (repo dans ton compte, GitHub Actions, image sur GHCR) ; jeton
+Avec `GITHUB_TOKEN=<jeton> ./demo/up.sh`, la démo ajoute GitHub et les golden paths
+`api-rest-go-github` et `api-rest-python-github` (repo dans ton compte, GitHub Actions, image sur GHCR) ; jeton
 classique avec les droits `repo`, `workflow`, `delete_repo` et `read/write/delete:packages`.
 Arrêt : `./demo/down.sh` (`--purge` pour tout effacer).
 

@@ -1,5 +1,10 @@
 <template>
-  <div class="layout">
+  <div class="layout" :class="{ visit: visitMode }">
+    <div class="visit-banner" v-if="visitMode">
+      👀 Mode visite : la vraie interface de Symphony sur des données capturées en démo, en
+      lecture seule. Pour créer, déployer et promouvoir :
+      <a href="https://github.com/clemuscle/symphony#essayer" target="_blank">./demo/up.sh</a>
+    </div>
     <header class="header">
       <div class="brand">
         <span class="logo">🎼</span>
@@ -19,7 +24,7 @@
           <span class="user-name">{{ session.user.name || session.user.email }}</span>
           <span class="role-badge" :class="session.user.role || 'none'">{{ session.user.role || 'aucun rôle' }}</span>
           <!-- POST : une simple image ou un lien d'un autre site ne peut pas déconnecter -->
-          <form method="post" action="/auth/logout">
+          <form method="post" action="/auth/logout" v-if="!visitMode">
             <button class="logout" type="submit">Déconnexion</button>
           </form>
         </template>
@@ -37,6 +42,7 @@
 
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import { visitMode } from './api'
 import { session, loadSession } from './stores/session'
 import { connectTasks, activeTasks } from './stores/tasks'
 
@@ -51,6 +57,8 @@ onMounted(async () => {
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f0f2f5; color: #1a1a1a; }
 .layout { display: flex; flex-direction: column; min-height: 100vh; }
+.visit-banner { background: #fffbeb; color: #92400e; font-size: 13px; padding: 8px 24px; text-align: center; border-bottom: 1px solid #fde68a; }
+.visit-banner a { color: #92400e; font-weight: 600; }
 .header { background: #1a1a2e; color: white; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 56px; position: sticky; top: 0; z-index: 100; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .logo { font-size: 22px; }

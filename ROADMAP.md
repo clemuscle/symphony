@@ -196,8 +196,8 @@ rien installer, et plus aucun point faible visible à la relecture du code.
       le nom de la machine)
 
 **Vitrine**
-- [ ] Mode visite sans GitLab (données de démo, lecture seule) pour essayer en une minute
-- [ ] Nouveau GIF, documentation et démo à jour de toutes les fonctionnalités
+- [x] Mode visite sans GitLab (données de démo, lecture seule) pour essayer en une minute
+- [x] Nouveau GIF, documentation et démo à jour de toutes les fonctionnalités
 
 ## v1.0 — Utilisable par de vraies équipes
 

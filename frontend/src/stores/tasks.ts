@@ -1,5 +1,5 @@
 import { reactive, computed } from 'vue'
-import { api } from '../api'
+import { api, visitMode } from '../api'
 import type { Task } from '../types'
 
 // Tâches de Symphony (création, déploiement, suppression, actions), tenues à
@@ -14,6 +14,11 @@ export const taskStore = reactive<{ byId: Record<number, Task>; connected: boole
 let source: EventSource | null = null
 
 export function connectTasks() {
+  if (visitMode) {
+    // Pas de flux en mode visite : la liste capturée, une fois
+    api.listTasks().then(({ data }) => { for (const t of data ?? []) upsert(t) }).catch(() => {})
+    return
+  }
   if (source) return
   const base = import.meta.env.VITE_API_URL ?? ''
   source = new EventSource(base + '/api/v1/tasks/events', { withCredentials: true })

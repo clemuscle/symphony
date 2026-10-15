@@ -25,6 +25,11 @@ image `ghcr.io/clemuscle/symphony:X.Y`.
 - **Réabonnement après rotation** : quand l'URL ou le secret des webhooks change (par
   exemple dans Vault), les repos de tous les projets sont réabonnés avec le nouveau
   secret ; GitLab et GitHub mettent à jour un webhook existant au lieu de l'ignorer.
+- **Mode visite** : la vraie interface, publiée sur GitHub Pages
+  (https://clemuscle.github.io/symphony/), servie par des données capturées sur la démo
+  (`frontend/src/visit`), en lecture seule ; aucun serveur, essai en une minute.
+- **Nouveau GIF** : création d'un projet, déploiement en staging, promotion en
+  production sur Kubernetes.
 - **Tests d'intégration** : le parcours complet par l'API (création, pipeline, fiche,
   staging, refus d'un déploiement direct en production, promotion, action Day-2,
   suppression) tourne en CI sur une vraie base, avec des providers simulés
@@ -48,6 +53,9 @@ image `ghcr.io/clemuscle/symphony:X.Y`.
 - Identifiants de requête courts (16 caractères hexadécimaux) ; ceux de chi contenaient
   le nom de la machine. Un `X-Request-ID` fourni et sûr est repris.
 - `/metrics` ne répond plus qu'en GET (il acceptait toutes les méthodes).
+- Une image en `latest` (tag mobile) ne peut pas être promue : la production pourrait
+  changer sans nouvelle promotion. Le formulaire de déploiement propose par défaut le
+  dernier tag immuable.
 
 ### Modifié
 - `SCMProvider.CreateWebhook` devient `EnsureWebhook` (crée ou met à jour le secret).
