@@ -27,6 +27,12 @@ func NewHolder(p *Policy) *Holder {
 func (h *Holder) Set(p *Policy) { h.p.Store(p) }
 func (h *Holder) get() *Policy  { return h.p.Load() }
 
+// IsRoleGroup indique si le groupe g donne un rôle (ce n'est pas une équipe)
+func (h *Holder) IsRoleGroup(g string) bool {
+	a := h.get().Auth
+	return a != nil && a.roles.IsRoleGroup(g)
+}
+
 // Enabled indique si l'authentification est active
 func (h *Holder) Enabled() bool { return h.get().Auth != nil }
 

@@ -158,6 +158,7 @@ func (d TaskDeps) registerProject(_ context.Context, x *tasks.Exec) error {
 			RepoURL:     repo.HTTPCloneURL,
 			RegistryURL: registryURL,
 			GoldenPath:  gp.ID,
+			Team:        p.Owner,
 			CreatedBy:   x.Task().CreatedBy,
 		}
 		if err := d.DB.CreateProject(proj); err != nil {

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/provider"
 	gitlabci "github.com/clemuscle/symphony/internal/provider/ci/gitlabci"
@@ -63,5 +64,36 @@ func TestCatalogueFile(t *testing.T) {
 
 	if _, err := catalogueFile("kind: [", p, gp, repo, ci, "bob"); err == nil {
 		t.Error("fiche invalide du golden path acceptée")
+	}
+}
+
+func TestProjectTeam(t *testing.T) {
+	bob := &auth.User{Name: "bob", Role: auth.RoleDeveloper, Teams: []string{"team-payments"}}
+	dev2 := &auth.User{Name: "eve", Role: auth.RoleDeveloper, Teams: []string{"team-a", "team-b"}}
+	alone := &auth.User{Name: "dan", Role: auth.RoleDeveloper, Teams: []string{}}
+	alice := &auth.User{Name: "alice", Role: auth.RoleAdmin, Teams: []string{"team-platform"}}
+	cases := []struct {
+		u       *auth.User
+		owner   string
+		want    string
+		wantErr string
+	}{
+		{bob, "", "team-payments", ""},
+		{bob, "team-payments", "team-payments", ""},
+		{bob, "team-product", "", "pas membre de l'équipe team-product"},
+		{dev2, "", "", "owner requis : l'une de vos équipes (team-a, team-b)"},
+		{dev2, "team-b", "team-b", ""},
+		{alone, "", "", "membre d'aucune équipe"},
+		{alice, "team-product", "team-product", ""},
+		{alice, "", "team-platform", ""},
+	}
+	for i, c := range cases {
+		got, err := projectTeam(c.u, c.owner)
+		switch {
+		case c.wantErr != "" && (err == nil || !strings.Contains(err.Error(), c.wantErr)):
+			t.Errorf("cas %d : erreur = %v, attendu %q", i, err, c.wantErr)
+		case c.wantErr == "" && (err != nil || got != c.want):
+			t.Errorf("cas %d : %q, %v ; attendu %q", i, got, err, c.want)
+		}
 	}
 }

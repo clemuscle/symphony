@@ -19,6 +19,9 @@ var migration002 []byte
 //go:embed migrations/003_tasks.sql
 var migration003 []byte
 
+//go:embed migrations/004_project_team.sql
+var migration004 []byte
+
 type DB struct {
 	*sql.DB
 }
@@ -53,6 +56,7 @@ func (db *DB) Migrate() error {
 		{"001", migration001},
 		{"002", migration002},
 		{"003", migration003},
+		{"004", migration004},
 	}
 
 	for _, m := range migrations {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/provider"
@@ -35,7 +36,9 @@ func ListProviders(providers *provider.Registry) http.HandlerFunc {
 // ListIdentityGroups : groupes de l'annuaire du provider identity par défaut
 // (équipes proposées comme owner d'un projet). supported vaut false si le
 // provider n'a pas d'annuaire, ou s'il n'y a pas de provider identity.
-func ListIdentityGroups(providers *provider.Registry) http.HandlerFunc {
+// Les groupes qui donnent un rôle (auth.roles) ne sont pas des équipes : ils
+// sont retirés.
+func ListIdentityGroups(providers *provider.Registry, security *auth.Holder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idp, err := providers.Identity(r.URL.Query().Get("provider"))
 		if err != nil {
@@ -51,7 +54,13 @@ func ListIdentityGroups(providers *provider.Registry) http.HandlerFunc {
 			providerError(w, r, "annuaire "+idp.ID(), err)
 			return
 		}
-		respond(w, http.StatusOK, map[string]any{"provider": idp.ID(), "supported": true, "groups": groups})
+		teams := make([]provider.Group, 0, len(groups))
+		for _, g := range groups {
+			if !security.IsRoleGroup(g.Name) {
+				teams = append(teams, g)
+			}
+		}
+		respond(w, http.StatusOK, map[string]any{"provider": idp.ID(), "supported": true, "groups": teams})
 	}
 }
 

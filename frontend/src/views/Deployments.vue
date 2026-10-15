@@ -16,7 +16,7 @@
           <label>Projet *</label>
           <input v-model="form.project_name" placeholder="mon-api" list="projects" required />
           <datalist id="projects">
-            <option v-for="p in projects" :key="p.name" :value="p.name" />
+            <option v-for="p in projects.filter(p => canOperate(p.team))" :key="p.name" :value="p.name" />
           </datalist>
         </div>
         <div class="field">
@@ -74,7 +74,7 @@
         </div>
         <div class="deploy-image">{{ d.sync ? '☸️' : '🐳' }} {{ d.image || '—' }}</div>
         <a v-if="d.url" :href="d.url" target="_blank" class="deploy-url">{{ d.url }} ↗</a>
-        <div class="deploy-footer" v-if="can('developer')">
+        <div class="deploy-footer" v-if="canOperate(teamOf(d.name))">
           <button class="btn-stop" v-if="isUp(d)" @click="stop(d)">⏹ Stop</button>
           <button class="btn-restart" @click="restart(d)">↻ {{ isUp(d) ? 'Redémarrer' : 'Relancer' }}</button>
         </div>
@@ -92,7 +92,9 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api'
-import { can } from '../stores/session'
+import { can, canOperate } from '../stores/session'
+// Équipe du projet d'un déploiement (le déploiement porte le nom du projet)
+const teamOf = (name) => projects.value.find(p => p.name === name)?.team
 import TaskProgress from '../components/TaskProgress.vue'
 import { taskStore, trackTask } from '../stores/tasks'
 

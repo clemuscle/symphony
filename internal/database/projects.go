@@ -18,6 +18,7 @@ type Project struct {
 	RepoURL     string    `json:"repo_url"`
 	RegistryURL string    `json:"registry_url"`
 	GoldenPath  string    `json:"golden_path"`
+	Team        string    `json:"team"` // équipe propriétaire (groupe de l'annuaire)
 	CreatedBy   string    `json:"created_by"`
 	CreatedAt   time.Time `json:"created_at"`
 	// Deleting n'est pas en base : renseigné par l'API pendant une suppression en cours
@@ -29,12 +30,12 @@ func (db *DB) CreateProject(p *Project) error {
 		INSERT INTO projects
 			(name, description, language, type, port, namespace,
 			 scm_provider, ci_provider, reg_provider, rt_provider,
-			 repo_path, repo_url, registry_url, golden_path, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+			 repo_path, repo_url, registry_url, golden_path, created_by, team)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 		RETURNING id, created_at`,
 		p.Name, p.Description, p.Language, p.Type, p.Port, p.Namespace,
 		p.SCMProvider, p.CIProvider, p.RegProvider, p.RTProvider,
-		p.RepoPath, p.RepoURL, p.RegistryURL, p.GoldenPath, p.CreatedBy,
+		p.RepoPath, p.RepoURL, p.RegistryURL, p.GoldenPath, p.CreatedBy, p.Team,
 	).Scan(&p.ID, &p.CreatedAt)
 }
 
@@ -44,7 +45,7 @@ func (db *DB) ListProjects() ([]Project, error) {
 		       COALESCE(port,0), COALESCE(namespace,''),
 		       COALESCE(scm_provider,''), COALESCE(ci_provider,''), COALESCE(reg_provider,''), COALESCE(rt_provider,''),
 		       COALESCE(repo_path,''), COALESCE(repo_url,''), COALESCE(registry_url,''),
-		       COALESCE(golden_path,''), COALESCE(created_by,''), created_at
+		       COALESCE(golden_path,''), COALESCE(created_by,''), team, created_at
 		FROM projects ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -56,7 +57,7 @@ func (db *DB) ListProjects() ([]Project, error) {
 		var p Project
 		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Language, &p.Type, &p.Port,
 			&p.Namespace, &p.SCMProvider, &p.CIProvider, &p.RegProvider, &p.RTProvider,
-			&p.RepoPath, &p.RepoURL, &p.RegistryURL, &p.GoldenPath, &p.CreatedBy, &p.CreatedAt); err != nil {
+			&p.RepoPath, &p.RepoURL, &p.RegistryURL, &p.GoldenPath, &p.CreatedBy, &p.Team, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		projects = append(projects, p)
@@ -71,15 +72,24 @@ func (db *DB) GetProjectByName(name string) (*Project, error) {
 		       COALESCE(port,0), COALESCE(namespace,''),
 		       COALESCE(scm_provider,''), COALESCE(ci_provider,''), COALESCE(reg_provider,''), COALESCE(rt_provider,''),
 		       COALESCE(repo_path,''), COALESCE(repo_url,''), COALESCE(registry_url,''),
-		       COALESCE(golden_path,''), COALESCE(created_by,''), created_at
+		       COALESCE(golden_path,''), COALESCE(created_by,''), team, created_at
 		FROM projects WHERE name=$1`, name).
 		Scan(&p.ID, &p.Name, &p.Description, &p.Language, &p.Type, &p.Port,
 			&p.Namespace, &p.SCMProvider, &p.CIProvider, &p.RegProvider, &p.RTProvider,
-			&p.RepoPath, &p.RepoURL, &p.RegistryURL, &p.GoldenPath, &p.CreatedBy, &p.CreatedAt)
+			&p.RepoPath, &p.RepoURL, &p.RegistryURL, &p.GoldenPath, &p.CreatedBy, &p.Team, &p.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return &p, nil
+}
+
+// GetProjectByRepoPath : le projet dont le repo est repoPath
+func (db *DB) GetProjectByRepoPath(repoPath string) (*Project, error) {
+	var name string
+	if err := db.QueryRow(`SELECT name FROM projects WHERE repo_path=$1`, repoPath).Scan(&name); err != nil {
+		return nil, err
+	}
+	return db.GetProjectByName(name)
 }
 
 // DeleteProject supprime le projet et l'historique de ses pipelines

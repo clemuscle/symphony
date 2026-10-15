@@ -9,36 +9,48 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// TriggerPipeline relance la pipeline d'un projet, sur son repo et avec son
+// CI, sans variables : une pipeline paramétrée passe par une action Day-2,
+// dont les entrées sont déclarées et validées
 func TriggerPipeline(providers *provider.Registry, db *database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			RepoPath   string            `json:"repo_path"`
-			Ref        string            `json:"ref"`
-			CIProvider string            `json:"ci_provider"`
-			Vars       map[string]string `json:"vars"`
+			Project string `json:"project"`
+			Ref     string `json:"ref"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			respondError(w, http.StatusBadRequest, "body invalide")
 			return
 		}
+		if req.Project == "" {
+			respondError(w, http.StatusBadRequest, "project requis")
+			return
+		}
 		if req.Ref == "" {
 			req.Ref = "main"
 		}
-
-		ci, err := providers.CI(req.CIProvider)
+		proj, ok := authorizeProject(w, r, db, req.Project)
+		if !ok {
+			return
+		}
+		if proj == nil || proj.RepoPath == "" {
+			respondError(w, http.StatusNotFound, "projet introuvable : "+req.Project)
+			return
+		}
+		ci, err := providers.CI(proj.CIProvider)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "ci provider: "+err.Error())
 			return
 		}
 
-		pipeline, err := ci.TriggerPipeline(req.RepoPath, req.Ref, req.Vars)
+		pipeline, err := ci.TriggerPipeline(proj.RepoPath, req.Ref, nil)
 		if err != nil {
 			providerError(w, r, "lancement de la pipeline", err)
 			return
 		}
 
 		db.CreatePipeline(&database.Pipeline{
-			ProjectName: req.RepoPath,
+			ProjectName: proj.RepoPath,
 			PipelineID:  pipeline.ID,
 			CIProvider:  ci.ID(),
 			Type:        "manual",
@@ -47,7 +59,7 @@ func TriggerPipeline(providers *provider.Registry, db *database.DB) http.Handler
 			Ref:         pipeline.Ref,
 			TriggeredBy: userID(r),
 		})
-		audit(db, r, "trigger_pipeline", req.RepoPath, map[string]any{
+		audit(db, r, "trigger_pipeline", proj.Name, map[string]any{
 			"ref":         req.Ref,
 			"ci_provider": ci.ID(),
 			"pipeline_id": pipeline.ID,

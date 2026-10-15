@@ -66,12 +66,18 @@
           <div class="section-label">Fiche catalogue</div>
           <div class="form-grid three">
             <div class="field">
-              <label>Équipe responsable</label>
-              <input v-model="form.owner" list="identity-groups"
-                :placeholder="groups.length ? 'groupe de l\'annuaire' : 'team-platform'" />
-              <datalist id="identity-groups">
-                <option v-for="g in groups" :key="g.path" :value="g.name">{{ g.path }}</option>
-              </datalist>
+              <label>Équipe propriétaire</label>
+              <!-- Un developer choisit parmi ses équipes ; un admin, parmi celles de l'annuaire -->
+              <select v-if="!can('admin') && myTeams().length" v-model="form.owner">
+                <option v-for="t in myTeams()" :key="t" :value="t">{{ t }}</option>
+              </select>
+              <template v-else>
+                <input v-model="form.owner" list="identity-groups"
+                  :placeholder="groups.length ? 'équipe de l\'annuaire' : 'team-platform'" />
+                <datalist id="identity-groups">
+                  <option v-for="g in groups" :key="g.path" :value="g.name">{{ g.path }}</option>
+                </datalist>
+              </template>
             </div>
             <div class="field">
               <label>Tier</label>
@@ -127,7 +133,7 @@
 <script setup>
 import { ref, computed, nextTick, onMounted } from 'vue'
 import { api } from '../api'
-import { can, session } from '../stores/session'
+import { can, myTeams } from '../stores/session'
 import TaskProgress from '../components/TaskProgress.vue'
 import { taskStore, trackTask } from '../stores/tasks'
 
@@ -144,7 +150,7 @@ const nameError = ref('')
 
 const emptyForm = () => ({
   name: '', description: '', namespace: '', port: 8080,
-  owner: '', tier: 'standard', lifecycle: 'staging',
+  owner: myTeams()[0] || '', tier: 'standard', lifecycle: 'staging',
 })
 const form = ref(emptyForm())
 
@@ -209,7 +215,7 @@ async function createProject() {
   try {
     const { data } = await api.createProject({
       ...form.value,
-      owner: form.value.owner || session.user?.name || '',
+      owner: form.value.owner,
       golden_path_id: selected.value.id,
       scm_provider: selected.value.scm_provider,
       runtime_provider: selected.value.runtime_provider,

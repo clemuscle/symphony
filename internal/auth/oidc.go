@@ -296,7 +296,9 @@ func (a *Authenticator) authenticate(r *http.Request) (u *User, viaCookie bool, 
 	}
 	return &User{
 		Subject: s.Subject, Name: s.Name, Email: s.Email, Groups: s.Groups,
-		Role: a.roles.Resolve(s.Groups), // recalculé à chaque requête : suit la configuration
+		// recalculés à chaque requête : suivent la configuration
+		Teams: a.roles.Teams(s.Groups),
+		Role:  a.roles.Resolve(s.Groups),
 	}, viaCookie, nil
 }
 

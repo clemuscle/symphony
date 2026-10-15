@@ -137,7 +137,14 @@ est tirée de GHCR avec les identifiants du provider `ghcr`. L'action « Relance
 pipeline » de la fiche lance le workflow par `workflow_dispatch`. Supprimer le projet
 supprime aussi le repo GitHub et le package GHCR.
 
-## 5. Les rôles (1 min)
+## 5. Les rôles et les équipes (2 min)
+
+**Les droits suivent les équipes de l'annuaire.** bob (developer) est membre de
+`team-payments` dans Keycloak : sur **Projets**, il déploie `payment-api` et lance ses
+actions, mais `auth-service` (équipe `team-identity`) n'affiche que « réservé à l'équipe
+team-identity et aux admins » ; l'API refuse de toute façon (`403`). À la création, le champ
+équipe ne lui propose que les siennes. alice (admin) agit sur tous les projets.
+
 
 **Déconnexion**, puis connexion en **carol** (viewer) : projets et catalogue visibles,
 mais plus de création ni de formulaire de déploiement ; l'API refuse de

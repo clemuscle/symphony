@@ -90,7 +90,7 @@
             <a :href="repoWebURL(selected)" target="_blank" class="btn-ghost">💻 Repo ↗</a>
             <a v-if="pipelinesURL(selected)" :href="pipelinesURL(selected)" target="_blank" class="btn-ghost">⚙️ Pipelines ↗</a>
             <!-- Avec une fiche, la relance passe par ses actions Day-2 -->
-            <button class="btn-ghost" v-if="can('developer') && !svc" @click="triggerPipeline(selected)">▶ Relancer la pipeline</button>
+            <button class="btn-ghost" v-if="canOperate(selected.team) && !svc" @click="triggerPipeline(selected)">▶ Relancer la pipeline</button>
           </div>
           <div class="pipeline-status" v-if="pipelines[selected.repo_path]">
             <span>Pipeline #{{ pipelines[selected.repo_path].id }}</span>
@@ -98,6 +98,7 @@
           </div>
           <div class="info-row"><span>Repo</span><code>{{ selected.repo_path }}</code></div>
           <div class="info-row"><span>Golden path</span><code>{{ selected.golden_path }}</code></div>
+          <div class="info-row" v-if="selected.team"><span>Équipe</span><strong>{{ selected.team }}</strong></div>
           <div class="info-row" v-if="selected.created_by"><span>Créé par</span><strong>{{ selected.created_by }}</strong></div>
         </section>
 
@@ -112,9 +113,12 @@
             <code class="deploy-image">{{ d.image }}</code>
           </div>
           <div class="muted small" v-if="!deploymentsOf(selected).length">Aucun déploiement.</div>
-          <RouterLink v-if="can('developer')" :to="{ path: '/deployments', query: { project: selected.name } }" class="btn-ghost block">
+          <RouterLink v-if="canOperate(selected.team)" :to="{ path: '/deployments', query: { project: selected.name } }" class="btn-ghost block">
             🚀 Déployer une version
           </RouterLink>
+          <div class="muted small" v-else-if="can('developer')">
+            Déploiement et actions réservés à l'équipe {{ selected.team || 'propriétaire' }} et aux admins.
+          </div>
         </section>
 
         <template v-if="svc">
@@ -173,7 +177,7 @@
                   v-model="vals[action.name + input.id]" :placeholder="input.default" />
                 <input v-else type="text" v-model="vals[action.name + input.id]" :placeholder="input.default || input.id" />
               </div>
-              <button class="btn" v-if="can('developer')" :disabled="busy[action.name]" @click="trigger(action)">
+              <button class="btn" v-if="canOperate(selected.team)" :disabled="busy[action.name]" @click="trigger(action)">
                 {{ busy[action.name] ? '⏳ Envoi...' : 'Déclencher' }}
               </button>
               <TaskProgress class="action-task" v-if="feedback[action.name]?.taskId && taskStore.byId[feedback[action.name].taskId]"
@@ -209,7 +213,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api'
-import { can } from '../stores/session'
+import { can, canOperate } from '../stores/session'
 import TaskProgress from '../components/TaskProgress.vue'
 import { taskStore, trackTask, activeTasks, activeTaskFor, kindLabels } from '../stores/tasks'
 
@@ -303,7 +307,7 @@ async function trigger(action) {
 
 async function triggerPipeline(p) {
   try {
-    const { data } = await api.triggerPipeline(p.repo_path, 'main', {})
+    const { data } = await api.triggerPipeline(p.name, 'main')
     pipelines.value[p.repo_path] = { id: data.id, status: 'pending' }
     pollPipeline(p.repo_path, data.id)
   } catch (e) {

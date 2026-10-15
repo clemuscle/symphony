@@ -34,8 +34,8 @@ de les remplacer.
   dans Git et appliquée à chaud ; une version invalide est refusée et l'ancienne reste en
   place.
 - **Sécurisé** : connexion OIDC (Keycloak en démo, tout fournisseur OIDC), rôles
-  `viewer` / `developer` / `admin` déduits des groupes de l'annuaire, audit de qui a fait
-  quoi. En démo, GitLab se connecte au même Keycloak : un seul compte pour les deux.
+  `viewer` / `developer` / `admin` déduits des groupes de l'annuaire, **droits par équipe**
+  (on ne déploie que les projets de ses équipes), audit de qui a fait quoi. En démo, GitLab se connecte au même Keycloak : un seul compte pour les deux.
 - **Aucun secret dans la configuration** : elle désigne ses jetons par référence
   (`secret://vault/symphony/gitlab#token`), lus dans Vault (AppRole) et relus à chaud
   après une rotation.

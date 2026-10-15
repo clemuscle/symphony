@@ -258,6 +258,22 @@ alice Owner de `platform` et `apps`, bob Developer et carol Reporter de `apps`. 
 ne synchronise pas les groupes de l'annuaire (fonction payante) : ces droits sont posés
 par le script, pas déduits des groupes Keycloak.
 
+### Équipes et droits par projet
+
+Un projet appartient à une **équipe** : un groupe de l'annuaire qui ne donne pas de rôle
+(les groupes de `auth.roles` sont des rôles, les autres des équipes ; `GET /api/v1/me`
+renvoie les deux). L'équipe est choisie à la création (un developer, parmi les siennes ;
+un admin, n'importe laquelle), enregistrée en base (`projects.team`) et reprise comme
+`owner` dans la fiche. Déployer, arrêter, relancer, lire les logs, relancer la pipeline et
+lancer une action d'un projet demandent d'être admin, ou developer **membre de son
+équipe** (`authorizeProject`) ; un projet sans équipe (antérieur à la v0.8) est réservé
+aux admins. La lecture reste ouverte à tous les viewers. La base fait foi pour les droits :
+changer l'`owner` de la fiche par un commit ne donne aucun droit.
+
+`POST /api/v1/pipelines/trigger` prend un nom de projet et relance sa pipeline, sur son
+repo et avec son CI, sans variables : une pipeline paramétrée passe par une action Day-2,
+dont les entrées sont validées.
+
 ### Annuaire
 
 Un provider `identity` peut avoir un annuaire (`ListGroups`). `keycloak` le lit par l'API
@@ -296,7 +312,7 @@ implémentations n'en savent rien.
 | Sujet | Aujourd'hui | Prévu |
 |---|---|---|
 | Authentification | OIDC (Keycloak en démo), Authorization Code + PKCE fait par le serveur ; cookie de session signé (`HttpOnly`, `SameSite=Lax`) ou jeton `Bearer` | — |
-| Autorisations | rôles `viewer` < `developer` < `admin` déduits des groupes OIDC (configuration), vérifiés par route | rôles par projet |
+| Autorisations | rôles `viewer` < `developer` < `admin` déduits des groupes OIDC (configuration), vérifiés par route ; agir sur un projet (déployer, pipeline, actions) est réservé aux developers de son équipe et aux admins | — |
 | CSRF | requête modifiante avec cookie : `Origin` (ou `Sec-Fetch-Site`) doit être Symphony | — |
 | CORS | aucune origine tierce par défaut ; liste `cors_origins`, sans cookies | — |
 | Secrets | providers de secrets (Vault par AppRole en démo, variables d'environnement) ; références `secret://` dans la configuration, résolues dans une copie ; jamais dans les fichiers, les logs, les résultats de tâches ni le repo de déploiement | — |

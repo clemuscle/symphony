@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -63,14 +64,16 @@ func Deploy(providers *provider.Registry, db *database.DB, runner *tasks.Runner)
 			respondError(w, http.StatusBadRequest, "project_name et image requis")
 			return
 		}
+		proj, ok := authorizeProject(w, r, db, req.ProjectName)
+		if !ok {
+			return
+		}
 
 		// Runtime : demandé, sinon celui du projet (choisi par son golden path),
 		// sinon le runtime par défaut
 		rtID := req.RuntimeProvider
-		if rtID == "" {
-			if proj, err := db.GetProjectByName(req.ProjectName); err == nil {
-				rtID = proj.RTProvider
-			}
+		if rtID == "" && proj != nil {
+			rtID = proj.RTProvider
 		}
 		rt, err := providers.Runtime(rtID)
 		if err != nil {
@@ -102,9 +105,8 @@ func StopDeployment(providers *provider.Registry, db *database.DB) http.HandlerF
 		id := chi.URLParam(r, "id")
 		rtID := r.URL.Query().Get("provider")
 
-		rt, err := providers.Runtime(rtID)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, err.Error())
+		rt, ok := deploymentRuntime(w, r, providers, db, rtID, id)
+		if !ok {
 			return
 		}
 		if err := rt.Stop(id); err != nil {
@@ -123,9 +125,8 @@ func RestartDeployment(providers *provider.Registry, db *database.DB) http.Handl
 		id := chi.URLParam(r, "id")
 		rtID := r.URL.Query().Get("provider")
 
-		rt, err := providers.Runtime(rtID)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, err.Error())
+		rt, ok := deploymentRuntime(w, r, providers, db, rtID, id)
+		if !ok {
 			return
 		}
 		if err := rt.Restart(id); err != nil {
@@ -138,14 +139,13 @@ func RestartDeployment(providers *provider.Registry, db *database.DB) http.Handl
 	}
 }
 
-func GetLogs(providers *provider.Registry) http.HandlerFunc {
+func GetLogs(providers *provider.Registry, db *database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		rtID := r.URL.Query().Get("provider")
 
-		rt, err := providers.Runtime(rtID)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, err.Error())
+		rt, ok := deploymentRuntime(w, r, providers, db, rtID, id)
+		if !ok {
 			return
 		}
 
@@ -156,6 +156,30 @@ func GetLogs(providers *provider.Registry) http.HandlerFunc {
 		}
 		respond(w, http.StatusOK, map[string]string{"logs": logs, "id": id})
 	}
+}
+
+// deploymentRuntime : le runtime rtID, si l'utilisateur peut agir sur le
+// projet du déploiement id (le déploiement porte le nom du projet)
+func deploymentRuntime(w http.ResponseWriter, r *http.Request, providers *provider.Registry, db *database.DB,
+	rtID, id string) (provider.RuntimeProvider, bool) {
+	rt, err := providers.Runtime(rtID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return nil, false
+	}
+	d, err := rt.Status(id)
+	if errors.Is(err, provider.ErrNotFound) {
+		respondError(w, http.StatusNotFound, "déploiement introuvable : "+id)
+		return nil, false
+	}
+	if err != nil {
+		providerError(w, r, "état du déploiement", err)
+		return nil, false
+	}
+	if _, ok := authorizeProject(w, r, db, d.Name); !ok {
+		return nil, false
+	}
+	return rt, true
 }
 
 // registryAuth : identifiants du registry du projet (ou du registry par

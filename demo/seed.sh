@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Projets de démo : créés et déployés par l'API de Symphony, comme depuis
-# l'UI, au nom de bob (developer). Chacun est un vrai projet : repo dans le
+# l'UI, au nom d'alice (admin : l'équipe plateforme amorce la démo, pour trois
+# équipes différentes). Chacun est un vrai projet : repo dans le
 # groupe apps, pipeline, image dans le registry, service joignable, et sa
 # fiche catalogue (seed/<nom>.yaml) commitée dans son repo, comme le ferait
 # son équipe.
@@ -30,7 +31,7 @@ GITLAB_TOKEN=$(saved GITLAB_TOKEN)
 
 # Un jeton par appel : ceux de Keycloak expirent au bout de 5 min
 token() {
-  curl -sf -d grant_type=password -d client_id=symphony -d username=bob -d password=bob \
+  curl -sf -d grant_type=password -d client_id=symphony -d username=alice -d password=alice \
     "$KEYCLOAK_URL/realms/symphony/protocol/openid-connect/token" | jq -r .access_token
 }
 sym() { curl -sf -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" "$@"; }
