@@ -12,8 +12,8 @@ providers:
       default: true
       config:
         url: http://vault:8200
-        role_id_env: VAULT_ROLE_ID
-        secret_id_env: VAULT_SECRET_ID
+        role_id: secret://env/VAULT_ROLE_ID
+        secret_id: secret://env/VAULT_SECRET_ID
 
   # Connexion des utilisateurs (OIDC) et annuaire : les groupes du realm sont
   # proposés comme équipe propriétaire à la création d'un projet

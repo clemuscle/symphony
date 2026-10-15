@@ -7,8 +7,8 @@ providers:
       type: vault
       config:
         url: http://vault:8200
-        role_id_env: VAULT_ROLE_ID
-        secret_id_env: VAULT_SECRET_ID
+        role_id: secret://env/VAULT_ROLE_ID
+        secret_id: secret://env/VAULT_SECRET_ID
 
 config_source:
   scm:

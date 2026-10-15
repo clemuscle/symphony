@@ -24,10 +24,9 @@ type Config struct {
 // pipeline, reçus sur <url>/webhooks/gitlab
 type WebhooksConfig struct {
 	URL string `yaml:"url"` // Symphony vu par GitLab, ex. http://symphony:8080
-	// Secret partagé : valeur ou référence secret://, sinon la variable
-	// SecretEnv (défaut WEBHOOK_SECRET)
-	Secret    string `yaml:"secret"`
-	SecretEnv string `yaml:"secret_env"`
+	// Secret partagé (16 caractères min.) : référence secret://, ex.
+	// secret://env/WEBHOOK_SECRET
+	Secret string `yaml:"secret"`
 }
 
 // AuthConfig : provider d'identité de la connexion et correspondance
@@ -37,18 +36,6 @@ type AuthConfig struct {
 	Identity string `yaml:"identity"`
 	// Rôle (viewer, developer, admin) → groupes OIDC qui le donnent
 	Roles map[string][]string `yaml:"roles"`
-
-	// Ancien format (avant les providers identity) : converti en provider de
-	// type oidc d'id "oidc". Issuer tel que le voit le navigateur.
-	Issuer string `yaml:"issuer"`
-	// URL où Symphony lit la découverte OIDC, si elle diffère de l'issuer
-	// (Symphony dans un conteneur, Keycloak joint par son nom de service)
-	DiscoveryURL    string `yaml:"discovery_url"`
-	ClientID        string `yaml:"client_id"`
-	ClientSecretEnv string `yaml:"client_secret_env"` // vide : client public (PKCE)
-	// URL de retour après connexion ; vide : déduite de la requête
-	RedirectURL string `yaml:"redirect_url"`
-	GroupsClaim string `yaml:"groups_claim"` // défaut : groups
 }
 
 type ProvidersConfig struct {
@@ -72,14 +59,9 @@ type ProviderDef struct {
 }
 
 // CatalogueConfig : chaque projet porte sa fiche dans son repo (File, défaut
-// catalog-info.yaml). Repo, Branch et Path désignaient l'ancien dossier
-// services/ du repo de config : ils ne sont plus lus.
+// catalog-info.yaml)
 type CatalogueConfig struct {
 	File string `yaml:"file"`
-
-	Repo   string `yaml:"repo"`
-	Branch string `yaml:"branch"`
-	Path   string `yaml:"path"`
 }
 
 // TemplatesConfig : repo Git des golden paths, un dossier par template

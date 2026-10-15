@@ -152,11 +152,11 @@ Symphony chez lui tient debout.
 
 - [ ] Symphony s'installe sur Kubernetes : chart Helm (`deploy/helm/symphony`), et dans la
       démo Symphony tourne dans k3s, déployé par Argo CD comme les services
-- [ ] Configuration des providers validée au chargement : clé inconnue ou valeur requise
+- [x] Configuration des providers validée au chargement : clé inconnue ou valeur requise
       absente refusée (comme les templates), plus de repli silencieux sur un jeton
-- [ ] Erreurs internes masquées : le client reçoit un message et un identifiant de requête,
+- [x] Erreurs internes masquées : le client reçoit un message et un identifiant de requête,
       le détail va dans les logs
-- [ ] Compatibilité pré-1.0 retirée : `token_env` (→ `secret://env/…`), ancien format
+- [x] Compatibilité pré-1.0 retirée : `token_env` (→ `secret://env/…`), ancien format
       `auth.issuer`, avertissements `catalogue.repo`
 - [ ] Rôles par équipe : un projet appartient à une équipe de l'annuaire ; seuls ses
       membres (et les admins) le déploient, le suppriment ou lancent ses actions ; les

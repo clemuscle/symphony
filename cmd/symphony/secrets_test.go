@@ -50,11 +50,13 @@ providers:
     - id: gitlab
       type: gitlab
       config:
+        url: http://gitlab
         token: secret://vault/symphony/gitlab#token
   ci:
     - id: ci
       type: gitlab_ci
       config:
+        url: http://gitlab
         scm_ref: gitlab
 webhooks:
   url: http://symphony:8080
@@ -74,7 +76,7 @@ webhooks:
 		t.Error("token du SCM non résolu")
 	}
 	// Le CI reprend le jeton du SCM scm_ref
-	if got := gitlabToken(resolved.Providers.CI[0], resolved); got != "glpat-vault" {
+	if got, _ := tokenOf(resolved.Providers.CI[0], resolved); got != "glpat-vault" {
 		t.Errorf("jeton du CI = %q", got)
 	}
 	if s, err := buildWebhooks(resolved); err != nil || s.Secret != "0123456789abcdef0123" {
@@ -95,39 +97,10 @@ webhooks:
 	if _, _, err := buildProviders(cfg); err == nil {
 		t.Error("provider de secrets inconnu accepté")
 	}
+	cfg.Providers.SCM[0].Config["token"] = "secret://vault/symphony/gitlab#token"
 	cfg.Providers.Secrets[0].ID = "env"
 	if _, _, err := buildProviders(cfg); err == nil {
 		t.Error("id env accepté pour un provider de secrets")
-	}
-}
-
-func TestLegacyAuth(t *testing.T) {
-	cfg, _ := config.Parse([]byte(`
-providers:
-  scm:
-    - id: gitlab
-      type: gitlab
-auth:
-  issuer: http://localhost:8180/realms/symphony
-  discovery_url: http://keycloak:8080/realms/symphony
-  client_id: symphony
-  roles:
-    admin: [symphony-admins]
-`))
-	providers, resolved, err := buildProviders(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	idp, err := providers.Identity("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if idp.ID() != "oidc" || idp.Type() != "oidc" || idp.OIDC().DiscoveryURL != "http://keycloak:8080/realms/symphony" {
-		t.Errorf("provider identity = %s/%s %+v", idp.ID(), idp.Type(), idp.OIDC())
-	}
-	codec, _, _ := auth.NewCodec("")
-	if p, err := buildPolicy(resolved, providers, codec); err != nil || p.Auth == nil {
-		t.Errorf("politique : %+v, %v", p, err)
 	}
 }
 
@@ -137,6 +110,9 @@ providers:
   scm:
     - id: gitlab
       type: gitlab
+      config:
+        url: http://gitlab
+        token: jeton
   identity:
     - id: keycloak
       type: keycloak
@@ -181,6 +157,7 @@ providers:
     - id: gitlab
       type: gitlab
       config:
+        url: http://gitlab
         token: secret://vault/symphony/gitlab#token
 `)
 	source := &configSource{read: func() ([]byte, error) { return content, nil }}

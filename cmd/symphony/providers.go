@@ -1,9 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"time"
 
 	"github.com/clemuscle/symphony/internal/config"
@@ -22,81 +22,88 @@ import (
 )
 
 // buildProviders crée les providers de la configuration dans un nouveau
-// registry, enveloppés pour mesurer leurs appels (/metrics). Les providers de
-// secrets viennent d'abord : la configuration est résolue avec eux (secret://)
-// et renvoyée résolue, pour la politique d'accès et les webhooks.
-// Un type inconnu est ignoré avec un warning ; un secret introuvable, ou
-// l'absence de provider SCM par défaut (catalogue et templates en dépendent),
-// fait refuser la configuration.
+// registry, enveloppés pour mesurer leurs appels (/metrics). La configuration
+// est d'abord validée (types et clés connus, clés requises présentes), puis
+// résolue avec les providers de secrets (secret://), qui viennent en premier ;
+// elle est renvoyée résolue, pour la politique d'accès et les webhooks. Toute
+// erreur fait refuser la configuration entière : une configuration à moitié
+// appliquée retirerait des providers qui marchaient.
 func buildProviders(cfg *config.Config) (*provider.Registry, *config.Config, error) {
+	if err := validateProviders(cfg.Providers); err != nil {
+		return nil, nil, err
+	}
 	providers := provider.NewRegistry()
 	if err := registerSecrets(providers, cfg.Providers.Secrets); err != nil {
 		return nil, nil, err
 	}
-	resolved, err := resolveConfig(legacyAuth(cfg, true), providers.Secrets)
+	resolved, err := resolveConfig(cfg, providers.Secrets)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	var errs []error
+	fail := func(kind string, def config.ProviderDef, err error) {
+		errs = append(errs, fmt.Errorf("providers.%s %s : %w", kind, def.ID, err))
+	}
 	for _, def := range resolved.Providers.SCM {
 		p, err := newSCM(def)
 		if err != nil {
-			slog.Warn("provider SCM ignoré", "id", def.ID, "error", err)
+			fail("scm", def, err)
 			continue
 		}
 		providers.RegisterSCM(instrumented.SCM(p), def.Default)
 	}
-
 	for _, def := range resolved.Providers.CI {
+		token, err := tokenOf(def, resolved)
+		if err != nil {
+			fail("ci", def, err)
+			continue
+		}
 		switch def.Type {
 		case "gitlab_ci":
-			providers.RegisterCI(instrumented.CI(gitlabci.New(def.ID, def.Config["url"], gitlabToken(def, resolved))), def.Default)
+			providers.RegisterCI(instrumented.CI(gitlabci.New(def.ID, def.Config["url"], token)), def.Default)
 		case "github_actions":
-			providers.RegisterCI(instrumented.CI(githubci.New(def.ID, scmToken(def, resolved, "GITHUB_TOKEN"))), def.Default)
-		default:
-			slog.Warn("provider CI ignoré", "id", def.ID, "error", fmt.Sprintf("type %q inconnu", def.Type))
+			providers.RegisterCI(instrumented.CI(githubci.New(def.ID, token)), def.Default)
 		}
 	}
-
 	for _, def := range resolved.Providers.Registry {
+		token, err := tokenOf(def, resolved)
+		if err != nil {
+			fail("registry", def, err)
+			continue
+		}
 		switch def.Type {
 		case "gitlab_registry":
-			providers.RegisterRegistry(instrumented.Registry(gitlabregistry.New(def.ID, def.Config["url"], def.Config["registry_host"], gitlabToken(def, resolved))), def.Default)
+			providers.RegisterRegistry(instrumented.Registry(gitlabregistry.New(def.ID, def.Config["url"], def.Config["registry_host"], token)), def.Default)
 		case "ghcr":
-			providers.RegisterRegistry(instrumented.Registry(ghcr.New(def.ID, def.Config["owner"], scmToken(def, resolved, "GITHUB_TOKEN"))), def.Default)
-		default:
-			slog.Warn("provider registry ignoré", "id", def.ID, "error", fmt.Sprintf("type %q inconnu", def.Type))
+			providers.RegisterRegistry(instrumented.Registry(ghcr.New(def.ID, def.Config["owner"], token)), def.Default)
 		}
 	}
-
 	for _, def := range resolved.Providers.Runtime {
+		var rt provider.RuntimeProvider
+		var err error
 		switch def.Type {
 		case "docker":
-			rt, err := newDocker(def)
-			if err != nil {
-				slog.Warn("provider runtime ignoré", "id", def.ID, "error", err)
-				continue
-			}
-			providers.RegisterRuntime(instrumented.Runtime(rt), def.Default)
+			rt, err = newDocker(def)
 		case "argocd":
-			rt, err := newArgoCD(def, providers)
-			if err != nil {
-				slog.Warn("provider runtime ignoré", "id", def.ID, "error", err)
-				continue
-			}
-			providers.RegisterRuntime(instrumented.Runtime(rt), def.Default)
-		default:
-			slog.Warn("provider runtime ignoré", "id", def.ID, "error", fmt.Sprintf("type %q inconnu", def.Type))
+			rt, err = newArgoCD(def, providers)
 		}
+		if err != nil {
+			fail("runtime", def, err)
+			continue
+		}
+		providers.RegisterRuntime(instrumented.Runtime(rt), def.Default)
 	}
-
 	for _, def := range resolved.Providers.Identity {
 		p, err := newIdentity(def)
 		if err != nil {
-			slog.Warn("provider identity ignoré", "id", def.ID, "error", err)
+			fail("identity", def, err)
 			continue
 		}
 		providers.RegisterIdentity(instrumented.Identity(p), def.Default)
+	}
+	if err := errors.Join(errs...); err != nil {
+		return nil, nil, err
 	}
 
 	if _, err := providers.SCM(""); err != nil {
@@ -120,10 +127,10 @@ func logProviders(msg string, providers *provider.Registry) {
 func newSCM(def config.ProviderDef) (provider.SCMProvider, error) {
 	switch def.Type {
 	case "gitlab":
-		return gitlabscm.New(def.ID, def.Config["url"], secretValue(def, "token")).WithNamespace(def.Config["namespace"]), nil
+		return gitlabscm.New(def.ID, def.Config["url"], def.Config["token"]).WithNamespace(def.Config["namespace"]), nil
 
 	case "github":
-		return githubscm.New(def.ID, secretValue(def, "token"), def.Config["org"]), nil
+		return githubscm.New(def.ID, def.Config["token"], def.Config["org"]), nil
 	}
 	return nil, fmt.Errorf("type de provider SCM %q inconnu", def.Type)
 }
@@ -155,7 +162,7 @@ func newIdentity(def config.ProviderDef) (provider.IdentityProvider, error) {
 		Issuer:       c["issuer"],
 		DiscoveryURL: c["discovery_url"],
 		ClientID:     c["client_id"],
-		ClientSecret: secretValue(def, "client_secret"),
+		ClientSecret: c["client_secret"],
 		RedirectURL:  c["redirect_url"],
 		GroupsClaim:  c["groups_claim"],
 	}
@@ -168,7 +175,7 @@ func newIdentity(def config.ProviderDef) (provider.IdentityProvider, error) {
 			PublicURL:             c["public_url"],
 			Realm:                 c["realm"],
 			DirectoryClientID:     c["directory_client_id"],
-			DirectoryClientSecret: secretValue(def, "directory_client_secret"),
+			DirectoryClientSecret: c["directory_client_secret"],
 		})
 	}
 	return nil, fmt.Errorf("type de provider identity %q inconnu", def.Type)
@@ -181,14 +188,10 @@ func newArgoCD(def config.ProviderDef, providers *provider.Registry) (*argocdrt.
 	if err != nil {
 		return nil, err
 	}
-	token := secretValue(def, "token")
-	if token == "" && def.Config["token_env"] == "" {
-		token = os.Getenv("ARGOCD_TOKEN")
-	}
 	c := def.Config
 	return argocdrt.New(def.ID, scm, argocdrt.Config{
 		URL:           c["url"],
-		Token:         token,
+		Token:         c["token"],
 		Insecure:      c["insecure"] == "true",
 		Repo:          c["repo"],
 		Branch:        c["branch"],
@@ -203,44 +206,17 @@ func newArgoCD(def config.ProviderDef, providers *provider.Registry) (*argocdrt.
 	})
 }
 
-// secretValue : config[key] (valeur, ou secret déjà résolu), sinon la
-// variable d'environnement nommée par config[key_env]
-func secretValue(def config.ProviderDef, key string) string {
-	if v := def.Config[key]; v != "" {
-		return v
+// tokenOf : le jeton du provider (token), sinon celui du SCM scm_ref de la
+// même configuration (une seule référence au secret pour GitLab et sa CI)
+func tokenOf(def config.ProviderDef, cfg *config.Config) (string, error) {
+	if token := def.Config["token"]; token != "" {
+		return token, nil
 	}
-	if env := def.Config[key+"_env"]; env != "" {
-		return os.Getenv(env)
-	}
-	return ""
-}
-
-// scmToken : jeton du provider (token ou token_env), sinon celui du SCM
-// scm_ref de la même configuration, sinon la variable fallbackEnv
-func scmToken(def config.ProviderDef, cfg *config.Config, fallbackEnv string) string {
-	if token := secretValue(def, "token"); token != "" {
-		return token
-	}
-	if ref := def.Config["scm_ref"]; ref != "" {
-		for _, scm := range cfg.Providers.SCM {
-			if scm.ID == ref {
-				if token := secretValue(scm, "token"); token != "" {
-					return token
-				}
-			}
-		}
-		if token := os.Getenv(ref + "_TOKEN"); token != "" {
-			return token
+	ref := def.Config["scm_ref"]
+	for _, scm := range cfg.Providers.SCM {
+		if scm.ID == ref {
+			return scm.Config["token"], nil
 		}
 	}
-	if fallbackEnv != "" {
-		return os.Getenv(fallbackEnv)
-	}
-	return ""
-}
-
-// gitlabToken : token ou token_env, sinon celui du SCM scm_ref, sinon
-// <scm_ref>_TOKEN, sinon GITLAB_TOKEN
-func gitlabToken(def config.ProviderDef, cfg *config.Config) string {
-	return scmToken(def, cfg, "GITLAB_TOKEN")
+	return "", fmt.Errorf("scm_ref %q : pas de provider SCM de cet id", ref)
 }
