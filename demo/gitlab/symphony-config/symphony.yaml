@@ -1,19 +1,51 @@
 # Configuration de Symphony (démo), relue toutes les 15 s : une version
 # valide est appliquée à chaud, une version invalide est refusée et la
 # précédente reste en place. Les ${VAR} viennent de l'environnement de
-# Symphony ; les tokens n'apparaissent jamais ici (token_env).
+# Symphony ; les secrets n'apparaissent jamais ici : secret://<provider>/<chemin>#<clé>
+# les lit dans Vault (relus à chaque cycle : une rotation est appliquée à chaud).
 
 providers:
+  # Lus en premier : les autres providers y font référence
+  secrets:
+    - id: vault
+      type: vault
+      default: true
+      config:
+        url: http://vault:8200
+        role_id_env: VAULT_ROLE_ID
+        secret_id_env: VAULT_SECRET_ID
+
+  # Connexion des utilisateurs (OIDC) et annuaire : les groupes du realm sont
+  # proposés comme équipe propriétaire à la création d'un projet
+  identity:
+    - id: keycloak
+      type: keycloak
+      default: true
+      config:
+        url: http://keycloak:8080 # vu par Symphony
+        public_url: http://localhost:${KEYCLOAK_PORT} # vu par le navigateur
+        realm: symphony
+        client_id: symphony
+        directory_client_id: symphony-directory
+        directory_client_secret: secret://vault/symphony/keycloak#directory_secret
+
   scm:
     - id: gitlab-local
       type: gitlab
       default: true
       config:
         url: http://gitlab:${GITLAB_PORT}
-        token_env: GITLAB_TOKEN
+        token: secret://vault/symphony/gitlab#token
         # Groupe des projets créés : ouvert aux développeurs, à part des
         # repos de la plateforme (groupe platform)
         namespace: apps
+    # github:début — GitHub (golden path api-rest-go-github) : retiré par
+    # up.sh sans GITHUB_TOKEN. Repos créés dans le compte du jeton (ou org: …)
+    - id: github
+      type: github
+      config:
+        token: secret://vault/symphony/github#token
+    # github:fin
 
   ci:
     - id: gitlab-ci
@@ -21,7 +53,13 @@ providers:
       default: true
       config:
         url: http://gitlab:${GITLAB_PORT}
-        scm_ref: gitlab-local
+        scm_ref: gitlab-local # même jeton que le SCM
+    # github:début
+    - id: github-actions
+      type: github_actions
+      config:
+        scm_ref: github
+    # github:fin
 
   registry:
     - id: gitlab-registry
@@ -32,6 +70,12 @@ providers:
         # Vu depuis la machine : c'est le daemon Docker qui tire les images
         registry_host: localhost:${REGISTRY_PORT}
         scm_ref: gitlab-local
+    # github:début — images publiées par le workflow sur ghcr.io/<owner>/<repo>
+    - id: ghcr
+      type: ghcr
+      config:
+        scm_ref: github
+    # github:fin
 
   runtime:
     - id: docker-local
@@ -40,13 +84,15 @@ providers:
       config:
         socket: /var/run/docker.sock
 
+    # k8s:début — retiré par up.sh --no-k8s (supprimer un projet passe par
+    # chaque runtime : un runtime injoignable la bloquerait)
     # Kubernetes en GitOps : Symphony commite les manifests de chaque service
     # dans platform/symphony-deployments, Argo CD (dans k3s) les applique
     - id: argocd-k3s
       type: argocd
       config:
         url: http://k3s:30080
-        token_env: ARGOCD_TOKEN
+        token: secret://vault/symphony/argocd#token
         scm_ref: gitlab-local
         repo: platform/symphony-deployments
         branch: main
@@ -57,12 +103,13 @@ providers:
         # Chaque service répond sur http://<service>.localhost:<K8S_HTTP_PORT>
         ingress_domain: localhost
         ingress_port: ${K8S_HTTP_PORT}
+    # k8s:fin
 
 # Webhooks entrants : chaque repo créé par Symphony le prévient de l'avancement
 # de ses pipelines (sinon, sondage toutes les 15 s)
 webhooks:
   url: http://symphony:8080 # Symphony vu par GitLab
-  secret_env: WEBHOOK_SECRET
+  secret: secret://vault/symphony/webhook#secret
 
 # Catalogue : chaque projet porte sa fiche (équipe, tier, SLO, liens, actions)
 # dans son propre repo, à la racine
@@ -74,12 +121,10 @@ templates:
   branch: main
   path: templates
 
-# Connexion via Keycloak (realm de démo : alice admin, bob developer,
-# carol viewer, dave sans rôle ; mot de passe = identifiant)
+# Connexion par le provider identity keycloak (realm de démo : alice admin,
+# bob developer, carol viewer, dave sans rôle ; mot de passe = identifiant)
 auth:
-  issuer: http://localhost:${KEYCLOAK_PORT}/realms/symphony
-  discovery_url: http://keycloak:8080/realms/symphony
-  client_id: symphony
+  identity: keycloak
   roles:
     admin: [symphony-admins]
     developer: [symphony-developers]

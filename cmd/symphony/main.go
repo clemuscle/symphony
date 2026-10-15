@@ -19,6 +19,11 @@ import (
 )
 
 func main() {
+	// HEALTHCHECK de l'image (scratch : ni curl ni wget) : interroge /healthz
+	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
+		os.Exit(healthcheck())
+	}
+
 	// Logger structuré JSON
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -54,7 +59,7 @@ func main() {
 	}
 
 	// Providers de la config
-	providers, err := buildProviders(cfg)
+	providers, resolved, err := buildProviders(cfg)
 	if err != nil {
 		slog.Error("providers", "error", err)
 		os.Exit(1)
@@ -71,7 +76,7 @@ func main() {
 	if !persistent {
 		slog.Warn("SESSION_SECRET absent : secret aléatoire, les sessions ne survivront pas à un redémarrage")
 	}
-	policy, err := buildPolicy(cfg, codec)
+	policy, err := buildPolicy(resolved, providers, codec)
 	if err != nil {
 		slog.Error("auth", "error", err)
 		os.Exit(1)
@@ -79,7 +84,7 @@ func main() {
 	security := auth.NewHolder(policy)
 
 	// Webhooks entrants (événements de pipeline)
-	hookSettings, err := buildWebhooks(cfg)
+	hookSettings, err := buildWebhooks(resolved)
 	if err != nil {
 		slog.Error("webhooks", "error", err)
 		os.Exit(1)
@@ -121,6 +126,8 @@ func main() {
 		codec:     codec,
 		interval:  15 * time.Second,
 		last:      raw,
+
+		fingerprint: fingerprint(resolved),
 	}
 	go watcher.Start()
 
@@ -132,6 +139,20 @@ func main() {
 		slog.Error("serveur HTTP", "error", err)
 		os.Exit(1)
 	}
+}
+
+// healthcheck : 0 si le serveur local répond 200 sur /healthz, 1 sinon
+func healthcheck() int {
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + getEnv("PORT", "8080") + "/healthz")
+	if err != nil {
+		return 1
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
+	return 0
 }
 
 func getEnv(key, fallback string) string {

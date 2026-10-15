@@ -126,11 +126,24 @@ d'un projet se modifie par un commit dans son repo, et bob se connecte à GitLab
 
 ## v0.7 — Multi-plateforme et robustesse
 
+Objectif : chaque service externe est un provider interchangeable, y compris les secrets
+et l'identité ; GitHub marche de bout en bout comme GitLab.
+
 - [ ] Golden path GitHub + GitHub Actions de bout en bout (workflow avec
-      `workflow_dispatch` et entrées `SYMPHONY_*` déclarées)
+      `workflow_dispatch` et entrées `SYMPHONY_*` déclarées) : squelette en un commit,
+      statuts et id des runs, registry `ghcr`, package supprimé avec le projet
 - [ ] Bascule Docker : attendre le `HEALTHCHECK` de l'image au lieu de 3 s fixes
-- [ ] Secrets dans Vault : la configuration référence un chemin Vault au lieu de
-      `token_env`
+      (`health_timeout`), et `HEALTHCHECK` dans l'image de Symphony
+- [ ] Secrets en providers (`providers.secrets` : `vault`, `env`) : la configuration
+      référence `secret://<provider>/<chemin>#<clé>` au lieu de `token_env`, rotation
+      appliquée à chaud ; Vault (AppRole) dans la démo
+- [ ] Identité en providers (`providers.identity` : `keycloak`, `oidc`) ; annuaire Keycloak :
+      les groupes proposés comme équipe propriétaire à la création d'un projet
+
+Fini quand : après `./demo/up.sh`, Symphony n'a plus aucun jeton dans son environnement
+(seulement son AppRole), le formulaire de création propose les équipes de Keycloak, et
+avec `GITHUB_TOKEN` un projet GitHub est créé, construit, déployé puis supprimé (repo et
+package).
 
 ## v1.0
 

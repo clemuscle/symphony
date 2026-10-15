@@ -95,3 +95,7 @@ func (p *Provider) ListTags(repoPath string) ([]string, error) {
 	sort.SliceStable(tags, func(i, j int) bool { return tags[i] == "latest" && tags[j] != "latest" })
 	return tags, nil
 }
+
+// DeleteImages : sans effet, GitLab purge le registry d'un projet avec lui
+// (DeleteRepo attend la fin de cette purge)
+func (p *Provider) DeleteImages(repoPath string) error { return nil }

@@ -428,6 +428,7 @@ type deleteParams struct {
 	Name        string `json:"name"`
 	RepoPath    string `json:"repo_path"`
 	SCMProvider string `json:"scm_provider"`
+	RegProvider string `json:"reg_provider"`
 }
 
 // removeTimeout : délai pour qu'un déploiement supprimé ait disparu (Argo CD
@@ -501,6 +502,15 @@ func (d TaskDeps) deleteRepo(_ context.Context, x *tasks.Exec) error {
 	x.Progress("purge du registry puis suppression de %s (2 à 3 min sur GitLab)", p.RepoPath)
 	if err := scm.DeleteRepo(p.RepoPath); err != nil && !errors.Is(err, provider.ErrNotFound) {
 		return fmt.Errorf("suppression du repo: %w", err)
+	}
+	// Images hors du repo (GHCR) ; projet sans registry : rien à faire
+	if p.RegProvider != "" {
+		if reg, err := d.Providers.GetRegistry(p.RegProvider); err == nil {
+			x.Progress("suppression des images (%s)", reg.ID())
+			if err := reg.DeleteImages(p.RepoPath); err != nil {
+				return fmt.Errorf("suppression des images: %w", err)
+			}
+		}
 	}
 	return nil
 }

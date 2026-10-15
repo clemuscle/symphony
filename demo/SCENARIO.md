@@ -43,7 +43,8 @@ Côté GitLab, bob voit le groupe **apps** (les projets, en Developer) mais pas 
 ## 2. Créer un service depuis le catalogue (4 min, suivi en direct)
 
 **Catalogue** : les golden paths approuvés par l'équipe plateforme. Choisir **API REST Go**,
-nommer le service `hello-api`, renseigner l'équipe et le tier, créer. L'API répond tout de
+nommer le service `hello-api`, choisir l'équipe (le champ propose les groupes de
+l'annuaire Keycloak : `team-payments`…) et le tier, créer. L'API répond tout de
 suite : la création est une **tâche**, dont les étapes s'affichent en direct sous le formulaire.
 
 1. **Repo et squelette** : le repo `apps/hello-api` est créé, le squelette (code,
@@ -69,8 +70,10 @@ projet saisi ; l'image et ses tags sont préremplis depuis le registry. **Déplo
 tâche tire l'image, démarre le conteneur, puis attend qu'il tourne ; le service apparaît
 dans la liste avec son URL (`/healthz` répond).
 
-Redéployer ensuite le même service : la bascule garde le même port et, si le nouveau
-conteneur ne démarre pas, l'ancien est relancé.
+Redéployer ensuite le même service : la bascule garde le même port et attend que le
+nouveau conteneur soit `healthy` (le `HEALTHCHECK` du Dockerfile du golden path) avant de
+supprimer l'ancien ; s'il ne le devient pas, l'ancien est relancé et la tâche montre la
+sortie du healthcheck.
 
 ## 3 bis. Déployer sur Kubernetes, en GitOps (2 min)
 
@@ -112,6 +115,28 @@ différent du dossier : le golden path disparaît de la liste, les autres resten
 provider : il disparaît de `GET /api/v1/providers` en moins de 15 s. Une configuration
 invalide (YAML cassé) est refusée, et la précédente reste en place.
 
+**Aucun secret dans la configuration.** Le même `symphony.yaml` ne contient que des
+références : `token: secret://vault/symphony/gitlab#token`. Vault (URL et jeton root
+affichés par `up.sh`, `/ui`) les garde sous `secret/symphony/` ; Symphony n'a dans son
+environnement que son AppRole (`docker compose exec symphony env` dans `demo/` : pas de
+jeton GitLab). Rotation : dans Vault, créer une nouvelle version de
+`secret/symphony/webhook` (secret de 16 caractères au moins) ; en moins de 15 s, les logs
+disent « secret modifié dans son provider : configuration réappliquée ». Une référence
+vers un secret absent fait refuser la configuration, la précédente reste en place.
+
+**Tout est un provider.** `GET /api/v1/providers` liste aussi les providers `secrets`
+(`env`, `vault`) et `identity` (`keycloak`) ; un autre coffre ou un autre fournisseur
+OIDC se branche dans la même configuration.
+
+## 4 bis. GitHub (5 min, démo lancée avec `GITHUB_TOKEN`)
+
+Le catalogue montre **API REST Go (GitHub)**. Créer `hello-gh` : le repo est créé dans le
+compte GitHub du jeton, le squelette poussé en un commit, et la tâche suit le workflow
+GitHub Actions (tests, image poussée sur `ghcr.io/<compte>/hello-gh`). Déployer : l'image
+est tirée de GHCR avec les identifiants du provider `ghcr`. L'action « Relancer la
+pipeline » de la fiche lance le workflow par `workflow_dispatch`. Supprimer le projet
+supprime aussi le repo GitHub et le package GHCR.
+
 ## 5. Les rôles (1 min)
 
 **Déconnexion**, puis connexion en **carol** (viewer) : projets et catalogue visibles,
@@ -137,8 +162,9 @@ http://hello-k8s.localhost:8081 ne répond plus.
 
 ## 6. Observer (30 s)
 
-http://localhost:8080/metrics : requêtes de l'API par route, appels à GitLab, Docker et Argo CD par
-méthode (durée, erreurs), relectures des fiches, des templates et de la configuration.
+http://localhost:8080/metrics : requêtes de l'API par route, appels à GitLab, Docker, Argo CD,
+Vault et Keycloak par méthode (durée, erreurs), relectures des fiches, des templates et de
+la configuration.
 
 ## Nettoyer
 

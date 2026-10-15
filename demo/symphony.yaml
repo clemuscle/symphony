@@ -1,11 +1,21 @@
 # Bootstrap de Symphony pour la démo : la configuration est dans le repo
-# platform/symphony-config de la GitLab de démo (créé par up.sh).
+# platform/symphony-config de la GitLab de démo (créé par up.sh). Le jeton qui
+# permet de la lire vient de Vault, où Symphony se connecte par AppRole.
+providers:
+  secrets:
+    - id: vault
+      type: vault
+      config:
+        url: http://vault:8200
+        role_id_env: VAULT_ROLE_ID
+        secret_id_env: VAULT_SECRET_ID
+
 config_source:
   scm:
     type: gitlab
     config:
       url: http://gitlab:${GITLAB_PORT}
-      token_env: GITLAB_TOKEN
+      token: secret://vault/symphony/gitlab#token
   repo: platform/symphony-config
   branch: main
   path: symphony.yaml

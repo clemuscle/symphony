@@ -216,6 +216,7 @@ func DeleteProject(db *database.DB, runner *tasks.Runner) http.HandlerFunc {
 			Name:        proj.Name,
 			RepoPath:    proj.RepoPath,
 			SCMProvider: proj.SCMProvider,
+			RegProvider: proj.RegProvider,
 		}, map[string]any{"repo": proj.RepoPath})
 	}
 }

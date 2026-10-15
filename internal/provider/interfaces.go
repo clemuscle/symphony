@@ -86,6 +86,9 @@ type RegistryProvider interface {
 	GetImageURL(repoPath string) string
 	ListTags(repoPath string) ([]string, error)
 	Auth() *RegistryAuth // identifiants de pull, nil si aucun
+	// DeleteImages supprime les images du projet, quand la suppression du
+	// repo ne s'en charge pas (GHCR). Sans effet s'il n'y en a pas.
+	DeleteImages(repoPath string) error
 }
 
 // RegistryAuth : identifiants transmis au runtime pour puller une image
@@ -138,4 +141,44 @@ type Deployment struct {
 	// État GitOps (runtime argocd) : synchronisation avec Git et santé
 	Sync   string `json:"sync,omitempty"`   // Synced, OutOfSync
 	Health string `json:"health,omitempty"` // Healthy, Progressing, Degraded…
+}
+
+// ─── SECRETS ──────────────────────────────────────────────────────────────────
+
+// SecretsProvider lit des secrets (Vault, variables d'environnement…). La
+// configuration y fait référence par secret://<id>/<path>#<key>.
+type SecretsProvider interface {
+	ID() string
+	Type() string // "env", "vault"
+	// Get renvoie la valeur key du secret path ; ErrNotFound si l'un ou
+	// l'autre est absent. Pour env, path est le nom de la variable.
+	Get(path, key string) (string, error)
+}
+
+// ─── IDENTITY ─────────────────────────────────────────────────────────────────
+
+// IdentityProvider : fournisseur d'identité OIDC (connexion des utilisateurs),
+// et annuaire quand il en a un (Keycloak)
+type IdentityProvider interface {
+	ID() string
+	Type() string // "oidc", "keycloak"
+	OIDC() OIDCSettings
+	// ListGroups : groupes de l'annuaire (équipes), triés par nom.
+	// ErrUnsupported si le provider n'a pas d'annuaire.
+	ListGroups() ([]Group, error)
+}
+
+// OIDCSettings : ce dont la connexion OIDC a besoin
+type OIDCSettings struct {
+	Issuer       string // tel que le voit le navigateur (claim iss)
+	DiscoveryURL string // où Symphony lit la découverte, si elle diffère de l'issuer
+	ClientID     string
+	ClientSecret string // vide : client public (PKCE)
+	RedirectURL  string // vide : déduite de la requête
+	GroupsClaim  string // défaut : groups
+}
+
+type Group struct {
+	Name string `json:"name"`
+	Path string `json:"path"` // chemin complet dans l'annuaire (/parent/enfant)
 }

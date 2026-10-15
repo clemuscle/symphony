@@ -1,8 +1,9 @@
 # CLAUDE.md
 
 Symphony est une Internal Developer Platform : backend Go, SPA Vue 3, au-dessus de GitLab
-(ou GitHub), de leur CI, du registry GitLab, de Docker et d'Argo CD (Kubernetes en
-GitOps). Projet de **portfolio** visant des recruteurs tech et des leads DevOps.
+(ou GitHub), de leur CI, du registry GitLab (ou GHCR), de Docker, d'Argo CD (Kubernetes en
+GitOps), de Vault (secrets) et de Keycloak (identité, annuaire). Projet de **portfolio**
+visant des recruteurs tech et des leads DevOps.
 
 - Architecture et décisions : [documentation/architecture.md](documentation/architecture.md)
 - Plan par versions (où on en est, ce qui vient) : [ROADMAP.md](ROADMAP.md)
@@ -17,7 +18,7 @@ go run ./cmd/symphony           # depuis la racine du repo
 cd frontend && npm run dev      # front en dev (npm install d'abord), API sur :8080
 cd frontend && npm run build    # compile le front dans internal/web/dist, embarqué au prochain go build
 docker build -t symphony .      # image complète (front + binaire), ~10 Mo
-./demo/up.sh / ./demo/down.sh   # démo complète (GitLab CE, runner, Postgres, Keycloak, k3s + Argo CD, Symphony)
+./demo/up.sh / ./demo/down.sh   # démo complète (GitLab CE, runner, Postgres, Keycloak, Vault, k3s + Argo CD, Symphony)
 ```
 
 ## Pour lancer le serveur
@@ -25,7 +26,8 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
 - **Bootstrap** `symphony.yaml` à la racine (`SYMPHONY_CONFIG` pour un autre chemin) : sa
   section `config_source` dit où lire la vraie configuration, `root/symphony-config` →
   `symphony.yaml` sur GitLab. Sans `config_source`, le fichier local est lu comme une
-  configuration complète (hors ligne). `${VAR}` est remplacé par l'environnement.
+  configuration complète (hors ligne). `${VAR}` est remplacé par l'environnement. Le
+  bootstrap peut déclarer ses `providers.secrets` (jeton de `config_source` dans Vault).
   En démo, la config est dans `platform/symphony-config`.
 - **`.env`** à la racine (godotenv) : `GITLAB_TOKEN`, `GITHUB_TOKEN`, `DB_HOST`/`DB_PORT`/
   `DB_NAME`/`DB_USER`/`DB_PASSWORD` (défauts `localhost`/`5432`/`symphony`/`symphony`/
@@ -42,13 +44,20 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
 ## Repères dans le code
 
 - `cmd/symphony` : `config.go` (bootstrap, source de config, `configWatcher` qui recharge
-  à chaud), `providers.go` (`buildProviders` : un `case` par type de provider), `main.go`.
-- `internal/provider` : interfaces (`interfaces.go`) et `Registry`. Ajouter un type de
-  provider = implémenter l'interface + un `case` dans `providers.go`, enveloppé par
-  `instrumented.SCM/CI/Registry/Runtime` (mesures pour `/metrics`).
+  à chaud et relit les secrets à chaque cycle), `secrets.go` (providers de secrets,
+  `resolveConfig` : références `secret://` résolues dans une copie, `legacyAuth`),
+  `providers.go` (`buildProviders` : secrets d'abord, puis un `case` par type de provider),
+  `main.go` (`-healthcheck` pour le `HEALTHCHECK` de l'image).
+- `internal/provider` : interfaces (`interfaces.go` : SCM, CI, Registry, Runtime, Secrets,
+  Identity), `Registry` et `secretref.go` (`secret://<provider>/<chemin>#<clé>`). Ajouter un
+  type de provider = implémenter l'interface + un `case` dans `providers.go`, enveloppé par
+  `instrumented.SCM/CI/Registry/Runtime/Secrets/Identity` (mesures pour `/metrics`).
+  `secrets/vault` (KV v1/v2, jeton ou AppRole), `secrets/env` (toujours présent, id `env`),
+  `identity/keycloak` (OIDC + annuaire par l'API admin), `identity/oidc`, `registry/ghcr`.
 - `internal/auth` : OIDC en Backend-for-Frontend (`/auth/login`, `/auth/callback`,
   `/auth/logout`), session en cookie signé, rôles, CSRF, CORS. Le `Holder` porte la
-  politique courante et est remplacé au rechargement de la config (`buildPolicy`).
+  politique courante et est remplacé au rechargement de la config (`buildPolicy`, qui prend
+  les réglages OIDC du provider identity `auth.identity`).
 - `internal/metrics` : métriques Prometheus (`/metrics`, middleware HTTP, `Reload`).
 - `internal/tasks` : moteur de tâches (étapes, `Exec.Set` pour les résultats repris au
   redémarrage, `WaitPipeline`, sondage, `Hub` SSE). Les types de tâches et leurs étapes
@@ -78,7 +87,8 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
 - `internal/api` : toutes les routes dans `server.go`, chacune avec son rôle minimum
   (`r.With(viewer|developer|admin)`), un fichier de handlers par domaine ;
   ce qui n'est pas une route d'API va au front (`web.Handler`, `index.html` pour les routes Vue).
-  Chaque appel de `frontend/src/api.js` a sa route.
+  Chaque appel de `frontend/src/api.js` a sa route. `GET /identity/groups` : annuaire du
+  provider identity (`supported: false` sans annuaire).
 
 ## Pièges
 
@@ -88,10 +98,17 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
 - Sans section `auth` dans la config, l'authentification est **désactivée** (tout le monde
   est admin, avertissement au démarrage) : c'est le cas de la config de l'utilisateur.
   `SESSION_SECRET` (32 caractères min.) garde les sessions d'un redémarrage à l'autre.
-- `auth.issuer` est l'URL vue par le navigateur ; `auth.discovery_url` l'URL interne
-  (Symphony en conteneur). Keycloak : `KC_HOSTNAME` + `KC_HOSTNAME_BACKCHANNEL_DYNAMIC`.
+- Provider identity : l'issuer est l'URL vue par le navigateur, la découverte l'URL interne
+  (Symphony en conteneur) ; type `keycloak` : `public_url` et `url`, type `oidc` : `issuer`
+  et `discovery_url`. Keycloak : `KC_HOSTNAME` + `KC_HOSTNAME_BACKCHANNEL_DYNAMIC`.
 - Deux « registry » : `provider.Registry` contient tous les providers ;
   `RegistryProvider` est le registry d'**images** (`providers.GetRegistry(id)`).
+- Une valeur `secret://` introuvable fait **refuser toute la configuration** (la précédente
+  reste) : ne jamais résoudre provider par provider. Les providers ne voient que la config
+  résolue (`buildProviders` la renvoie) ; ne jamais logger une valeur résolue. Lire un
+  secret d'un provider avec `secretValue(def, "token")` (clé, sinon `<clé>_env`).
+- `auth` ne porte plus que `identity` et `roles` ; l'ancien `auth.issuer`… est converti en
+  provider `oidc` d'id `oidc` (`legacyAuth`).
 - La page **Projets** (accueil) montre les projets en base avec leur fiche
   (`GET /projects`, champ `service`) ; le **Catalogue** du front, ce sont les golden paths.
   Plus de fiche sans projet : `catalogue.repo`/`path` ne sont plus lus (avertissement).
@@ -125,16 +142,26 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
   CI) : ne pas assouplir.
 - Une méthode ajoutée à une interface de provider doit aussi l'être dans
   `internal/provider/instrumented` : sinon l'embarquement la transmet sans la mesurer.
-- `/metrics` est public tant que l'authentification (v0.3) n'existe pas.
+- `/metrics` est public (à protéger au niveau réseau).
+- GitHub : `PushFiles` passe par l'API Git (un commit) et exige un repo non vide
+  (`CreateRepo` l'initialise). Un workflow lancé par `workflow_dispatch` doit déclarer
+  toutes les entrées envoyées (`SYMPHONY_*` compris), sinon 422. Le package GHCR survit au
+  repo : `DeleteImages` du registry le supprime.
+- Démo : Vault en mode dev (en mémoire) ; `up.sh` réécrit les secrets et recrée l'AppRole
+  si besoin. Sans `GITHUB_TOKEN`, les blocs `# github:début … # github:fin` de
+  `symphony-config` et le golden path `api-rest-go-github` ne sont pas poussés ; avec
+  `--no-k8s`, de même pour `# k8s:début … # k8s:fin` et `api-rest-go-k8s` ; les
+  secrets absents (Argo CD sans k8s, GitHub) reçoivent une valeur factice pour que la
+  config se résolve.
 - Migrations SQL : créer `migrations/00N_*.sql`, ajouter sa variable `//go:embed` **et**
   l'ajouter à la liste dans `db.go`.
 
 ## Conventions
 
 - Commentaires, logs, erreurs d'API, docs et messages de commit **en français**.
-- Pas de secret dans les fichiers : un provider nomme sa variable (`config.token_env`).
-  GitLab CI et le registry GitLab essaient `token_env`, puis `<scm_ref>_TOKEN`, puis
-  `GITLAB_TOKEN` (`gitlabToken`).
+- Pas de secret dans les fichiers : `token: secret://vault/…` ou `token_env`. GitLab CI, le
+  registry GitLab, GitHub Actions et GHCR essaient leur `token`/`token_env`, puis le jeton
+  du SCM `scm_ref`, puis `<scm_ref>_TOKEN`, puis `GITLAB_TOKEN`/`GITHUB_TOKEN` (`scmToken`).
 - Les handlers qui modifient quelque chose écrivent dans l'audit (`db.LogAudit`).
 - Code formaté avec `gofmt` (vérifié par la CI).
 
@@ -163,7 +190,8 @@ docker build -t symphony .      # image complète (front + binaire), ~10 Mo
   vérifier qu'il est identique.
 - Démo : la tester sur des ports décalés pour ne pas gêner la GitLab de l'utilisateur
   (`GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18090
-  KEYCLOAK_PORT=18180 K8S_HTTP_PORT=18081 ARGOCD_PORT=18088 K8S_API_PORT=16443`).
+  KEYCLOAK_PORT=18180 VAULT_PORT=18200 K8S_HTTP_PORT=18081 ARGOCD_PORT=18088
+  K8S_API_PORT=16443`).
   Jeton pour l'API : grant `password` du client `symphony` sur
   Keycloak (`username=bob&password=bob`) ; parcours navigateur avec Playwright,
   `SYMPHONY_IMAGE=symphony:local` pour une image construite localement, puis

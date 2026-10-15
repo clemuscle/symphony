@@ -106,6 +106,7 @@ func NewServer(
 
 		// Admin
 		r.With(viewer).Get("/providers", handlers.ListProviders(providers))
+		r.With(viewer).Get("/identity/groups", handlers.ListIdentityGroups(providers))
 		r.With(admin).Post("/sync", handlers.ForceSync(syncer, templates, db))
 		r.With(admin).Get("/audit", handlers.ListAudit(db))
 	})

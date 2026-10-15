@@ -46,7 +46,16 @@ func newConfigSource(path string) (*configSource, error) {
 	if src.SCM.ID == "" {
 		src.SCM.ID = "config-source"
 	}
-	scm, err := newSCM(src.SCM)
+	// Jeton du SCM : il peut venir des providers de secrets du bootstrap
+	secrets := provider.NewRegistry()
+	if err := registerSecrets(secrets, local.Providers.Secrets); err != nil {
+		return nil, fmt.Errorf("bootstrap %s: %w", path, err)
+	}
+	scmDef, err := resolveDef(src.SCM, secrets.Secrets)
+	if err != nil {
+		return nil, fmt.Errorf("config_source.scm: %w", err)
+	}
+	scm, err := newSCM(scmDef)
 	if err != nil {
 		return nil, fmt.Errorf("config_source.scm: %w", err)
 	}
@@ -91,20 +100,26 @@ func loadConfig(path string) (*config.Config, error) {
 	return cfg, err
 }
 
-// buildPolicy construit l'authentification et le CORS de la configuration.
-// Sans section auth, l'authentification est désactivée (développement local).
-func buildPolicy(cfg *config.Config, codec *auth.Codec) (*auth.Policy, error) {
+// buildPolicy construit l'authentification et le CORS de la configuration
+// (résolue) : connexion par le provider identity auth.identity (défaut : celui
+// par défaut). Sans section auth, l'authentification est désactivée
+// (développement local).
+func buildPolicy(cfg *config.Config, providers *provider.Registry, codec *auth.Codec) (*auth.Policy, error) {
 	p := &auth.Policy{CORSOrigins: cfg.CORSOrigins}
 	if cfg.Auth == nil {
 		slog.Warn("authentification désactivée (pas de section auth) : tout le monde est admin")
 		return p, nil
 	}
-	a, err := auth.NewAuthenticator(*cfg.Auth, codec)
+	idp, err := providers.Identity(cfg.Auth.Identity)
 	if err != nil {
-		return nil, fmt.Errorf("auth: %w", err)
+		return nil, fmt.Errorf("auth: provider identity: %w", err)
+	}
+	a, err := auth.NewAuthenticator(idp.OIDC(), cfg.Auth.Roles, codec)
+	if err != nil {
+		return nil, fmt.Errorf("auth (provider %s): %w", idp.ID(), err)
 	}
 	p.Auth = a
-	slog.Info("authentification OIDC", "issuer", cfg.Auth.Issuer, "client_id", cfg.Auth.ClientID)
+	slog.Info("authentification OIDC", "identity", idp.ID(), "type", idp.Type(), "issuer", idp.OIDC().Issuer, "client_id", idp.OIDC().ClientID)
 	return p, nil
 }
 
@@ -139,9 +154,11 @@ type configWatcher struct {
 	codec     *auth.Codec
 	interval  time.Duration
 
-	last    []byte // dernier contenu traité (appliqué ou refusé)
-	refused bool   // le dernier contenu traité a été refusé
-	lastErr string // dernière erreur de lecture, pour ne la journaliser qu'une fois
+	last        []byte // dernier contenu traité (appliqué ou refusé)
+	refused     bool   // le dernier contenu traité a été refusé
+	lastErr     string // dernière erreur de lecture, pour ne la journaliser qu'une fois
+	fingerprint string // empreinte de la configuration en place, secrets résolus
+	secretErr   string // dernière erreur de relecture des secrets
 }
 
 func (w *configWatcher) Start() {
@@ -173,6 +190,8 @@ func (w *configWatcher) check() {
 		if err != nil {
 			slog.Error("configuration refusée, configuration en place conservée", "error", err)
 		}
+	} else if err == nil && !w.refused && bytes.Contains(raw, []byte(provider.SecretScheme)) {
+		w.checkSecrets(cfg)
 	}
 	// Tant qu'une version refusée reste dans Git, la configuration en place
 	// n'est pas la dernière : on continue de le compter
@@ -183,21 +202,44 @@ func (w *configWatcher) check() {
 	}
 }
 
+// checkSecrets relit les secrets de la configuration en place (inchangée) :
+// si l'un d'eux a changé dans son provider (rotation), elle est réappliquée.
+// Les providers de secrets en place servent à la relecture.
+func (w *configWatcher) checkSecrets(cfg *config.Config) {
+	resolved, err := resolveConfig(legacyAuth(cfg, false), w.providers.Secrets)
+	if err != nil {
+		if err.Error() != w.secretErr {
+			w.secretErr = err.Error()
+			slog.Warn("secrets illisibles, configuration en place conservée", "error", err)
+		}
+		return
+	}
+	w.secretErr = ""
+	if fingerprint(resolved) == w.fingerprint {
+		return
+	}
+	slog.Info("secret modifié dans son provider : configuration réappliquée")
+	if err := w.apply(cfg); err != nil {
+		slog.Error("configuration refusée après changement d'un secret, configuration en place conservée", "error", err)
+	}
+}
+
 // apply construit les nouveaux providers puis les met en place d'un bloc ;
 // le catalogue et les golden paths sont rechargés avec eux
 func (w *configWatcher) apply(cfg *config.Config) error {
-	next, err := buildProviders(cfg)
+	next, resolved, err := buildProviders(cfg)
 	if err != nil {
 		return err
 	}
-	policy, err := buildPolicy(cfg, w.codec)
+	policy, err := buildPolicy(resolved, next, w.codec)
 	if err != nil {
 		return err
 	}
-	hooks, err := buildWebhooks(cfg)
+	hooks, err := buildWebhooks(resolved)
 	if err != nil {
 		return err
 	}
+	w.fingerprint = fingerprint(resolved)
 	w.providers.Replace(next)
 	w.security.Set(policy)
 	w.webhooks.Set(hooks)
@@ -210,17 +252,21 @@ func (w *configWatcher) apply(cfg *config.Config) error {
 	return nil
 }
 
-// buildWebhooks : réglages des webhooks entrants. Sans section webhooks, les
-// tâches suivent les pipelines par sondage. Le secret vient de l'environnement
-// (secret_env, défaut WEBHOOK_SECRET) et doit être assez long pour ne pas se deviner.
+// buildWebhooks : réglages des webhooks entrants (configuration résolue).
+// Sans section webhooks, les tâches suivent les pipelines par sondage. Le
+// secret (secret, sinon la variable secret_env, défaut WEBHOOK_SECRET) doit
+// être assez long pour ne pas se deviner.
 func buildWebhooks(cfg *config.Config) (*webhook.Settings, error) {
 	if cfg.Webhooks == nil || cfg.Webhooks.URL == "" {
 		return nil, nil
 	}
-	env := orDefault(cfg.Webhooks.SecretEnv, "WEBHOOK_SECRET")
-	secret := os.Getenv(env)
+	secret, from := cfg.Webhooks.Secret, "webhooks.secret"
+	if secret == "" {
+		from = orDefault(cfg.Webhooks.SecretEnv, "WEBHOOK_SECRET")
+		secret = os.Getenv(from)
+	}
 	if len(secret) < 16 {
-		return nil, fmt.Errorf("webhooks: %s doit contenir un secret de 16 caractères au moins", env)
+		return nil, fmt.Errorf("webhooks: %s doit contenir un secret de 16 caractères au moins", from)
 	}
 	return &webhook.Settings{
 		Endpoint: strings.TrimRight(cfg.Webhooks.URL, "/") + "/webhooks/gitlab",

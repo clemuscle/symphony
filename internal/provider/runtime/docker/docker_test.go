@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCleanLogs(t *testing.T) {
@@ -79,5 +80,64 @@ func TestRemove(t *testing.T) {
 	}
 	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
 		t.Errorf("appels :\n%s\nattendu :\n%s", strings.Join(calls, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// TestStartAndWatchHealth : la bascule attend l'état healthy du HEALTHCHECK,
+// échoue sur unhealthy ou au bout de HealthTimeout, et garde le délai de
+// grâce pour une image sans HEALTHCHECK
+func TestStartAndWatchHealth(t *testing.T) {
+	healthPoll, startupGrace = time.Millisecond, 5*time.Millisecond
+	t.Cleanup(func() { healthPoll, startupGrace = time.Second, 3*time.Second })
+
+	cases := []struct {
+		name    string
+		states  []string // State successifs renvoyés par inspect (le dernier se répète)
+		timeout time.Duration
+		wantErr string
+	}{
+		{"healthy", []string{
+			`{"Status":"running","Health":{"Status":"starting"}}`,
+			`{"Status":"running","Health":{"Status":"starting"}}`,
+			`{"Status":"running","Health":{"Status":"healthy"}}`,
+		}, time.Second, ""},
+		{"unhealthy", []string{
+			`{"Status":"running","Health":{"Status":"unhealthy","Log":[{"ExitCode":1,"Output":"connexion refusée"}]}}`,
+		}, time.Second, "healthcheck en échec — logs : boom — healthcheck : connexion refusée"},
+		{"timeout", []string{
+			`{"Status":"running","Health":{"Status":"starting"}}`,
+		}, 20 * time.Millisecond, "toujours starting"},
+		{"crash", []string{
+			`{"Status":"running","Health":{"Status":"starting"}}`,
+			`{"Status":"exited","Health":{"Status":"starting"}}`,
+		}, time.Second, "ne tient pas au démarrage (état exited)"},
+		{"sans healthcheck", []string{`{"Status":"running"}`}, time.Second, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			n := 0
+			p := fakeDocker(t, func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/start"):
+					w.WriteHeader(http.StatusNoContent)
+				case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/json"):
+					state := c.states[min(n, len(c.states)-1)]
+					n++
+					io.WriteString(w, `{"Id":"abc","State":`+state+`}`)
+				case strings.HasSuffix(r.URL.Path, "/logs"):
+					io.WriteString(w, "boom\n")
+				default:
+					http.NotFound(w, r)
+				}
+			})
+			p.HealthTimeout = c.timeout
+			err := p.startAndWatch("abc")
+			switch {
+			case c.wantErr == "" && err != nil:
+				t.Fatalf("erreur inattendue : %v", err)
+			case c.wantErr != "" && (err == nil || !strings.Contains(err.Error(), c.wantErr)):
+				t.Fatalf("erreur = %v, attendu %q", err, c.wantErr)
+			}
+		})
 	}
 }

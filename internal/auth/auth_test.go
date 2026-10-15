@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clemuscle/symphony/internal/config"
+	"github.com/clemuscle/symphony/internal/provider"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
@@ -96,13 +96,12 @@ func (idp *fakeIdP) sign(t *testing.T, aud, nonce string) string {
 
 func newTestHolder(t *testing.T, idp *fakeIdP) *Holder {
 	codec, _, _ := NewCodec(strings.Repeat("s", 32))
-	a, err := NewAuthenticator(config.AuthConfig{
+	a, err := NewAuthenticator(provider.OIDCSettings{
 		Issuer: idp.srv.URL, ClientID: "symphony",
-		Roles: map[string][]string{
-			"admin":     {"symphony-admins"},
-			"developer": {"symphony-developers"},
-			"viewer":    {"symphony-viewers"},
-		},
+	}, map[string][]string{
+		"admin":     {"symphony-admins"},
+		"developer": {"symphony-developers"},
+		"viewer":    {"symphony-viewers"},
 	}, codec)
 	if err != nil {
 		t.Fatal(err)

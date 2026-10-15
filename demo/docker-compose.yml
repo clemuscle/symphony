@@ -1,5 +1,5 @@
-# Démo Symphony : GitLab CE + Runner + PostgreSQL + Keycloak + Symphony, et
-# Kubernetes (k3s + Argo CD) pour le runtime GitOps.
+# Démo Symphony : GitLab CE + Runner + PostgreSQL + Keycloak + Vault +
+# Symphony, et Kubernetes (k3s + Argo CD) pour le runtime GitOps.
 #
 # Ne pas lancer directement : ./demo/up.sh démarre GitLab, l'initialise
 # (token, repos symphony-config et symphony-templates, runner) puis Symphony.
@@ -7,7 +7,8 @@
 # Les ports sont réglables (variables d'environnement ou demo/.env) pour
 # cohabiter avec une autre GitLab :
 #   GITLAB_PORT (8929), REGISTRY_PORT (5050), GITLAB_SSH_PORT (2224), SYMPHONY_PORT (8080),
-#   KEYCLOAK_PORT (8180), K8S_HTTP_PORT (8081), ARGOCD_PORT (8088), K8S_API_PORT (6443)
+#   KEYCLOAK_PORT (8180), VAULT_PORT (8200), K8S_HTTP_PORT (8081), ARGOCD_PORT (8088),
+#   K8S_API_PORT (6443)
 #
 # GitLab est vu sous deux noms : http://gitlab:<port> depuis les conteneurs
 # (Symphony, runner), http://localhost:<port> depuis la machine (navigateur,
@@ -119,6 +120,18 @@ services:
       # Realm généré par up.sh depuis keycloak/realm-symphony.template.json
       - ./keycloak/import:/opt/keycloak/data/import:ro
 
+  # Secrets de Symphony (jetons GitLab, Argo CD, GitHub, secret des webhooks,
+  # client de l'annuaire Keycloak), écrits par up.sh. Mode dev : en mémoire,
+  # déjà descellé ; up.sh réécrit tout à chaque lancement.
+  vault:
+    image: hashicorp/vault:2.1.1
+    command: ["server", "-dev", "-dev-listen-address=0.0.0.0:8200"]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_ROOT_TOKEN:?lancer ./demo/up.sh}
+      SKIP_SETCAP: "true"
+    ports:
+      - "${VAULT_PORT:-8200}:8200"
+
   gitlab-runner:
     image: gitlab/gitlab-runner:v18.11.3
     volumes:
@@ -135,16 +148,16 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      # Secrets générés par up.sh dans demo/.env
-      GITLAB_TOKEN: ${GITLAB_TOKEN:-}
+      # Les jetons (GitLab, Argo CD, GitHub, webhooks, annuaire) sont dans
+      # Vault : Symphony n'a que son AppRole, créé par up.sh
+      VAULT_ROLE_ID: ${VAULT_ROLE_ID:-}
+      VAULT_SECRET_ID: ${VAULT_SECRET_ID:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
-      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
       DB_HOST: postgres
       GITLAB_PORT: ${GITLAB_PORT:-8929}
       REGISTRY_PORT: ${REGISTRY_PORT:-5050}
       KEYCLOAK_PORT: ${KEYCLOAK_PORT:-8180}
-      # Runtime argocd : jeton du compte symphony d'Argo CD, port public de l'Ingress
-      ARGOCD_TOKEN: ${ARGOCD_TOKEN:-}
+      # Runtime argocd : port public de l'Ingress
       K8S_HTTP_PORT: ${K8S_HTTP_PORT:-8081}
     ports:
       - "${SYMPHONY_PORT:-8080}:8080"

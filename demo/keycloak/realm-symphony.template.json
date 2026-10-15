@@ -6,31 +6,58 @@
   "groups": [
     { "name": "symphony-admins" },
     { "name": "symphony-developers" },
-    { "name": "symphony-viewers" }
+    { "name": "symphony-viewers" },
+    {
+      "name": "teams",
+      "subGroups": [
+        { "name": "team-identity" },
+        { "name": "team-payments" },
+        { "name": "team-platform" },
+        { "name": "team-product" }
+      ]
+    }
   ],
   "users": [
     {
       "username": "alice", "email": "alice@demo.symphony", "firstName": "Alice", "lastName": "Admin",
-      "enabled": true, "emailVerified": true, "groups": ["/symphony-admins"],
+      "enabled": true, "emailVerified": true, "groups": ["/symphony-admins", "/teams/team-platform"],
       "credentials": [{ "type": "password", "value": "alice", "temporary": false }]
     },
     {
       "username": "bob", "email": "bob@demo.symphony", "firstName": "Bob", "lastName": "Developer",
-      "enabled": true, "emailVerified": true, "groups": ["/symphony-developers"],
+      "enabled": true, "emailVerified": true, "groups": ["/symphony-developers", "/teams/team-payments"],
       "credentials": [{ "type": "password", "value": "bob", "temporary": false }]
     },
     {
       "username": "carol", "email": "carol@demo.symphony", "firstName": "Carol", "lastName": "Viewer",
-      "enabled": true, "emailVerified": true, "groups": ["/symphony-viewers"],
+      "enabled": true, "emailVerified": true, "groups": ["/symphony-viewers", "/teams/team-product"],
       "credentials": [{ "type": "password", "value": "carol", "temporary": false }]
     },
     {
       "username": "dave", "email": "dave@demo.symphony", "firstName": "Dave", "lastName": "SansRole",
       "enabled": true, "emailVerified": true, "groups": [],
       "credentials": [{ "type": "password", "value": "dave", "temporary": false }]
+    },
+    {
+      "username": "service-account-symphony-directory",
+      "enabled": true,
+      "serviceAccountClientId": "symphony-directory",
+      "clientRoles": { "realm-management": ["query-groups", "view-users"] }
     }
   ],
   "clients": [
+    {
+      "clientId": "symphony-directory",
+      "name": "Symphony (annuaire)",
+      "description": "Compte de service : Symphony lit les groupes du realm (équipes)",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "__DIRECTORY_SECRET__",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
+    },
     {
       "clientId": "gitlab",
       "name": "GitLab",

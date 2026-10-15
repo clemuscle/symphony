@@ -7,12 +7,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/clemuscle/symphony/internal/config"
+	"github.com/clemuscle/symphony/internal/provider"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
@@ -30,10 +29,9 @@ const (
 // Authenticator fait le flux OIDC (Authorization Code + PKCE) côté serveur et
 // reconnaît les utilisateurs : cookie de session ou jeton Bearer.
 type Authenticator struct {
-	cfg          config.AuthConfig
-	clientSecret string
-	roles        *RoleMapper
-	codec        *Codec
+	cfg   provider.OIDCSettings
+	roles *RoleMapper
+	codec *Codec
 
 	// Découverte OIDC faite au premier besoin, et retentée tant qu'elle
 	// échoue : Symphony démarre même si le fournisseur d'identité est absent
@@ -59,27 +57,23 @@ type loginState struct {
 	Redirect string `json:"redirect"`
 }
 
-// NewAuthenticator valide la configuration ; la découverte OIDC viendra plus tard
-func NewAuthenticator(cfg config.AuthConfig, codec *Codec) (*Authenticator, error) {
+// NewAuthenticator valide les réglages OIDC du provider d'identité et les
+// rôles (rôle → groupes) ; la découverte OIDC viendra plus tard
+func NewAuthenticator(cfg provider.OIDCSettings, roleGroups map[string][]string, codec *Codec) (*Authenticator, error) {
 	if cfg.Issuer == "" || cfg.ClientID == "" {
-		return nil, errors.New("auth.issuer et auth.client_id requis")
+		return nil, errors.New("issuer et client_id requis")
 	}
-	if len(cfg.Roles) == 0 {
+	if len(roleGroups) == 0 {
 		return nil, errors.New("auth.roles requis : personne n'aurait de droits")
 	}
-	roles, err := NewRoleMapper(cfg.Roles)
+	roles, err := NewRoleMapper(roleGroups)
 	if err != nil {
 		return nil, fmt.Errorf("auth.roles: %w", err)
 	}
 	if cfg.GroupsClaim == "" {
 		cfg.GroupsClaim = "groups"
 	}
-	return &Authenticator{
-		cfg:          cfg,
-		clientSecret: os.Getenv(cfg.ClientSecretEnv),
-		roles:        roles,
-		codec:        codec,
-	}, nil
+	return &Authenticator{cfg: cfg, roles: roles, codec: codec}, nil
 }
 
 func (a *Authenticator) discover(ctx context.Context) (*oidc.Provider, *oidc.IDTokenVerifier, error) {
@@ -113,7 +107,7 @@ func (a *Authenticator) discover(ctx context.Context) (*oidc.Provider, *oidc.IDT
 func (a *Authenticator) oauth2Config(r *http.Request, p *oidc.Provider) *oauth2.Config {
 	return &oauth2.Config{
 		ClientID:     a.cfg.ClientID,
-		ClientSecret: a.clientSecret,
+		ClientSecret: a.cfg.ClientSecret,
 		RedirectURL:  a.baseURL(r) + "/auth/callback",
 		Endpoint:     p.Endpoint(),
 		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
