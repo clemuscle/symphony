@@ -45,35 +45,42 @@ await page.click(`.card:has-text("${deployed}")`)
 await page.waitForSelector('.panel .slo-grid')
 await shot(3500, 'projet-detail')
 
-// 3. Catalogue : les golden paths, puis création d'un projet
+// 3. Catalogue : les golden paths, puis création d'un projet (l'équipe est
+// celle de l'utilisateur, team-payments pour bob)
 await page.click('nav >> text=Catalogue')
 await page.waitForSelector('.gp-card')
 await shot(2000, 'catalogue')
 await page.click('.gp-card:has-text("API REST Go") >> nth=0 >> .gp-cta')
 await page.fill('input[placeholder="mon-api"]', 'orders-api')
 await page.fill('input[placeholder="Description courte"]', 'API des commandes')
-await page.fill('input[placeholder="team-platform"]', 'team-orders')
 await page.locator('.form-card').scrollIntoViewIfNeeded()
 await shot(2500, 'nouveau-projet')
 await page.click('text=🚀 Créer le projet')
-// Tâche suivie en direct : repo et projet faits, pipeline en cours
+// Tâche suivie en direct : repo et projet faits, pipeline en cours, puis finie
 await page.waitForSelector('.task .steps li:nth-child(3).current', { timeout: 120000 })
 await page.locator('.task-wrap').scrollIntoViewIfNeeded()
 await shot(3000, 'projet-cree')
+await page.waitForSelector('.task.SUCCESS', { timeout: 600000 })
 
-// 4. Le nouveau projet apparaît, avec sa fiche
-await page.click('nav >> text=Projets')
-await page.waitForSelector('.card:has-text("orders-api")')
-await shot(2000)
+// 4. Déploiement en staging : image et tag préremplis depuis le registry,
+// production grisée (promotion seulement)
+await page.goto(base + '/deployments?project=orders-api')
+await page.waitForFunction(() => document.querySelector('input[list="tags"]')?.value?.length > 0, null, { timeout: 60000 })
+await page.waitForTimeout(800)
+await shot(3000, 'deployer-staging')
+await page.click('button:has-text("🚀 Déployer")')
+await page.waitForSelector('.task-wrap .task.SUCCESS', { timeout: 300000 })
+await shot(2500, 'staging')
 
-// 5. Déploiements : les services tournent, formulaire prérempli depuis le registry
-await page.click('nav >> text=Déploiements')
-await page.waitForSelector(`text=${deployed}`)
-await page.fill('input[placeholder="mon-api"]', deployed)
-await page.locator('input[placeholder="mon-api"]').blur()
-await page.waitForTimeout(1500)
-await shot(3500, 'deploiements')
-
+// 5. Promotion en production : la même image, sur Kubernetes (Argo CD)
+await page.goto(base + '/?project=orders-api')
+await page.waitForSelector('.panel .env-item')
+await page.click('.panel button:has-text("Promouvoir depuis staging")')
+await page.waitForSelector('.panel .task.RUNNING, .panel .task.SUCCESS', { timeout: 60000 })
+await shot(2500, 'promotion')
+await page.waitForSelector('.panel .task.SUCCESS', { timeout: 300000 })
+await page.waitForTimeout(16000) // relecture des déploiements (15 s)
+await shot(4000, 'production')
 await browser.close()
 
 // GIF : chaque capture devient une image, avec sa propre palette

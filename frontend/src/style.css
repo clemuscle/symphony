@@ -15,3 +15,6 @@ body { font-family: sans-serif; background: #f5f5f5; color: #1a1a1a; }
 .dot.running { background: #38a169; }
 .dot.deploying { background: #ecc94b; }
 .dot.error { background: #e53e3e; }
+
+/* Mode visite : le bandeau s'ajoute à l'en-tête, le panneau des projets descend d'autant */
+.layout.visit aside.panel { top: 88px; height: calc(100vh - 88px); }

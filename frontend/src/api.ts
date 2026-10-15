@@ -3,6 +3,7 @@ import type {
   AuditEntry, CreateProjectRequest, Deployment, DeployRequest, GoldenPath, IdentityGroups,
   Me, Pipeline, Project, ProjectImage, Task,
 } from './types'
+import { visitAdapter } from './visit/adapter'
 
 // L'API est sur la même origine que la page : servie par Symphony en production,
 // relayée par le proxy de Vite en dev (vite.config.js). La session est un cookie
@@ -10,8 +11,16 @@ import type {
 // VITE_API_URL (frontend/.env.local) permet de viser une autre instance.
 const http = axios.create({ baseURL: import.meta.env.VITE_API_URL ?? '' })
 
+// Mode visite (GitHub Pages) : pas de serveur, l'API est servie par des données
+// de démo, en lecture seule (src/visit)
+// (constante à la compilation : hors mode visite, l'adaptateur et les données
+// ne sont pas dans le bundle)
+export const visitMode = import.meta.env.VITE_VISIT === '1'
+if (visitMode) http.defaults.adapter = visitAdapter
+
 // Connexion OIDC, puis retour sur la page courante
 export function goToLogin() {
+  if (visitMode) return
   window.location.href = '/auth/login?redirect=' + encodeURIComponent(location.pathname + location.search)
 }
 

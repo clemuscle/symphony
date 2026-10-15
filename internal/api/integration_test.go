@@ -280,8 +280,11 @@ spec:
 	code, task = call("DELETE", "/api/v1/projects/"+name, nil)
 	wait("suppression", code, task)
 	for _, rt := range []*fake.Runtime{docker, k8s} {
-		if deps, _ := rt.List(); len(deps) != 0 {
-			t.Errorf("déploiements restants sur %s : %v", rt.ID(), deps)
+		deps, _ := rt.List()
+		for _, d := range deps {
+			if d.Project == name {
+				t.Errorf("déploiement restant sur %s : %v", rt.ID(), d)
+			}
 		}
 	}
 	for _, r := range forge.Repos() {

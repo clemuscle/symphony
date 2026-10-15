@@ -177,7 +177,11 @@ watch(() => form.value.project_name, async (name) => {
     if (!form.value.image || form.value.image === autoImage) form.value.image = data.image
     autoImage = data.image
     tags.value = data.tags
-    if (data.tags.length && !data.tags.includes(form.value.tag)) form.value.tag = data.tags[0]
+    // Par défaut, le dernier tag immuable (sha) : latest bouge, et une version
+    // en latest ne peut pas être promue
+    const pinned = data.tags.find(t => t !== 'latest')
+    if (pinned && (form.value.tag === 'latest' || !data.tags.includes(form.value.tag))) form.value.tag = pinned
+    else if (data.tags.length && !data.tags.includes(form.value.tag)) form.value.tag = data.tags[0]
     if (data.port) form.value.port = data.port
     if (data.runtime_provider) form.value.runtime_provider = data.runtime_provider
     if (!data.tags.length) imageHint.value = 'Aucune image publiée pour ce projet'
