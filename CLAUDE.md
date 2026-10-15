@@ -14,6 +14,7 @@ fonctionnalités.
 
 ```bash
 go build ./... && go vet ./... && go test -race ./...   # aucun test ne demande GitLab ni Docker
+SYMPHONY_TEST_DB=1 DB_PORT=55432 go test -race ./...   # + tests sur PostgreSQL (dbtest), dont l'intégration
 go run ./cmd/symphony             # depuis la racine ; lit symphony.yaml (bootstrap) et .env
 cd frontend && npm run dev        # front en dev, relaie /api et /auth vers :8080
 cd frontend && npm run typecheck && npm run lint && npm test   # vue-tsc, ESLint, Vitest
@@ -135,6 +136,14 @@ helm lint deploy/helm/symphony    # chart ; la CI l'installe sur kind (deploy/he
   branche `legacy` (archive).
 - Une version = cases de la roadmap cochées, `CHANGELOG.md`, tag annoté `vX.Y` poussé (la CI
   publie l'image), puis `gh release create`.
+
+## Tests
+
+- Unitaires partout ; sur une vraie base avec `internal/database/dbtest` (sautés sans
+  `SYMPHONY_TEST_DB=1`, la CI fournit la base). Providers simulés : `internal/provider/fake`
+  (forge SCM+CI dont chaque push donne une pipeline réussie et une image, registry,
+  runtimes). `internal/api/integration_test.go` joue le parcours complet par l'API ; les
+  droits par équipe sont dans `handlers/authz_test.go` (`auth.ContextWithUser`).
 
 ## Tests de bout en bout
 

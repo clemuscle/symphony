@@ -132,6 +132,10 @@ func withUser(ctx context.Context, u *User) context.Context {
 	return context.WithValue(ctx, ctxKey{}, u)
 }
 
+// ContextWithUser place u dans le contexte d'une requête, comme le fait
+// Authenticate : pour les tests des handlers (droits par rôle et par équipe)
+func ContextWithUser(ctx context.Context, u *User) context.Context { return withUser(ctx, u) }
+
 // UserFrom renvoie l'utilisateur de la requête (nil hors des routes protégées)
 func UserFrom(ctx context.Context) *User {
 	u, _ := ctx.Value(ctxKey{}).(*User)

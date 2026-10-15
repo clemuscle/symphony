@@ -186,7 +186,7 @@ rien installer, et plus aucun point faible visible à la relecture du code.
       nouveau secret
 
 **Qualité et sécurité**
-- [ ] Tests : handlers de l'API couverts ; tests d'intégration de bout en bout dans la CI
+- [x] Tests : handlers de l'API couverts ; tests d'intégration de bout en bout dans la CI
       (GitLab éphémère ou providers simulés)
 - [x] Front : TypeScript, ESLint en CI, tests des stores et des vues clés, vues découpées
       en composants (`Projects.vue`)
