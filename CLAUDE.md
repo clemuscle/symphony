@@ -1,199 +1,124 @@
 # CLAUDE.md
 
-Symphony est une Internal Developer Platform : backend Go, SPA Vue 3, au-dessus de GitLab
-(ou GitHub), de leur CI, du registry GitLab (ou GHCR), de Docker, d'Argo CD (Kubernetes en
-GitOps), de Vault (secrets) et de Keycloak (identité, annuaire). Projet de **portfolio**
-visant des recruteurs tech et des leads DevOps.
+Symphony est une Internal Developer Platform (backend Go, SPA Vue 3) au-dessus d'outils
+existants, chacun derrière une interface de provider : SCM (GitLab, GitHub), CI (GitLab CI,
+GitHub Actions), registry d'images (GitLab, GHCR), runtime (Docker, Argo CD), secrets
+(Vault, env), identité (Keycloak, OIDC). Projet de **portfolio** pour recruteurs tech et
+leads DevOps : la vitrine (README, démo, qualité du code) compte autant que les
+fonctionnalités.
 
 - Architecture et décisions : [documentation/architecture.md](documentation/architecture.md)
-- Plan par versions (où on en est, ce qui vient) : [ROADMAP.md](ROADMAP.md)
+- Où on en est, ce qui vient : [ROADMAP.md](ROADMAP.md)
 
 ## Commandes
 
 ```bash
-go build ./...                  # -gcflags=-e pour voir toutes les erreurs
-go vet ./...
-go test -race ./...             # tests unitaires (aucun ne demande GitLab ou Docker)
-go run ./cmd/symphony           # depuis la racine du repo
-cd frontend && npm run dev      # front en dev (npm install d'abord), API sur :8080
-cd frontend && npm run build    # compile le front dans internal/web/dist, embarqué au prochain go build
-docker build -t symphony .      # image complète (front + binaire), ~10 Mo
-./demo/up.sh / ./demo/down.sh   # démo complète (GitLab CE, runner, Postgres, Keycloak, Vault, k3s + Argo CD, Symphony)
+go build ./... && go vet ./... && go test -race ./...   # aucun test ne demande GitLab ni Docker
+go run ./cmd/symphony             # depuis la racine ; lit symphony.yaml (bootstrap) et .env
+cd frontend && npm run dev        # front en dev, relaie /api et /auth vers :8080
+cd frontend && npm run build      # front compilé dans internal/web/dist, embarqué au go build
+docker build -t symphony .        # image complète (~10 Mo)
+./demo/up.sh / ./demo/down.sh     # démo complète ; --no-k8s, --no-seed ; down.sh --purge
 ```
 
-## Pour lancer le serveur
+## Lancer le serveur
 
-- **Bootstrap** `symphony.yaml` à la racine (`SYMPHONY_CONFIG` pour un autre chemin) : sa
-  section `config_source` dit où lire la vraie configuration, `root/symphony-config` →
-  `symphony.yaml` sur GitLab. Sans `config_source`, le fichier local est lu comme une
-  configuration complète (hors ligne). `${VAR}` est remplacé par l'environnement. Le
-  bootstrap peut déclarer ses `providers.secrets` (jeton de `config_source` dans Vault).
-  En démo, la config est dans `platform/symphony-config`.
-- **`.env`** à la racine (godotenv) : `GITLAB_TOKEN`, `GITHUB_TOKEN`, `DB_HOST`/`DB_PORT`/
-  `DB_NAME`/`DB_USER`/`DB_PASSWORD` (défauts `localhost`/`5432`/`symphony`/`symphony`/
-  `symphony123`), `PORT` (8080).
-- **PostgreSQL** (conteneur `symphony-postgres`), **GitLab** sur `http://gitlab.local:8929`,
-  **socket Docker** ; le daemon Docker doit déclarer `gitlab.local:5050` en insecure registry.
-- Front : servi par le binaire (`internal/web`, `go:embed`) ; sans `npm run build`, `/`
-  affiche une page d'aide. Il appelle toujours l'API sur sa propre origine : en dev,
-  Vite relaie `/api` et `/auth` vers `http://localhost:8080` (cookie de session).
-  `VITE_API_URL` (`frontend/.env.local`) vise une autre instance.
-- Le serveur s'arrête si la configuration est illisible au démarrage ou s'il n'y a pas de
-  provider SCM par défaut.
+- `symphony.yaml` local = **bootstrap** (`SYMPHONY_CONFIG` pour un autre chemin) : sa section
+  `config_source` dit où lire la vraie configuration dans Git ; sans elle, il est lu comme
+  une configuration complète. `${VAR}` est remplacé par l'environnement ; le bootstrap peut
+  déclarer ses `providers.secrets`.
+- `.env` à la racine : jetons, `DB_*` (défauts `localhost`/`5432`/`symphony`/`symphony`/
+  `symphony123`), `PORT` (8080). PostgreSQL et le socket Docker sont requis.
+- Sans section `auth`, l'authentification est **désactivée** (tout le monde admin,
+  avertissement). `SESSION_SECRET` (32 caractères min.) garde les sessions.
+- Le serveur s'arrête si la configuration est illisible au démarrage, si un secret est
+  introuvable ou s'il n'y a pas de provider SCM par défaut.
 
 ## Repères dans le code
 
-- `cmd/symphony` : `config.go` (bootstrap, source de config, `configWatcher` qui recharge
-  à chaud et relit les secrets à chaque cycle), `secrets.go` (providers de secrets,
-  `resolveConfig` : références `secret://` résolues dans une copie, `legacyAuth`),
-  `providers.go` (`buildProviders` : secrets d'abord, puis un `case` par type de provider),
-  `main.go` (`-healthcheck` pour le `HEALTHCHECK` de l'image).
-- `internal/provider` : interfaces (`interfaces.go` : SCM, CI, Registry, Runtime, Secrets,
-  Identity), `Registry` et `secretref.go` (`secret://<provider>/<chemin>#<clé>`). Ajouter un
-  type de provider = implémenter l'interface + un `case` dans `providers.go`, enveloppé par
-  `instrumented.SCM/CI/Registry/Runtime/Secrets/Identity` (mesures pour `/metrics`).
-  `secrets/vault` (KV v1/v2, jeton ou AppRole), `secrets/env` (toujours présent, id `env`),
-  `identity/keycloak` (OIDC + annuaire par l'API admin), `identity/oidc`, `registry/ghcr`.
-- `internal/auth` : OIDC en Backend-for-Frontend (`/auth/login`, `/auth/callback`,
-  `/auth/logout`), session en cookie signé, rôles, CSRF, CORS. Le `Holder` porte la
-  politique courante et est remplacé au rechargement de la config (`buildPolicy`, qui prend
-  les réglages OIDC du provider identity `auth.identity`).
-- `internal/metrics` : métriques Prometheus (`/metrics`, middleware HTTP, `Reload`).
-- `internal/tasks` : moteur de tâches (étapes, `Exec.Set` pour les résultats repris au
-  redémarrage, `WaitPipeline`, sondage, `Hub` SSE). Les types de tâches et leurs étapes
-  sont dans `internal/api/handlers/tasks.go` (`RegisterTasks`) ; les handlers valident puis
-  `submit` (202). `internal/webhook` : `/webhooks/gitlab`.
-- `internal/gitops` : `Syncer` (catalogue : la fiche `catalog-info.yaml` à la racine du
-  repo de **chaque projet en base**, `catalogue.file`) et `TemplateLoader` (golden paths,
-  `templates/<nom>/template.yaml` de `symphony-templates`). Format des templates et des
-  fiches : README de ce repo. La fiche est générée à la création (`catalogueFile` dans
-  `handlers/projects.go`) et poussée avec le squelette.
-- `internal/provider/runtime/argocd` : runtime Kubernetes GitOps. Commite
-  `apps/<service>/` (Deployment, Service, Ingress, `kustomization.yaml`) dans le repo de
-  déploiement via le SCM `scm_ref`, upsert de l'`Application` Argo CD, refresh ; Stop et
-  Restart réécrivent `kustomization.yaml`. Jamais d'appel à l'API Kubernetes.
-- `demo/` : `docker-compose.yml`, `up.sh` (démarre et initialise tout, rejouable,
-  `--no-k8s` sans k3s ni Argo CD, `--no-seed` sans projets de démo), `seed.sh` (crée et
-  déploie les projets de `seed/projects.json` par l'API, au nom de bob, puis commite leur
-  fiche complète `seed/<nom>.yaml`),
-  `down.sh` (`--purge` efface les données), `SCENARIO.md`. `demo/gitlab/` est le contenu
-  poussé dans le groupe `platform` de la GitLab de démo (`symphony-config`,
-  `symphony-templates`, `symphony-deployments`) ; les projets vont dans le groupe `apps`
-  (`config.namespace` du SCM). GitLab se connecte au realm Keycloak (client `gitlab`,
-  `discovery: false` : navigateur sur localhost, jetons sur keycloak:8080) ; `up.sh` crée
-  les comptes et leurs droits (CE ne synchronise pas les groupes). Le mettre à jour
-  quand on change les golden paths de référence. `demo/capture/` régénère
-  `documentation/demo.gif` (Playwright).
-- `internal/api` : toutes les routes dans `server.go`, chacune avec son rôle minimum
-  (`r.With(viewer|developer|admin)`), un fichier de handlers par domaine ;
-  ce qui n'est pas une route d'API va au front (`web.Handler`, `index.html` pour les routes Vue).
-  Chaque appel de `frontend/src/api.js` a sa route. `GET /identity/groups` : annuaire du
-  provider identity (`supported: false` sans annuaire).
+- `cmd/symphony` : `config.go` (bootstrap, `configWatcher` : rechargement à chaud et relecture
+  des secrets), `secrets.go` (références `secret://` résolues dans une copie), `providers.go`
+  (`buildProviders` : secrets d'abord, puis un `case` par type), `main.go`.
+- `internal/provider` : interfaces (`interfaces.go`), `Registry`, `secretref.go`, une
+  implémentation par dossier (`scm/`, `ci/`, `registry/`, `runtime/`, `secrets/`,
+  `identity/`), et `instrumented/` qui les enveloppe pour `/metrics`.
+- `internal/api` : toutes les routes dans `server.go`, un fichier de handlers par domaine.
+  Les types de tâches et leurs étapes : `handlers/tasks.go` (`RegisterTasks`) ; un handler
+  valide puis `submit` (202).
+- `internal/tasks` (moteur de tâches, attente de pipelines, `Hub` SSE), `internal/auth` (OIDC
+  en Backend-for-Frontend, rôles, CSRF), `internal/gitops` (`Syncer` des fiches
+  `catalog-info.yaml`, `TemplateLoader` des golden paths), `internal/webhook`,
+  `internal/metrics`, `internal/database` (migrations embarquées).
+- `demo/` : `up.sh` (rejouable), `seed.sh` (projets de démo par l'API), `gitlab/` (contenu
+  poussé dans le groupe `platform` de la GitLab de démo : config, golden paths, repo de
+  déploiement ; à tenir à jour avec les golden paths), `keycloak/`, `k3s/`, `capture/`
+  (GIF du README), `SCENARIO.md`.
 
-## Pièges
+## Règles qui évitent les régressions
 
-- Une nouvelle route `/api/v1` doit déclarer son rôle (`r.With(...)`) : sans lui, tout
-  utilisateur connecté, même sans rôle, y aurait accès. Les handlers lisent
-  l'utilisateur avec `auth.UserFrom(ctx)` ; `audit(db, r, ...)` et `userID(r)` l'utilisent.
-- Sans section `auth` dans la config, l'authentification est **désactivée** (tout le monde
-  est admin, avertissement au démarrage) : c'est le cas de la config de l'utilisateur.
-  `SESSION_SECRET` (32 caractères min.) garde les sessions d'un redémarrage à l'autre.
-- Provider identity : l'issuer est l'URL vue par le navigateur, la découverte l'URL interne
-  (Symphony en conteneur) ; type `keycloak` : `public_url` et `url`, type `oidc` : `issuer`
-  et `discovery_url`. Keycloak : `KC_HOSTNAME` + `KC_HOSTNAME_BACKCHANNEL_DYNAMIC`.
-- Deux « registry » : `provider.Registry` contient tous les providers ;
-  `RegistryProvider` est le registry d'**images** (`providers.GetRegistry(id)`).
-- Une valeur `secret://` introuvable fait **refuser toute la configuration** (la précédente
-  reste) : ne jamais résoudre provider par provider. Les providers ne voient que la config
-  résolue (`buildProviders` la renvoie) ; ne jamais logger une valeur résolue. Lire un
-  secret d'un provider avec `secretValue(def, "token")` (clé, sinon `<clé>_env`).
-- `auth` ne porte plus que `identity` et `roles` ; l'ancien `auth.issuer`… est converti en
-  provider `oidc` d'id `oidc` (`legacyAuth`).
-- La page **Projets** (accueil) montre les projets en base avec leur fiche
-  (`GET /projects`, champ `service`) ; le **Catalogue** du front, ce sont les golden paths.
-  Plus de fiche sans projet : `catalogue.repo`/`path` ne sont plus lus (avertissement).
-- Le contenu de `provider.Registry` est **remplacé d'un bloc** au rechargement de la
-  config. Ne jamais garder un provider dans une struct longue durée : le résoudre à chaque
-  appel (`providers.SCM("")`), comme `Syncer` et `TemplateLoader`.
-- Un `GoldenPath` chargé garde son `repo`/`branch` : on lit son skeleton là d'où il vient,
-  même si la config a changé de repo de templates.
-- Runtime `argocd` : `repo_url` est l'URL de clone **vue par Argo CD** (en démo
-  `http://k3s:<port>` via le relais `gitlab-proxy`), `repo` le chemin pour le SCM. Aucun
-  identifiant de registry dans Git : le cluster a les siens (`demo/k3s/registries.yaml`).
-  Argo CD répond 403 (et non 404) pour une Application absente.
-- Une étape de tâche peut être **rejouée** après un redémarrage : la rendre idempotente
-  (tester `x.Get(...)` avant d'agir, `x.Set(...)` juste après). Pas de secret dans
-  `x.Set` (renvoyé par l'API) ; `Params` n'est jamais renvoyé.
-- Webhooks : `webhooks.url` = Symphony vu par GitLab ; GitLab doit autoriser les requêtes
-  vers le réseau local (`up.sh` le fait). Sans section `webhooks`, sondage seul (15 s).
-- `ListDeployments` agrège tous les runtimes ; chaque déploiement porte `provider`, que le
-  front renvoie (`?provider=`) pour Stop/Restart/Logs.
-- Port d'un déploiement : `port` = port de l'appli **dans** le conteneur, `host_port` = port
-  publié (0 = celui du conteneur remplacé, sinon un port libre).
-- Suppression de projet asynchrone (202), complète : `Remove` sur **chaque** runtime
-  (conteneurs et images Docker ; Application Argo CD, ses ressources et ses manifests),
-  lignes `deployments`, repo, fiche catalogue. GitLab refuse de supprimer un projet tant
-  que la purge de son registry n'est pas finie (2–3 min), puis ne fait que le
-  **programmer** (GitLab 18 : `-deletion_scheduled-`) : `DeleteRepo` le supprime ensuite
-  pour de bon (`permanently_remove`, par l'id numérique).
-- Le front lit exactement les clés JSON de l'API : toute struct sérialisée a des tags
-  `json` en snake_case.
-- `resolveInputs` refuse les entrées d'action non déclarées (anti-injection de variables
-  CI) : ne pas assouplir.
-- Une méthode ajoutée à une interface de provider doit aussi l'être dans
-  `internal/provider/instrumented` : sinon l'embarquement la transmet sans la mesurer.
-- `/metrics` est public (à protéger au niveau réseau).
-- GitHub : `PushFiles` passe par l'API Git (un commit) et exige un repo non vide
-  (`CreateRepo` l'initialise). Un workflow lancé par `workflow_dispatch` doit déclarer
-  toutes les entrées envoyées (`SYMPHONY_*` compris), sinon 422. Le package GHCR survit au
-  repo : `DeleteImages` du registry le supprime.
-- Démo : Vault en mode dev (en mémoire) ; `up.sh` réécrit les secrets et recrée l'AppRole
-  si besoin. Sans `GITHUB_TOKEN`, les blocs `# github:début … # github:fin` de
-  `symphony-config` et le golden path `api-rest-go-github` ne sont pas poussés ; avec
-  `--no-k8s`, de même pour `# k8s:début … # k8s:fin` et `api-rest-go-k8s` ; les
-  secrets absents (Argo CD sans k8s, GitHub) reçoivent une valeur factice pour que la
-  config se résolve.
-- Migrations SQL : créer `migrations/00N_*.sql`, ajouter sa variable `//go:embed` **et**
-  l'ajouter à la liste dans `db.go`.
+**Sécurité**
+- Toute route `/api/v1` déclare son rôle (`r.With(viewer|developer|admin)`) ; sinon un
+  utilisateur connecté sans rôle y a accès. Utilisateur : `auth.UserFrom(ctx)`.
+- Un handler qui modifie quelque chose écrit dans l'audit (`audit(db, r, …)`).
+- Jamais de secret dans un fichier, un log, `x.Set` (renvoyé par l'API) ni le repo de
+  déploiement. La config désigne ses secrets par `secret://<provider>/<chemin>#<clé>` ; un
+  provider les lit avec `secretValue(def, "token")`. Une référence introuvable fait
+  refuser **toute** la configuration : ne jamais résoudre provider par provider.
+- `resolveInputs` refuse les entrées d'action non déclarées (injection de variables CI) :
+  ne pas assouplir.
+
+**Providers**
+- Le contenu de `provider.Registry` est remplacé d'un bloc au rechargement : ne jamais
+  garder un provider dans une struct longue durée, le résoudre à chaque appel.
+- Une méthode ajoutée à une interface l'est aussi dans `instrumented`.
+- Deux « registry » : `provider.Registry` (tous les providers) et `RegistryProvider` (images).
+- Supprimer un projet passe par **chaque** runtime (`Remove`) puis le repo et les images
+  (`DeleteImages`) : rien ne doit rester. GitLab ne fait que programmer la suppression d'un
+  repo : `DeleteRepo` la force (`permanently_remove`).
+- Runtime `argocd` : jamais d'appel à l'API Kubernetes, tout passe par Git ; `repo_url` est
+  l'URL vue par Argo CD ; Argo CD répond 403 pour une Application absente.
+- GitHub : un workflow lancé par `workflow_dispatch` déclare toutes les entrées envoyées
+  (`SYMPHONY_*` compris), sinon 422.
+
+**Tâches et API**
+- Une étape de tâche peut être rejouée après un redémarrage : tester `x.Get` avant d'agir,
+  `x.Set` juste après.
+- Le front lit exactement les clés JSON : tags `json` en snake_case.
+- Migration SQL : fichier `migrations/00N_*.sql`, sa variable `//go:embed` **et** la liste
+  de `db.go`.
+
+**Démo**
+- Sans `GITHUB_TOKEN`, `up.sh` ne pousse pas les blocs `# github:début … fin` de la config
+  ni le golden path GitHub ; avec `--no-k8s`, de même pour `# k8s:début … fin` et
+  `api-rest-go-k8s`. Vault est en mode dev (en mémoire) : `up.sh` le remplit à chaque fois.
 
 ## Conventions
 
-- Commentaires, logs, erreurs d'API, docs et messages de commit **en français**.
-- Pas de secret dans les fichiers : `token: secret://vault/…` ou `token_env`. GitLab CI, le
-  registry GitLab, GitHub Actions et GHCR essaient leur `token`/`token_env`, puis le jeton
-  du SCM `scm_ref`, puis `<scm_ref>_TOKEN`, puis `GITLAB_TOKEN`/`GITHUB_TOKEN` (`scmToken`).
-- Les handlers qui modifient quelque chose écrivent dans l'audit (`db.LogAudit`).
-- Code formaté avec `gofmt` (vérifié par la CI).
+- Commentaires, logs, erreurs d'API, docs et commits **en français**.
+- `gofmt` (vérifié par la CI).
+- Mettre à jour ce fichier, `documentation/architecture.md`, `ROADMAP.md` et `CHANGELOG.md`
+  avec le code.
 
 ## Règles de travail
 
-- **Demander avant d'écrire dans GitLab** (`symphony-config`, `symphony-templates`, repos
-  de services) ; montrer d'abord un dry-run de ce qui sera poussé.
-- Tester de bout en bout contre le vrai GitLab quand un changement touche les providers,
-  le catalogue, les templates ou la config, en plus des tests unitaires.
-- Mettre à jour ce fichier, `documentation/architecture.md` et `ROADMAP.md` (cocher les
-  cases) avec le code.
-- Tout se fait sur `main` (pas de branche de version) ; pousser seulement quand c'est
-  demandé. La branche `legacy` sur GitHub est l'ancien historique du projet, gardé en
-  archive : ne pas y toucher.
-- Les versions sont des **tags** : cocher la roadmap, compléter `CHANGELOG.md`, tag annoté
-  `vX.Y` poussé (la CI publie `ghcr.io/clemuscle/symphony:X.Y` et `:latest`), puis
-  `gh release create`.
+- **Demander avant d'écrire dans la GitLab de l'utilisateur** (config, templates, repos de
+  services), avec un dry-run de ce qui sera poussé.
+- Tester de bout en bout quand un changement touche les providers, la config, les
+  templates ou la démo, en plus des tests unitaires.
+- Tout se fait sur `main` ; pousser seulement quand c'est demandé. Ne pas toucher à la
+  branche `legacy` (archive).
+- Une version = cases de la roadmap cochées, `CHANGELOG.md`, tag annoté `vX.Y` poussé (la CI
+  publie l'image), puis `gh release create`.
 
-## Conventions de test de bout en bout
+## Tests de bout en bout
 
-- Serveur de test : binaire construit dans le scratchpad, lancé avec `PORT=18080` (le 8080
-  peut être pris par l'instance de l'utilisateur), arrêté après.
-- Projets temporaires nommés `symphony-*-e2e`, supprimés après via
-  `DELETE /api/v1/projects/{nom}`, qui supprime aussi leurs déploiements.
-- Modifications temporaires d'un repo de config ou de templates : restaurer l'original et
+- Serveur de test : binaire du scratchpad sur `PORT=18080` (le 8080 peut être pris).
+- Projets temporaires `symphony-*-e2e`, supprimés après (`DELETE /api/v1/projects/{nom}`).
+- Modification temporaire d'un repo de config ou de templates : restaurer l'original et
   vérifier qu'il est identique.
-- Démo : la tester sur des ports décalés pour ne pas gêner la GitLab de l'utilisateur
-  (`GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 SYMPHONY_PORT=18090
-  KEYCLOAK_PORT=18180 VAULT_PORT=18200 K8S_HTTP_PORT=18081 ARGOCD_PORT=18088
-  K8S_API_PORT=16443`).
-  Jeton pour l'API : grant `password` du client `symphony` sur
-  Keycloak (`username=bob&password=bob`) ; parcours navigateur avec Playwright,
-  `SYMPHONY_IMAGE=symphony:local` pour une image construite localement, puis
-  `./demo/down.sh --purge` (~5,5 Go de RAM avec k3s). `down.sh` ne supprime que les conteneurs dont
-  l'image vient du registry de la démo.
+- Démo sur ports décalés : `GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224
+  SYMPHONY_PORT=18090 KEYCLOAK_PORT=18180 VAULT_PORT=18200 K8S_HTTP_PORT=18081
+  ARGOCD_PORT=18088 K8S_API_PORT=16443 SYMPHONY_IMAGE=symphony:local ./demo/up.sh`, puis
+  `./demo/down.sh --purge` (~5,5 Go de RAM avec k3s). Jeton d'API : grant `password` du
+  client `symphony` sur Keycloak (`bob`/`bob`) ; navigateur : Playwright de
+  `demo/capture` (`playwright-core`, Chrome de `~/.cache/ms-playwright`).

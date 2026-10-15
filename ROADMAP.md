@@ -145,11 +145,45 @@ Fini quand : après `./demo/up.sh`, Symphony n'a plus aucun jeton dans son envir
 avec `GITHUB_TOKEN` un projet GitHub est créé, construit, déployé puis supprimé (repo et
 package).
 
-## v1.0
+## v0.8 — Prêt pour la prod
 
-- [ ] Documentation et démo à jour de toutes les fonctionnalités
-- [ ] Tests d'intégration de bout en bout dans la CI (GitLab éphémère ou providers simulés)
-- [ ] Release `v1.0`
+Objectif (revue du 15 octobre 2026) : ce qu'un lead DevOps vérifie avant d'installer
+Symphony chez lui tient debout.
+
+- [ ] Symphony s'installe sur Kubernetes : chart Helm (`deploy/helm/symphony`), et dans la
+      démo Symphony tourne dans k3s, déployé par Argo CD comme les services
+- [ ] Configuration des providers validée au chargement : clé inconnue ou valeur requise
+      absente refusée (comme les templates), plus de repli silencieux sur un jeton
+- [ ] Erreurs internes masquées : le client reçoit un message et un identifiant de requête,
+      le détail va dans les logs
+- [ ] Compatibilité pré-1.0 retirée : `token_env` (→ `secret://env/…`), ancien format
+      `auth.issuer`, avertissements `catalogue.repo`
+- [ ] Rôles par équipe : un projet appartient à une équipe de l'annuaire ; seuls ses
+      membres (et les admins) le déploient, le suppriment ou lancent ses actions ; les
+      groupes de rôles ne sont plus proposés comme équipes
+- [ ] Qualité : erreurs de décodage JSON vérifiées partout, `handlers/tasks.go` découpé
+      par type de tâche, Go à jour (`go.mod`, CI, Dockerfile alignés)
+
+Fini quand : `helm install` donne une instance qui marche, une faute de frappe dans
+`symphony.yaml` est refusée avec un message clair, et bob ne peut pas supprimer un projet
+d'une autre équipe.
+
+## v1.0 — La vitrine
+
+Objectif : le parcours complet d'une IDP, et une évaluation possible en cinq minutes sans
+rien installer.
+
+- [ ] Secrets des applis : une variable d'un service référence `secret://vault/…` ; le
+      runtime `argocd` la fait lire dans le cluster (External Secrets), le runtime Docker
+      la résout au déploiement ; jamais en clair dans Git ni dans l'API
+- [ ] Environnements : un projet a ses environnements (staging, production), chacun avec
+      son runtime ; une version déployée en staging se **promeut** en production
+- [ ] Tests : handlers de l'API et base de données couverts ; tests d'intégration de bout
+      en bout dans la CI (GitLab éphémère ou providers simulés)
+- [ ] API décrite en OpenAPI, servie par Symphony
+- [ ] Vitrine : nom unique (« Internal Developer Platform »), repo nettoyé, nouveau GIF,
+      mode visite sans GitLab (données de démo, lecture seule) pour essayer en une minute
+- [ ] Documentation et démo à jour de toutes les fonctionnalités ; release `v1.0`
 
 ## Hors périmètre
 
