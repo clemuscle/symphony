@@ -23,6 +23,10 @@ type Provider struct {
 	id         string
 	client     *http.Client
 	pullClient *http.Client // pull : peut durer bien plus que 30 s
+
+	// HealthTimeout : attente maximale de l'état healthy d'une image qui a un
+	// HEALTHCHECK, à la bascule
+	HealthTimeout time.Duration
 }
 
 func New(id, socketPath string) *Provider {
@@ -35,6 +39,8 @@ func New(id, socketPath string) *Provider {
 		id:         id,
 		client:     &http.Client{Timeout: 30 * time.Second, Transport: transport},
 		pullClient: &http.Client{Timeout: 10 * time.Minute, Transport: transport},
+
+		HealthTimeout: 2 * time.Minute,
 	}
 }
 
@@ -191,7 +197,7 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 	json.Unmarshal(data, &created)
 
 	// Bascule : l'ancien est arrêté (il libère le port hôte) mais conservé
-	// jusqu'à ce que le nouveau ait tenu startupGrace
+	// jusqu'à ce que le nouveau soit prêt (startAndWatch)
 	oldRunning := old != nil && old.State.Status == "running"
 	if oldRunning {
 		p.docker("POST", fmt.Sprintf("/containers/%s/stop", old.ID), nil)
@@ -223,12 +229,18 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 // nextSuffix : nom temporaire du nouveau container pendant la bascule
 const nextSuffix = "-next"
 
-// startupGrace : durée pendant laquelle un nouveau container doit rester
-// "running" avant de remplacer l'ancien (attrape les crashs au démarrage)
-var startupGrace = 3 * time.Second
+// startupGrace : durée pendant laquelle un nouveau container sans
+// HEALTHCHECK doit rester "running" avant de remplacer l'ancien (attrape les
+// crashs au démarrage) ; healthPoll : intervalle de lecture de son état
+var (
+	startupGrace = 3 * time.Second
+	healthPoll   = time.Second
+)
 
-// startAndWatch démarre le container et vérifie qu'il tourne toujours après
-// startupGrace. En cas d'échec, l'erreur contient la fin de ses logs.
+// startAndWatch démarre le container et attend qu'il soit prêt : état
+// healthy si son image a un HEALTHCHECK (dans la limite de HealthTimeout),
+// sinon toujours en marche après startupGrace. En cas d'échec, l'erreur
+// contient la fin de ses logs (et du healthcheck).
 func (p *Provider) startAndWatch(id string) error {
 	data, status, err := p.docker("POST", fmt.Sprintf("/containers/%s/start", id), nil)
 	if err != nil {
@@ -238,17 +250,47 @@ func (p *Provider) startAndWatch(id string) error {
 		// Port hôte déjà pris, typiquement
 		return fmt.Errorf("docker start: status %d — %s", status, strings.TrimSpace(string(data)))
 	}
-	time.Sleep(startupGrace)
-	info, err := p.inspect(id)
-	if err != nil {
-		return err
+	start := time.Now()
+	for {
+		time.Sleep(healthPoll)
+		info, err := p.inspect(id)
+		if err != nil {
+			return err
+		}
+		if info.State.Status != "running" {
+			return p.notReady(id, fmt.Sprintf("le container ne tient pas au démarrage (état %s)", info.State.Status), "")
+		}
+		elapsed := time.Since(start)
+		h := info.State.Health
+		if h == nil {
+			// Pas de HEALTHCHECK : le container doit tenir startupGrace
+			if elapsed >= startupGrace {
+				return nil
+			}
+			continue
+		}
+		switch h.Status {
+		case "healthy":
+			slog.Info("container prêt (healthcheck)", "container", id[:min(12, len(id))], "after", elapsed.Round(time.Second).String())
+			return nil
+		case "unhealthy":
+			return p.notReady(id, "healthcheck en échec", h.lastOutput())
+		}
+		if elapsed >= p.HealthTimeout {
+			return p.notReady(id, fmt.Sprintf("toujours %s après %s (health_timeout)", h.Status, p.HealthTimeout), h.lastOutput())
+		}
 	}
-	if info.State.Status != "running" {
-		logs, _ := p.Logs(id, 20)
-		return fmt.Errorf("le container ne tient pas au démarrage (état %s) — logs : %s",
-			info.State.Status, strings.TrimSpace(logs))
+}
+
+// notReady : erreur d'un container qui n'a pas pris la relève, avec la fin
+// de ses logs et la dernière sortie de son healthcheck
+func (p *Provider) notReady(id, reason, healthOutput string) error {
+	logs, _ := p.Logs(id, 20)
+	msg := reason + " — logs : " + strings.TrimSpace(logs)
+	if healthOutput != "" {
+		msg += " — healthcheck : " + healthOutput
 	}
-	return nil
+	return errors.New(msg)
 }
 
 // cleanLogs retire l'en-tête binaire de 8 octets que Docker ajoute à chaque
@@ -274,7 +316,8 @@ type containerInfo struct {
 	Name    string    `json:"Name"`
 	Created time.Time `json:"Created"`
 	State   struct {
-		Status string `json:"Status"`
+		Status string        `json:"Status"`
+		Health *healthStatus `json:"Health"` // nil : image sans HEALTHCHECK
 	} `json:"State"`
 	Config struct {
 		Image  string            `json:"Image"`
@@ -286,6 +329,22 @@ type containerInfo struct {
 	NetworkSettings struct {
 		Ports map[string][]portBinding `json:"Ports"`
 	} `json:"NetworkSettings"`
+}
+
+type healthStatus struct {
+	Status string `json:"Status"` // starting, healthy, unhealthy
+	Log    []struct {
+		ExitCode int    `json:"ExitCode"`
+		Output   string `json:"Output"`
+	} `json:"Log"`
+}
+
+// lastOutput : sortie du dernier healthcheck
+func (h *healthStatus) lastOutput() string {
+	if len(h.Log) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(h.Log[len(h.Log)-1].Output)
 }
 
 type portBinding struct {

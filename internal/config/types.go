@@ -23,13 +23,23 @@ type Config struct {
 // WebhooksConfig : Symphony abonne les repos qu'il crée à leurs événements de
 // pipeline, reçus sur <url>/webhooks/gitlab
 type WebhooksConfig struct {
-	URL       string `yaml:"url"`        // Symphony vu par GitLab, ex. http://symphony:8080
-	SecretEnv string `yaml:"secret_env"` // variable du secret partagé (défaut WEBHOOK_SECRET)
+	URL string `yaml:"url"` // Symphony vu par GitLab, ex. http://symphony:8080
+	// Secret partagé : valeur ou référence secret://, sinon la variable
+	// SecretEnv (défaut WEBHOOK_SECRET)
+	Secret    string `yaml:"secret"`
+	SecretEnv string `yaml:"secret_env"`
 }
 
-// AuthConfig : fournisseur OIDC et correspondance groupes → rôles
+// AuthConfig : provider d'identité de la connexion et correspondance
+// groupes → rôles
 type AuthConfig struct {
-	// Issuer tel que le voit le navigateur (claim iss des jetons)
+	// Provider identity de la connexion ; vide : celui par défaut
+	Identity string `yaml:"identity"`
+	// Rôle (viewer, developer, admin) → groupes OIDC qui le donnent
+	Roles map[string][]string `yaml:"roles"`
+
+	// Ancien format (avant les providers identity) : converti en provider de
+	// type oidc d'id "oidc". Issuer tel que le voit le navigateur.
 	Issuer string `yaml:"issuer"`
 	// URL où Symphony lit la découverte OIDC, si elle diffère de l'issuer
 	// (Symphony dans un conteneur, Keycloak joint par son nom de service)
@@ -39,8 +49,6 @@ type AuthConfig struct {
 	// URL de retour après connexion ; vide : déduite de la requête
 	RedirectURL string `yaml:"redirect_url"`
 	GroupsClaim string `yaml:"groups_claim"` // défaut : groups
-	// Rôle (viewer, developer, admin) → groupes OIDC qui le donnent
-	Roles map[string][]string `yaml:"roles"`
 }
 
 type ProvidersConfig struct {
@@ -48,8 +56,14 @@ type ProvidersConfig struct {
 	CI       []ProviderDef `yaml:"ci"`
 	Registry []ProviderDef `yaml:"registry"`
 	Runtime  []ProviderDef `yaml:"runtime"`
+	// Secrets : lus avant les autres, qui y font référence (secret://<id>/…).
+	// Le provider "env" (variables d'environnement) existe toujours.
+	Secrets  []ProviderDef `yaml:"secrets"`
+	Identity []ProviderDef `yaml:"identity"`
 }
 
+// ProviderDef : un provider. Toute valeur de Config peut être une référence
+// secret://<provider>/<chemin>#<clé>, remplacée par le secret avant usage.
 type ProviderDef struct {
 	ID      string            `yaml:"id"`
 	Type    string            `yaml:"type"`
@@ -77,7 +91,8 @@ type TemplatesConfig struct {
 }
 
 // ConfigSource : où lire la configuration dans Git, et le SCM à utiliser pour
-// la lire (même format qu'un provider SCM ; il n'est pas enregistré)
+// la lire (même format qu'un provider SCM ; il n'est pas enregistré). Son
+// jeton peut venir des providers.secrets du bootstrap.
 type ConfigSource struct {
 	SCM    ProviderDef `yaml:"scm"`
 	Repo   string      `yaml:"repo"`

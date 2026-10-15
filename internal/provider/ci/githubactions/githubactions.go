@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/clemuscle/symphony/internal/provider"
@@ -14,6 +17,7 @@ import (
 type Provider struct {
 	id     string
 	token  string
+	apiURL string
 	client *http.Client
 }
 
@@ -21,8 +25,15 @@ func New(id, token string) *Provider {
 	return &Provider{
 		id:     id,
 		token:  token,
+		apiURL: "https://api.github.com",
 		client: &http.Client{Timeout: 15 * time.Second},
 	}
+}
+
+// WithAPIURL : autre API GitHub (tests, GitHub Enterprise)
+func (p *Provider) WithAPIURL(u string) *Provider {
+	p.apiURL = strings.TrimRight(u, "/")
+	return p
 }
 
 func (p *Provider) ID() string { return p.id }
@@ -42,12 +53,12 @@ func (p *Provider) api(method, path string, body any) ([]byte, int, error) {
 		b, _ := json.Marshal(body)
 		buf = bytes.NewReader(b)
 	}
-	req, err := http.NewRequest(method, "https://api.github.com"+path, buf)
+	req, err := http.NewRequest(method, p.apiURL+path, buf)
 	if err != nil {
 		return nil, 0, err
 	}
 	req.Header.Set("Authorization", "Bearer "+p.token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -55,160 +66,205 @@ func (p *Provider) api(method, path string, body any) ([]byte, int, error) {
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("github api: %w", err)
 	}
 	defer resp.Body.Close()
-	data, _ := io.ReadAll(resp.Body)
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	return data, resp.StatusCode, nil
 }
 
+// run : un workflow run de l'API GitHub
+type run struct {
+	ID         int64     `json:"id"`
+	Status     string    `json:"status"`
+	Conclusion string    `json:"conclusion"`
+	HTMLURL    string    `json:"html_url"`
+	HeadBranch string    `json:"head_branch"`
+	Event      string    `json:"event"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+func (r run) pipeline() provider.Pipeline {
+	pl := provider.Pipeline{
+		ID:        strconv.FormatInt(r.ID, 10),
+		Status:    normalize(r.Status, r.Conclusion),
+		WebURL:    r.HTMLURL,
+		Ref:       r.HeadBranch,
+		CreatedAt: r.CreatedAt,
+	}
+	if r.Status == "completed" {
+		finished := r.UpdatedAt
+		pl.FinishedAt = &finished
+	}
+	return pl
+}
+
+// normalize traduit statut et conclusion GitHub en statut Symphony (ceux de
+// GitLab CI) : pending, running, success, failed, canceled, skipped
+func normalize(status, conclusion string) string {
+	switch status {
+	case "completed":
+		switch conclusion {
+		case "success":
+			return "success"
+		case "cancelled":
+			return "canceled"
+		case "skipped", "neutral":
+			return "skipped"
+		default: // failure, timed_out, startup_failure, action_required, stale
+			return "failed"
+		}
+	case "in_progress":
+		return "running"
+	default: // queued, requested, waiting, pending
+		return "pending"
+	}
+}
+
+// splitRepoPath : "owner/repo[/workflow.yml]" → owner, repo, workflow
+// (défaut : le workflow créé par Symphony)
+func splitRepoPath(repoPath string) (owner, repo, workflow string, err error) {
+	parts := strings.Split(strings.Trim(repoPath, "/"), "/")
+	switch len(parts) {
+	case 2:
+		return parts[0], parts[1], workflowFile, nil
+	case 3:
+		return parts[0], parts[1], parts[2], nil
+	}
+	return "", "", "", fmt.Errorf("githubactions: repoPath doit être 'owner/repo[/workflow.yml]', reçu: %s", repoPath)
+}
+
+// dispatchWait : durée pendant laquelle on cherche le run créé par un
+// workflow_dispatch quand l'API ne renvoie pas son id
+var dispatchWait = 10 * time.Second
+
+// TriggerPipeline lance le workflow (workflow_dispatch) avec vars en entrées :
+// le workflow doit les déclarer toutes, sinon GitHub refuse (422). Le run
+// créé est renvoyé ; s'il n'apparaît pas à temps, son ID est vide et
+// l'appelant attend la prochaine pipeline du repo.
 func (p *Provider) TriggerPipeline(repoPath, ref string, vars map[string]string) (*provider.Pipeline, error) {
-	inputs := make(map[string]string)
+	owner, repo, workflow, err := splitRepoPath(repoPath)
+	if err != nil {
+		return nil, err
+	}
+	inputs := make(map[string]string, len(vars))
 	for k, v := range vars {
 		inputs[k] = v
 	}
-
-	// GitHub Actions: workflow_dispatch
-	// repoPath : "owner/repo/workflow.yml", ou "owner/repo" pour le workflow créé par Symphony
-	parts := splitRepoPath(repoPath)
-	if len(parts) == 2 {
-		parts = append(parts, workflowFile)
+	path := fmt.Sprintf("/repos/%s/%s/actions/workflows/%s/dispatches", owner, repo, url.PathEscape(workflow))
+	before := time.Now()
+	// return_run_details : l'API renvoie alors l'id du run (200) ; une API
+	// plus ancienne qui ne le connaît pas répond 204 ou le refuse (422)
+	data, status, err := p.api("POST", path, map[string]any{"ref": ref, "inputs": inputs, "return_run_details": true})
+	if err == nil && status == http.StatusUnprocessableEntity && strings.Contains(string(data), "return_run_details") {
+		data, status, err = p.api("POST", path, map[string]any{"ref": ref, "inputs": inputs})
 	}
-	if len(parts) < 3 {
-		return nil, fmt.Errorf("githubactions: repoPath doit être 'owner/repo[/workflow.yml]', reçu: %s", repoPath)
-	}
-	owner, repo, workflow := parts[0], parts[1], parts[2]
-
-	_, status, err := p.api("POST",
-		fmt.Sprintf("/repos/%s/%s/actions/workflows/%s/dispatches", owner, repo, workflow),
-		map[string]any{"ref": ref, "inputs": inputs})
 	if err != nil {
 		return nil, err
 	}
-	if status != 204 {
-		return nil, fmt.Errorf("github triggerWorkflow: status %d", status)
-	}
-
-	// GitHub ne retourne pas l'ID du run immédiatement — on retourne un pipeline pending
-	return &provider.Pipeline{
-		ID:        "pending",
+	pending := &provider.Pipeline{
 		Status:    "pending",
 		WebURL:    fmt.Sprintf("https://github.com/%s/%s/actions", owner, repo),
 		Ref:       ref,
-		CreatedAt: time.Now(),
-	}, nil
+		CreatedAt: before,
+	}
+	switch status {
+	case http.StatusOK:
+		var resp struct {
+			WorkflowRunID int64  `json:"workflow_run_id"`
+			HTMLURL       string `json:"html_url"`
+		}
+		if json.Unmarshal(data, &resp) == nil && resp.WorkflowRunID != 0 {
+			pending.ID = strconv.FormatInt(resp.WorkflowRunID, 10)
+			if resp.HTMLURL != "" {
+				pending.WebURL = resp.HTMLURL
+			}
+			return pending, nil
+		}
+	case http.StatusNoContent:
+	default:
+		return nil, fmt.Errorf("github workflow_dispatch %s: status %d — %s", workflow, status, strings.TrimSpace(string(data)))
+	}
+
+	// Pas d'id dans la réponse : le run du dispatch apparaît dans la liste
+	// au bout de quelques secondes
+	deadline := time.Now().Add(dispatchWait)
+	for time.Now().Before(deadline) {
+		time.Sleep(2 * time.Second)
+		runs, err := p.runs(owner, repo, "event=workflow_dispatch&branch="+url.QueryEscape(ref)+"&per_page=5")
+		if err != nil {
+			break
+		}
+		for _, r := range runs {
+			if !r.CreatedAt.Before(before.Add(-5 * time.Second)) {
+				pl := r.pipeline()
+				return &pl, nil
+			}
+		}
+	}
+	return pending, nil
+}
+
+func (p *Provider) runs(owner, repo, query string) ([]run, error) {
+	data, status, err := p.api("GET", fmt.Sprintf("/repos/%s/%s/actions/runs?%s", owner, repo, query), nil)
+	if err != nil {
+		return nil, err
+	}
+	if status == http.StatusNotFound {
+		return nil, provider.ErrNotFound
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("github listRuns: status %d — %s", status, strings.TrimSpace(string(data)))
+	}
+	var result struct {
+		WorkflowRuns []run `json:"workflow_runs"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("github listRuns: %w", err)
+	}
+	return result.WorkflowRuns, nil
 }
 
 func (p *Provider) GetPipeline(repoPath, pipelineID string) (*provider.Pipeline, error) {
-	parts := splitRepoPath(repoPath)
-	if len(parts) < 2 {
-		return nil, fmt.Errorf("repoPath invalide: %s", repoPath)
-	}
-	owner, repo := parts[0], parts[1]
-
-	data, status, err := p.api("GET",
-		fmt.Sprintf("/repos/%s/%s/actions/runs/%s", owner, repo, pipelineID), nil)
+	owner, repo, _, err := splitRepoPath(repoPath)
 	if err != nil {
 		return nil, err
 	}
-	if status != 200 {
-		return nil, fmt.Errorf("getWorkflowRun: status %d", status)
+	data, status, err := p.api("GET", fmt.Sprintf("/repos/%s/%s/actions/runs/%s", owner, repo, url.PathEscape(pipelineID)), nil)
+	if err != nil {
+		return nil, err
 	}
-
-	var run struct {
-		ID         int64      `json:"id"`
-		Status     string     `json:"status"`
-		Conclusion string     `json:"conclusion"`
-		HTMLURL    string     `json:"html_url"`
-		HeadBranch string     `json:"head_branch"`
-		CreatedAt  time.Time  `json:"created_at"`
-		UpdatedAt  *time.Time `json:"updated_at"`
+	if status == http.StatusNotFound {
+		return nil, provider.ErrNotFound
 	}
-	json.Unmarshal(data, &run)
-
-	// Normaliser le statut GitHub → statut Symphony
-	status2 := run.Status
-	if run.Status == "completed" {
-		status2 = run.Conclusion // success, failure, cancelled...
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("github getWorkflowRun: status %d", status)
 	}
-
-	return &provider.Pipeline{
-		ID:         fmt.Sprintf("%d", run.ID),
-		Status:     status2,
-		WebURL:     run.HTMLURL,
-		Ref:        run.HeadBranch,
-		CreatedAt:  run.CreatedAt,
-		FinishedAt: run.UpdatedAt,
-	}, nil
+	var r run
+	if err := json.Unmarshal(data, &r); err != nil {
+		return nil, fmt.Errorf("github getWorkflowRun: %w", err)
+	}
+	pl := r.pipeline()
+	return &pl, nil
 }
 
+// ListPipelines : runs les plus récents d'abord
 func (p *Provider) ListPipelines(repoPath string, limit int) ([]provider.Pipeline, error) {
-	if limit == 0 {
+	if limit <= 0 {
 		limit = 20
 	}
-	parts := splitRepoPath(repoPath)
-	if len(parts) < 2 {
-		return nil, fmt.Errorf("repoPath invalide: %s", repoPath)
-	}
-	owner, repo := parts[0], parts[1]
-
-	data, _, err := p.api("GET",
-		fmt.Sprintf("/repos/%s/%s/actions/runs?per_page=%d", owner, repo, limit), nil)
+	owner, repo, _, err := splitRepoPath(repoPath)
 	if err != nil {
 		return nil, err
 	}
-
-	var result struct {
-		WorkflowRuns []struct {
-			ID         int64     `json:"id"`
-			Status     string    `json:"status"`
-			Conclusion string    `json:"conclusion"`
-			HTMLURL    string    `json:"html_url"`
-			HeadBranch string    `json:"head_branch"`
-			CreatedAt  time.Time `json:"created_at"`
-		} `json:"workflow_runs"`
+	runs, err := p.runs(owner, repo, "per_page="+strconv.Itoa(limit))
+	if err != nil {
+		return nil, err
 	}
-	json.Unmarshal(data, &result)
-
-	pipelines := make([]provider.Pipeline, len(result.WorkflowRuns))
-	for i, r := range result.WorkflowRuns {
-		s := r.Status
-		if r.Status == "completed" {
-			s = r.Conclusion
-		}
-		pipelines[i] = provider.Pipeline{
-			ID:        fmt.Sprintf("%d", r.ID),
-			Status:    s,
-			WebURL:    r.HTMLURL,
-			Ref:       r.HeadBranch,
-			CreatedAt: r.CreatedAt,
-		}
+	pipelines := make([]provider.Pipeline, len(runs))
+	for i, r := range runs {
+		pipelines[i] = r.pipeline()
 	}
 	return pipelines, nil
-}
-
-func splitRepoPath(path string) []string {
-	// "owner/repo" ou "owner/repo/workflow.yml"
-	parts := make([]string, 0)
-	for _, p := range []string{} {
-		parts = append(parts, p)
-	}
-	return append(parts, splitPath(path)...)
-}
-
-func splitPath(path string) []string {
-	var parts []string
-	start := 0
-	for i, c := range path {
-		if c == '/' {
-			if i > start {
-				parts = append(parts, path[start:i])
-			}
-			start = i + 1
-		}
-	}
-	if start < len(path) {
-		parts = append(parts, path[start:])
-	}
-	return parts
 }

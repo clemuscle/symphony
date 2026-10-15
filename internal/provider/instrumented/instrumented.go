@@ -100,6 +100,10 @@ func (r registry) ListTags(repoPath string) ([]string, error) {
 	return call("registry", r.ID(), "ListTags", func() ([]string, error) { return r.RegistryProvider.ListTags(repoPath) })
 }
 
+func (r registry) DeleteImages(repoPath string) error {
+	return call0("registry", r.ID(), "DeleteImages", func() error { return r.RegistryProvider.DeleteImages(repoPath) })
+}
+
 // ─── RUNTIME ──────────────────────────────────────────────────────────────────
 
 type runtime struct{ provider.RuntimeProvider }
@@ -132,4 +136,24 @@ func (r runtime) Logs(deploymentID string, lines int) (string, error) {
 
 func (r runtime) Remove(name string) error {
 	return call0("runtime", r.ID(), "Remove", func() error { return r.RuntimeProvider.Remove(name) })
+}
+
+// ─── SECRETS ──────────────────────────────────────────────────────────────────
+
+type secrets struct{ provider.SecretsProvider }
+
+func Secrets(p provider.SecretsProvider) provider.SecretsProvider { return secrets{p} }
+
+func (s secrets) Get(path, key string) (string, error) {
+	return call("secrets", s.ID(), "Get", func() (string, error) { return s.SecretsProvider.Get(path, key) })
+}
+
+// ─── IDENTITY ─────────────────────────────────────────────────────────────────
+
+type identity struct{ provider.IdentityProvider }
+
+func Identity(p provider.IdentityProvider) provider.IdentityProvider { return identity{p} }
+
+func (i identity) ListGroups() ([]provider.Group, error) {
+	return call("identity", i.ID(), "ListGroups", i.IdentityProvider.ListGroups)
 }

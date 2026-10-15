@@ -9,18 +9,24 @@
 #   4. démarre Kubernetes (k3s) et y installe Argo CD, avec un compte pour
 #      Symphony et l'accès au repo platform/symphony-deployments et au registry
 #   5. démarre Keycloak (realm symphony : alice admin, bob developer,
-#      carol viewer, dave sans rôle), qui sert aussi à se connecter à GitLab
-#   6. démarre Symphony et attend qu'il ait chargé les golden paths
-#   7. crée et déploie, via l'API de Symphony, les projets de demo/seed/ :
+#      carol viewer, dave sans rôle ; groupes d'équipes ; client de service
+#      symphony-directory pour l'annuaire), qui sert aussi à se connecter à GitLab
+#   6. remplit Vault avec les secrets de Symphony (jetons GitLab, Argo CD,
+#      GitHub, secret des webhooks, client de l'annuaire) et lui crée un AppRole
+#   7. démarre Symphony et attend qu'il ait chargé les golden paths
+#   8. crée et déploie, via l'API de Symphony, les projets de demo/seed/ :
 #      de vrais repos, pipelines et services joignables (~5 min)
 #
 # Rejouable : chaque étape vérifie ce qui existe déjà.
 # --no-k8s : sans Kubernetes (~1,5 Go de RAM en moins) ; les projets de démo
 #   prévus sur Kubernetes sont alors déployés sur Docker.
 # --no-seed : sans les projets de démo (on les crée pendant la démo).
+# GITHUB_TOKEN=<classic PAT : repo, workflow, delete_repo, read/write/delete:packages>
+#   ajoute GitHub (repos dans le compte du jeton, GitHub Actions, GHCR) et le
+#   golden path api-rest-go-github ; sans lui, la démo reste 100 % locale.
 # Ports réglables : GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 \
-#   SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 K8S_HTTP_PORT=18081 ARGOCD_PORT=18088 \
-#   K8S_API_PORT=16443 ./demo/up.sh
+#   SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 VAULT_PORT=18200 K8S_HTTP_PORT=18081 \
+#   ARGOCD_PORT=18088 K8S_API_PORT=16443 ./demo/up.sh
 # Arrêt : ./demo/down.sh
 
 set -euo pipefail
@@ -50,6 +56,7 @@ REGISTRY_PORT=${REGISTRY_PORT:-$(saved REGISTRY_PORT)}; REGISTRY_PORT=${REGISTRY
 GITLAB_SSH_PORT=${GITLAB_SSH_PORT:-$(saved GITLAB_SSH_PORT)}; GITLAB_SSH_PORT=${GITLAB_SSH_PORT:-2224}
 SYMPHONY_PORT=${SYMPHONY_PORT:-$(saved SYMPHONY_PORT)}; SYMPHONY_PORT=${SYMPHONY_PORT:-8080}
 KEYCLOAK_PORT=${KEYCLOAK_PORT:-$(saved KEYCLOAK_PORT)}; KEYCLOAK_PORT=${KEYCLOAK_PORT:-8180}
+VAULT_PORT=${VAULT_PORT:-$(saved VAULT_PORT)}; VAULT_PORT=${VAULT_PORT:-8200}
 K8S_HTTP_PORT=${K8S_HTTP_PORT:-$(saved K8S_HTTP_PORT)}; K8S_HTTP_PORT=${K8S_HTTP_PORT:-8081}
 ARGOCD_PORT=${ARGOCD_PORT:-$(saved ARGOCD_PORT)}; ARGOCD_PORT=${ARGOCD_PORT:-8088}
 K8S_API_PORT=${K8S_API_PORT:-$(saved K8S_API_PORT)}; K8S_API_PORT=${K8S_API_PORT:-6443}
@@ -58,17 +65,23 @@ GITLAB_TOKEN=$(saved GITLAB_TOKEN)
 GITLAB_ROOT_PASSWORD=$(saved GITLAB_ROOT_PASSWORD)
 K8S_GITLAB_TOKEN=$(saved K8S_GITLAB_TOKEN)
 ARGOCD_TOKEN=$(saved ARGOCD_TOKEN)
+GITHUB_TOKEN=${GITHUB_TOKEN:-$(saved GITHUB_TOKEN)}
+VAULT_ROLE_ID=$(saved VAULT_ROLE_ID)
+VAULT_SECRET_ID=$(saved VAULT_SECRET_ID)
 random() { head -c 64 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c "$1"; }
 GITLAB_ROOT_PASSWORD=${GITLAB_ROOT_PASSWORD:-Sy-$(random 20)}
 KEYCLOAK_ADMIN_PASSWORD=$(saved KEYCLOAK_ADMIN_PASSWORD); KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-$(random 20)}
 SESSION_SECRET=$(saved SESSION_SECRET); SESSION_SECRET=${SESSION_SECRET:-$(random 48)}
 WEBHOOK_SECRET=$(saved WEBHOOK_SECRET); WEBHOOK_SECRET=${WEBHOOK_SECRET:-$(random 32)}
 GITLAB_OIDC_SECRET=$(saved GITLAB_OIDC_SECRET); GITLAB_OIDC_SECRET=${GITLAB_OIDC_SECRET:-$(random 32)}
+DIRECTORY_SECRET=$(saved DIRECTORY_SECRET); DIRECTORY_SECRET=${DIRECTORY_SECRET:-$(random 32)}
+VAULT_ROOT_TOKEN=$(saved VAULT_ROOT_TOKEN); VAULT_ROOT_TOKEN=${VAULT_ROOT_TOKEN:-demo-root-$(random 24)}
 
 GITLAB_URL="http://localhost:${GITLAB_PORT}"
 SYMPHONY_URL="http://localhost:${SYMPHONY_PORT}"
 KEYCLOAK_URL="http://localhost:${KEYCLOAK_PORT}"
 ARGOCD_URL="http://localhost:${ARGOCD_PORT}"
+VAULT_URL="http://localhost:${VAULT_PORT}"
 
 write_env() {
   cat > .env <<EOF
@@ -78,6 +91,7 @@ REGISTRY_PORT=${REGISTRY_PORT}
 GITLAB_SSH_PORT=${GITLAB_SSH_PORT}
 SYMPHONY_PORT=${SYMPHONY_PORT}
 KEYCLOAK_PORT=${KEYCLOAK_PORT}
+VAULT_PORT=${VAULT_PORT}
 K8S_HTTP_PORT=${K8S_HTTP_PORT}
 ARGOCD_PORT=${ARGOCD_PORT}
 K8S_API_PORT=${K8S_API_PORT}
@@ -86,6 +100,11 @@ KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
 SESSION_SECRET=${SESSION_SECRET}
 WEBHOOK_SECRET=${WEBHOOK_SECRET}
 GITLAB_OIDC_SECRET=${GITLAB_OIDC_SECRET}
+DIRECTORY_SECRET=${DIRECTORY_SECRET}
+VAULT_ROOT_TOKEN=${VAULT_ROOT_TOKEN}
+VAULT_ROLE_ID=${VAULT_ROLE_ID}
+VAULT_SECRET_ID=${VAULT_SECRET_ID}
+GITHUB_TOKEN=${GITHUB_TOKEN}
 GITLAB_ROOT_PASSWORD=${GITLAB_ROOT_PASSWORD}
 GITLAB_TOKEN=${GITLAB_TOKEN}
 K8S_GITLAB_TOKEN=${K8S_GITLAB_TOKEN}
@@ -112,7 +131,7 @@ fi
 # Un port pris par autre chose que la démo elle-même = conflit
 running=$($COMPOSE ps --services --status running 2>/dev/null || true)
 if [ -z "$running" ] && command -v ss >/dev/null 2>&1; then
-  vars="GITLAB_PORT REGISTRY_PORT GITLAB_SSH_PORT SYMPHONY_PORT KEYCLOAK_PORT"
+  vars="GITLAB_PORT REGISTRY_PORT GITLAB_SSH_PORT SYMPHONY_PORT KEYCLOAK_PORT VAULT_PORT"
   [ "$K8S" = true ] && vars="$vars K8S_HTTP_PORT ARGOCD_PORT K8S_API_PORT"
   for v in $vars; do
     p=${!v}
@@ -127,14 +146,14 @@ write_env
 mkdir -p keycloak/import
 # (Symphony, GitLab), comme le secret du client gitlab
 sed -e "s|__SYMPHONY_URL__|${SYMPHONY_URL}|g" -e "s|__GITLAB_URL__|${GITLAB_URL}|g" \
-  -e "s|__GITLAB_OIDC_SECRET__|${GITLAB_OIDC_SECRET}|g" \
+  -e "s|__GITLAB_OIDC_SECRET__|${GITLAB_OIDC_SECRET}|g" -e "s|__DIRECTORY_SECRET__|${DIRECTORY_SECRET}|g" \
   keycloak/realm-symphony.template.json > keycloak/import/realm-symphony.json
 chmod 600 keycloak/import/realm-symphony.json
 
 # ── 2. Infra ──────────────────────────────────────────────────────────────────
 
-info "Démarrage de PostgreSQL, GitLab CE, du runner et de Keycloak…"
-$COMPOSE up -d postgres gitlab gitlab-runner keycloak >/dev/null
+info "Démarrage de PostgreSQL, GitLab CE, du runner, de Keycloak et de Vault…"
+$COMPOSE up -d postgres gitlab gitlab-runner keycloak vault >/dev/null
 
 info "Attente de GitLab (3 à 5 min au premier démarrage)…"
 for i in $(seq 90); do
@@ -190,6 +209,21 @@ ensure_group() {
 ensure_group platform "Configuration de Symphony : golden paths, repo de déploiement"
 ensure_group apps "Projets créés par Symphony"
 
+# Sans GITHUB_TOKEN, la démo reste locale : les blocs « github:début … github:fin »
+# de la configuration et le golden path GitHub ne sont pas poussés ; avec
+# --no-k8s, de même pour « k8s:début … k8s:fin » (runtime argocd-k3s) et le
+# golden path api-rest-go-k8s
+if [ -n "$GITHUB_TOKEN" ]; then
+  ok "GitHub activé (GITHUB_TOKEN) : providers github, github-actions, ghcr et golden path api-rest-go-github"
+fi
+content_of() {
+  if [ "$1" != ./symphony.yaml ]; then cat "$1"; return; fi
+  local gh="" k8s=""
+  [ -n "$GITHUB_TOKEN" ] || gh='/# github:début/,/# github:fin/d'
+  [ "$K8S" = true ] || k8s='/# k8s:début/,/# k8s:fin/d'
+  sed -e "$gh" -e "$k8s" "$1"
+}
+
 # Pousse le contenu de demo/gitlab/<repo>/ dans platform/<repo>, en un commit
 seed_repo() {
   local repo=$1 dir=gitlab/$1 path=platform/$1
@@ -201,7 +235,10 @@ seed_repo() {
     -d "visibility=private" | jq -e .id >/dev/null || fail "création de $path impossible"
   local actions
   actions=$(cd "$dir" && find . -type f | sort | while read -r f; do
-    jq -n --arg p "${f#./}" --rawfile c "$f" '{action: "create", file_path: $p, content: $c}'
+    [ -z "$GITHUB_TOKEN" ] && [[ $f == ./templates/*-github/* ]] && continue
+    [ "$K8S" = true ] || [[ $f != ./templates/*-k8s/* ]] || continue
+    jq -n --arg p "${f#./}" --arg c "$(content_of "$f"; echo x)" \
+      '{action: "create", file_path: $p, content: ($c | rtrimstr("x"))}'
   done | jq -s .)
   jq -n --argjson a "$actions" \
     '{branch: "main", commit_message: "feat: contenu initial de la démo [symphony]", actions: $a}' \
@@ -360,7 +397,52 @@ for i in $(seq 60); do
 done
 ok "Keycloak prêt : $KEYCLOAK_URL (realm symphony)"
 
-# ── 6. Symphony ───────────────────────────────────────────────────────────────
+# ── 6. Vault ──────────────────────────────────────────────────────────────────
+
+vault() { curl -s -H "X-Vault-Token: $VAULT_ROOT_TOKEN" "$@"; }
+for i in $(seq 30); do
+  curl -sf -o /dev/null "$VAULT_URL/v1/sys/health" && break
+  [ "$i" = 30 ] && fail "Vault ne répond pas : $COMPOSE logs vault"
+  sleep 2
+done
+
+# Secrets de Symphony (KV v2, montage secret/ du mode dev). Sans Kubernetes
+# ni GitHub, une valeur factice : la configuration y fait référence.
+put_secret() {
+  local path=$1; shift
+  jq -n '$ARGS.named | {data: .}' "$@" \
+    | vault -X POST -H "Content-Type: application/json" --data @- "$VAULT_URL/v1/secret/data/$path" \
+    | jq -e '.data.version' >/dev/null || fail "écriture du secret $path dans Vault impossible"
+}
+put_secret symphony/gitlab --arg token "$GITLAB_TOKEN"
+put_secret symphony/argocd --arg token "${ARGOCD_TOKEN:-sans-kubernetes}"
+put_secret symphony/github --arg token "${GITHUB_TOKEN:-sans-github}"
+put_secret symphony/webhook --arg secret "$WEBHOOK_SECRET"
+put_secret symphony/keycloak --arg directory_secret "$DIRECTORY_SECRET"
+
+# AppRole de Symphony : lecture seule de secret/symphony/*
+approle_login() {
+  jq -n --arg r "$VAULT_ROLE_ID" --arg s "$VAULT_SECRET_ID" '{role_id: $r, secret_id: $s}' \
+    | curl -sf --data @- "$VAULT_URL/v1/auth/approle/login" | jq -e .auth.client_token >/dev/null 2>&1
+}
+if [ -n "$VAULT_ROLE_ID" ] && approle_login; then
+  ok "AppRole de Symphony déjà en place"
+else
+  vault "$VAULT_URL/v1/sys/auth" | jq -e '."approle/"' >/dev/null \
+    || vault -X POST -d '{"type":"approle"}' "$VAULT_URL/v1/sys/auth/approle" >/dev/null
+  jq -n '{policy: "path \"secret/data/symphony/*\" { capabilities = [\"read\"] }"}' \
+    | vault -X PUT --data @- "$VAULT_URL/v1/sys/policies/acl/symphony" >/dev/null
+  vault -X POST -d '{"token_policies":"symphony","token_ttl":"1h","token_max_ttl":"24h"}' \
+    "$VAULT_URL/v1/auth/approle/role/symphony" >/dev/null
+  VAULT_ROLE_ID=$(vault "$VAULT_URL/v1/auth/approle/role/symphony/role-id" | jq -r '.data.role_id // empty')
+  VAULT_SECRET_ID=$(vault -X POST "$VAULT_URL/v1/auth/approle/role/symphony/secret-id" | jq -r '.data.secret_id // empty')
+  [ -n "$VAULT_ROLE_ID" ] && [ -n "$VAULT_SECRET_ID" ] && approle_login || fail "création de l'AppRole de Symphony impossible"
+  write_env
+  ok "AppRole de Symphony créé (lecture de secret/symphony/*)"
+fi
+ok "Vault prêt : $VAULT_URL (secrets de Symphony sous secret/symphony/)"
+
+# ── 7. Symphony ───────────────────────────────────────────────────────────────
 
 info "Démarrage de Symphony ($SYMPHONY_IMAGE)…"
 $COMPOSE --profile symphony up -d symphony >/dev/null
@@ -377,7 +459,7 @@ for i in $(seq 60); do
 done
 ok "Symphony prêt : $n golden paths au catalogue"
 
-# ── 7. Projets de démo ────────────────────────────────────────────────────────
+# ── 8. Projets de démo ────────────────────────────────────────────────────────
 
 if [ "$SEED" = true ]; then
   ./seed.sh "$K8S" || warn "projets de démo incomplets : voir la page Activité de Symphony, puis relancer ./demo/up.sh"
@@ -395,6 +477,7 @@ $(echo -e "${GREEN}Démo prête${NC}")
   GitLab     $GITLAB_URL   bouton « Keycloak », mêmes comptes ; root / $GITLAB_ROOT_PASSWORD
              groupes platform (config de Symphony) et apps (projets)
   Keycloak   $KEYCLOAK_URL/admin   (admin / $KEYCLOAK_ADMIN_PASSWORD)
+  Vault      $VAULT_URL/ui   (jeton root : $VAULT_ROOT_TOKEN ; secrets sous secret/symphony/)
 EOF
 if [ "$K8S" = true ]; then
   cat <<EOF

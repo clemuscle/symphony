@@ -2,11 +2,13 @@ package github
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,6 +19,7 @@ type Provider struct {
 	id     string
 	token  string
 	org    string
+	apiURL string
 	client *http.Client
 }
 
@@ -25,8 +28,15 @@ func New(id, token, org string) *Provider {
 		id:     id,
 		token:  token,
 		org:    org,
+		apiURL: "https://api.github.com",
 		client: &http.Client{Timeout: 15 * time.Second},
 	}
+}
+
+// WithAPIURL : autre API GitHub (tests, GitHub Enterprise)
+func (p *Provider) WithAPIURL(u string) *Provider {
+	p.apiURL = strings.TrimRight(u, "/")
+	return p
 }
 
 func (p *Provider) ID() string { return p.id }
@@ -39,7 +49,7 @@ func (p *Provider) api(method, path string, body any) ([]byte, int, error) {
 		b, _ := json.Marshal(body)
 		buf = bytes.NewReader(b)
 	}
-	req, err := http.NewRequest(method, "https://api.github.com"+path, buf)
+	req, err := http.NewRequest(method, p.apiURL+path, buf)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -57,6 +67,9 @@ func (p *Provider) api(method, path string, body any) ([]byte, int, error) {
 	return data, resp.StatusCode, nil
 }
 
+// CreateRepo crée le repo dans l'organisation (Namespace, sinon org), ou
+// dans le compte du jeton. Il est initialisé (README) : l'API Git, qui
+// pousse le squelette en un commit, ne travaille pas sur un repo vide.
 func (p *Provider) CreateRepo(req provider.CreateRepoRequest) (*provider.Repo, error) {
 	owner := p.org
 	if req.Namespace != "" {
@@ -67,14 +80,12 @@ func (p *Provider) CreateRepo(req provider.CreateRepoRequest) (*provider.Repo, e
 		"name":        req.Name,
 		"description": req.Description,
 		"private":     req.Private,
-		"auto_init":   false,
+		"auto_init":   true,
 	}
 
-	var apiPath string
-	if p.org != "" {
+	apiPath := "/user/repos"
+	if owner != "" {
 		apiPath = "/orgs/" + owner + "/repos"
-	} else {
-		apiPath = "/user/repos"
 	}
 
 	data, status, err := p.api("POST", apiPath, payload)
@@ -102,7 +113,7 @@ func (p *Provider) CreateRepo(req provider.CreateRepoRequest) (*provider.Repo, e
 		WebURL:        repo.HTMLURL,
 		HTTPCloneURL:  repo.CloneURL,
 		SSHCloneURL:   repo.SSHURL,
-		DefaultBranch: "main",
+		DefaultBranch: cmp.Or(repo.DefaultBranch, "main"),
 	}, nil
 }
 
@@ -141,12 +152,74 @@ func (p *Provider) PushFile(repoPath, branch, filePath, content, commitMsg strin
 	return nil
 }
 
+// PushFiles pousse tous les fichiers en un seul commit (API Git : arbre,
+// commit, mise à jour de la branche). Un commit par fichier lancerait un
+// workflow par fichier.
 func (p *Provider) PushFiles(repoPath, branch string, files map[string]string, commitMsg string) error {
-	// GitHub n'a pas d'API multi-fichiers simple — on pousse fichier par fichier
-	for path, content := range files {
-		if err := p.PushFile(repoPath, branch, path, content, commitMsg); err != nil {
-			return fmt.Errorf("pushFile %s: %w", path, err)
+	var ref struct {
+		Object struct {
+			SHA string `json:"sha"`
+		} `json:"object"`
+	}
+	// Juste après CreateRepo, le commit initial peut ne pas être encore visible
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		if err = p.git("GET", repoPath, "/git/ref/heads/"+branch, nil, http.StatusOK, &ref); err == nil {
+			break
 		}
+		time.Sleep(time.Duration(attempt+1) * time.Second)
+	}
+	if err != nil {
+		return fmt.Errorf("branche %s: %w", branch, err)
+	}
+	var parent struct {
+		Tree struct {
+			SHA string `json:"sha"`
+		} `json:"tree"`
+	}
+	if err := p.git("GET", repoPath, "/git/commits/"+ref.Object.SHA, nil, http.StatusOK, &parent); err != nil {
+		return err
+	}
+
+	paths := make([]string, 0, len(files))
+	for path := range files {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	entries := make([]map[string]string, len(paths))
+	for i, path := range paths {
+		entries[i] = map[string]string{"path": path, "mode": "100644", "type": "blob", "content": files[path]}
+	}
+	var tree, commit struct {
+		SHA string `json:"sha"`
+	}
+	if err := p.git("POST", repoPath, "/git/trees", map[string]any{
+		"base_tree": parent.Tree.SHA, "tree": entries,
+	}, http.StatusCreated, &tree); err != nil {
+		return err
+	}
+	if err := p.git("POST", repoPath, "/git/commits", map[string]any{
+		"message": commitMsg, "tree": tree.SHA, "parents": []string{ref.Object.SHA},
+	}, http.StatusCreated, &commit); err != nil {
+		return err
+	}
+	return p.git("PATCH", repoPath, "/git/refs/heads/"+branch, map[string]any{"sha": commit.SHA}, http.StatusOK, nil)
+}
+
+// git appelle l'API Git du repo et décode la réponse dans v si le statut est want
+func (p *Provider) git(method, repoPath, path string, body any, want int, v any) error {
+	data, status, err := p.api(method, "/repos/"+repoPath+path, body)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusNotFound {
+		return fmt.Errorf("github %s %s: %w", method, path, provider.ErrNotFound)
+	}
+	if status != want {
+		return fmt.Errorf("github %s %s: status %d — %s", method, path, status, strings.TrimSpace(string(data)))
+	}
+	if v != nil {
+		return json.Unmarshal(data, v)
 	}
 	return nil
 }

@@ -23,4 +23,6 @@ COPY --from=builder /app/symphony /symphony
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
+    CMD ["/symphony", "-healthcheck"]
 ENTRYPOINT ["/symphony"]

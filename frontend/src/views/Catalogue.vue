@@ -67,7 +67,11 @@
           <div class="form-grid three">
             <div class="field">
               <label>Équipe responsable</label>
-              <input v-model="form.owner" placeholder="team-platform" />
+              <input v-model="form.owner" list="identity-groups"
+                :placeholder="groups.length ? 'groupe de l\'annuaire' : 'team-platform'" />
+              <datalist id="identity-groups">
+                <option v-for="g in groups" :key="g.path" :value="g.name">{{ g.path }}</option>
+              </datalist>
             </div>
             <div class="field">
               <label>Tier</label>
@@ -147,7 +151,17 @@ const form = ref(emptyForm())
 const langIcon = (lang) => ({ go: '🐹', python: '🐍', node: '💚', java: '☕' })[lang] || '📦'
 const runtimeLabel = (rt) => ({ 'docker-local': '🐳 Docker', 'argocd-k3s': '☸️ Kubernetes (Argo CD)' })[rt] || rt || 'runtime par défaut'
 
-onMounted(loadGoldenPaths)
+// Équipes proposées pour le champ owner : groupes de l'annuaire, si le
+// provider d'identité en a un (Keycloak) ; saisie libre sinon
+const groups = ref([])
+async function loadGroups() {
+  try {
+    const { data } = await api.listIdentityGroups()
+    groups.value = data.groups || []
+  } catch { groups.value = [] }
+}
+
+onMounted(() => { loadGoldenPaths(); loadGroups() })
 
 async function select(gp) {
   if (selected.value?.id !== gp.id) {

@@ -56,6 +56,9 @@ export const api = {
   // Providers configurés (id par type)
   getProviders: () => http.get('/api/v1/providers'),
 
+  // Groupes de l'annuaire du provider d'identité (supported: false sans annuaire)
+  listIdentityGroups: () => http.get('/api/v1/identity/groups'),
+
   // Tâches (le flux en direct est dans stores/tasks.js)
   listTasks: (params) => http.get('/api/v1/tasks', { params: { limit: 50, ...params } }),
 

@@ -11,6 +11,11 @@ import (
 var version = "dev"
 
 func main() {
+	// HEALTHCHECK de l'image (scratch : ni curl ni wget) : interroge /healthz
+	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
+		os.Exit(healthcheck())
+	}
+
 	// Logger structuré JSON
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -61,6 +66,20 @@ func main() {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+// healthcheck : 0 si le serveur local répond 200 sur /healthz, 1 sinon
+func healthcheck() int {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + getEnv("PORT", "8080") + "/healthz")
+	if err != nil {
+		return 1
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
+	return 0
 }
 
 func getEnv(key, fallback string) string {

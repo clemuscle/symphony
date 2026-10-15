@@ -2,7 +2,8 @@
 
 Symphony est une **Internal Developer Platform** (IDP) : un backend Go et une SPA Vue 3 qui
 s'appuient sur les outils existants (GitLab ou GitHub, leur CI, un registry d'images, un
-runtime : Docker ou Kubernetes via Argo CD) pour qu'un développeur crée un service prêt à déployer en un clic,
+runtime : Docker ou Kubernetes via Argo CD, un coffre de secrets, un fournisseur
+d'identité) pour qu'un développeur crée un service prêt à déployer en un clic,
 depuis un *golden path* validé par l'équipe plateforme.
 
 Ce document décrit l'architecture actuelle et les décisions qui la fondent. Ce qui reste à
@@ -16,14 +17,17 @@ dit ce qui en a été repris, adapté ou écarté.
    catalogue de chaque projet vivent dans des repos Git, relus toutes les 15 s. Le binaire est
    immuable ; changer la plateforme, c'est pousser un commit.
 2. **Des drivers, pas des plugins.** Chaque outil externe est derrière une interface Go
-   stricte (`SCMProvider`, `CIProvider`, `RegistryProvider`, `RuntimeProvider`). Pas de
-   chargement dynamique : ajouter un outil, c'est implémenter une interface.
+   stricte (`SCMProvider`, `CIProvider`, `RegistryProvider`, `RuntimeProvider`,
+   `SecretsProvider`, `IdentityProvider`). Pas de chargement dynamique : ajouter un outil,
+   c'est implémenter une interface. Chaque type de service a sa section de providers dans
+   la configuration, avec plusieurs instances possibles.
 3. **Déléguer l'exécution.** Symphony n'exécute pas les builds : il pousse un fichier CI et
    laisse la CI de la plateforme travailler. Sur Kubernetes, il ne déploie pas non plus : il
    commite des manifests, Argo CD les applique. Le runtime Docker local est l'exception
    assumée (voir les écarts).
-4. **Aucun secret dans la configuration.** Les fichiers ne contiennent que des noms de
-   variables d'environnement (`token_env`).
+4. **Aucun secret dans la configuration.** Les fichiers ne contiennent que des références :
+   `secret://vault/symphony/gitlab#token` (lu dans Vault) ou le nom d'une variable
+   d'environnement (`token_env`, équivalent de `secret://env/…`).
 5. **Rester léger.** Pas de SDK lourd (l'API Docker est appelée directement sur le socket),
    pas d'ORM, un seul binaire (front embarqué, image d'environ 10 Mo) et PostgreSQL.
 
@@ -43,11 +47,12 @@ dit ce qui en a été repris, adapté ou écarté.
 │  (tâches, SSE)          fiches (15 s)                                │
 │  configWatcher (15 s)   catalogue.Store    database (PostgreSQL)     │
 │                                                                      │
-│  provider.Registry : SCM │ CI │ Registry │ Runtime                   │
-└──────┬──────────────┬───────────┬──────────────┬──────────┬──────────┘
-       ▼              ▼           ▼              ▼          ▼
-  GitLab / GitHub  GitLab CI /  Registry      Docker     Argo CD ──► Kubernetes
-  (repos)          Actions      GitLab        (socket)   (API)       (k3s en démo)
+│  provider.Registry : SCM │ CI │ Registry │ Runtime │ Secrets │ Identity│
+└──────┬────────────┬───────────┬───────────┬─────────┬───────┬──────┬─┘
+       ▼            ▼           ▼           ▼         ▼       ▼      ▼
+  GitLab /      GitLab CI /  Registry    Docker    Argo CD  Vault  Keycloak /
+  GitHub        Actions      GitLab /    (socket)  ──► k8s  (KV)   OIDC
+  (repos)                    GHCR
 ```
 
 ### Les repos Git
@@ -74,9 +79,9 @@ redémarrage, comme l'`app-config` de Backstage.
 
 | Paquet | Rôle |
 |---|---|
-| `cmd/symphony` | Composition : bootstrap et source de config (`config.go`), construction des providers (`providers.go`), assemblage (`main.go`) |
+| `cmd/symphony` | Composition : bootstrap et source de config (`config.go`), secrets et résolution des références (`secrets.go`), construction des providers (`providers.go`), assemblage (`main.go`) |
 | `internal/config` | Types de `symphony.yaml` et décodage (`${VAR}` remplacées par l'environnement) |
-| `internal/provider` | Interfaces, `Registry` (providers par id, remplaçable d'un bloc) et implémentations : `scm/gitlab`, `scm/github`, `ci/gitlabci`, `ci/githubactions`, `registry/gitlabregistry`, `runtime/docker`, `runtime/argocd` |
+| `internal/provider` | Interfaces, `Registry` (providers par id, remplaçable d'un bloc), références `secret://` (`secretref.go`) et implémentations : `scm/gitlab`, `scm/github`, `ci/gitlabci`, `ci/githubactions`, `registry/gitlabregistry`, `registry/ghcr`, `runtime/docker`, `runtime/argocd`, `secrets/env`, `secrets/vault`, `identity/oidc`, `identity/keycloak` |
 | `internal/gitops` | `Syncer` (fiche `catalog-info.yaml` de chaque projet) et `TemplateLoader` (golden paths) |
 | `internal/catalogue` | Store en mémoire des fiches (`kind: Service`) |
 | `internal/tasks` | Moteur de tâches : étapes enregistrées en base, attente de pipelines (webhook ou sondage), reprise au démarrage, diffusion des changements (`Hub`, pour le SSE) |
@@ -143,6 +148,17 @@ projet inexistant) :
 3. **Première pipeline** : attendre sa fin. Quand la tâche réussit, l'image du service est
    dans le registry : le projet est prêt à déployer.
 
+Sur GitHub (golden path `api-rest-go-github`) : le repo est créé initialisé, puis le
+squelette part en un commit par l'API Git (arbre, commit, branche), car l'API « contents »
+ferait un commit (et un workflow) par fichier. Le workflow construit l'image et la pousse
+sur GHCR (`ghcr.io/<owner>/<repo>`, provider `ghcr` : tags et identifiants de pull par
+l'API des packages). Il déclare les entrées `SYMPHONY_*` de `workflow_dispatch` : GitHub
+refuse une entrée non déclarée. Les statuts de GitHub Actions sont ramenés à ceux de
+Symphony (`failure` → `failed`…) et l'id du run lancé est retrouvé (réponse de l'API ou
+liste des runs). Pas de webhook GitHub : les tâches suivent les runs par sondage. À la
+suppression du projet, le package GHCR est supprimé aussi (`DeleteImages`), ce que la
+suppression du repo ne fait pas.
+
 ### Recharger la configuration à chaud
 
 Le `configWatcher` relit `symphony.yaml` dans Git. Si le contenu a changé et qu'il est
@@ -151,6 +167,28 @@ valide, un nouveau `Registry` est construit puis substitué d'un bloc
 providers, soit le nouveau. Le syncer et le template loader sont repointés
 (`SetSource`) et rechargés. Une configuration illisible ou invalide est refusée et la
 précédente reste en place.
+
+### Secrets (providers `secrets`)
+
+Les providers de secrets sont construits **avant** les autres : `env` (variables
+d'environnement) existe toujours, les autres (`vault`) peuvent prendre leurs propres
+identifiants dans `env` ou dans un provider déclaré avant eux. Puis chaque valeur
+`secret://<provider>/<chemin>#<clé>` de la configuration (providers, webhooks) est
+remplacée par le secret, dans une **copie** : la configuration chargée ne contient jamais
+de secret en clair. Une référence introuvable fait refuser toute la configuration :
+appliquer une configuration à moitié résolue retirerait des providers qui marchaient.
+
+À chaque cycle (15 s), même si le fichier n'a pas changé, les références sont relues avec
+les providers de secrets en place ; si l'empreinte de la configuration résolue change
+(rotation d'un jeton dans Vault), elle est réappliquée, sans redémarrage. Le bootstrap
+local peut déclarer ses propres `providers.secrets` : le jeton qui lit la configuration
+dans Git vient alors de Vault, lui aussi.
+
+Le provider `vault` lit le moteur KV v2 (ou v1) et s'authentifie par jeton ou par
+**AppRole** (`role_id`, `secret_id`), en renouvelant son jeton à expiration ou s'il est
+révoqué. En démo, Symphony n'a dans son environnement que son AppRole, en lecture seule sur
+`secret/symphony/*` ; `up.sh` y écrit les jetons GitLab, Argo CD et GitHub, le secret des
+webhooks et celui du client de l'annuaire.
 
 ### Déployer
 
@@ -161,8 +199,11 @@ synchronisé et pods prêts, ou conteneur démarré), 5 min au plus.
 2. Le runtime Docker **tire l'image d'abord** (avec l'auth du registry, envoyée seulement
    si l'image y est hébergée) : si le pull échoue, l'ancien conteneur continue de tourner.
 3. Bascule avec rollback : le nouveau conteneur démarre à côté (`<nom>-next`), l'ancien est
-   arrêté ; si le nouveau tourne encore après 3 s il remplace l'ancien, sinon l'ancien
-   redémarre et l'erreur contient les derniers logs du nouveau.
+   arrêté. Si l'image a un `HEALTHCHECK`, Symphony attend l'état `healthy`
+   (`health_timeout`, 2 min par défaut) ; sinon, le nouveau conteneur doit tourner encore
+   après 3 s. S'il est prêt, il remplace l'ancien ; sinon (`unhealthy`, arrêté, délai
+   dépassé) l'ancien redémarre et l'erreur contient les derniers logs du nouveau et la
+   sortie de son healthcheck.
 
 ### Déployer sur Kubernetes (runtime `argocd`, GitOps)
 
@@ -190,6 +231,12 @@ journaux.
 
 ### Se connecter (OIDC, Backend-for-Frontend)
 
+La connexion passe par un provider `identity` : `oidc` (n'importe quel fournisseur OIDC) ou
+`keycloak` (issuer et découverte déduits de l'URL et du realm). La section `auth` ne garde
+que la politique : quel provider (`auth.identity`) et quels groupes donnent quels rôles
+(`auth.roles`). L'ancien format (`auth.issuer`, `auth.client_id`…) est converti en provider
+`oidc`, avec un avertissement.
+
 1. Le front appelle `/api/v1/me` ; sans session, l'API répond 401 et le front envoie le
    navigateur sur `/auth/login?redirect=<page>`.
 2. Symphony génère `state`, `nonce` et un vérificateur PKCE, les garde dans un cookie
@@ -208,6 +255,14 @@ avec leur e-mail (liés à Keycloak à la première connexion) et leur donne leu
 alice Owner de `platform` et `apps`, bob Developer et carol Reporter de `apps`. GitLab CE
 ne synchronise pas les groupes de l'annuaire (fonction payante) : ces droits sont posés
 par le script, pas déduits des groupes Keycloak.
+
+### Annuaire
+
+Un provider `identity` peut avoir un annuaire (`ListGroups`). `keycloak` le lit par l'API
+d'administration, avec un client de service (`client_credentials`, rôles `query-groups`
+et `view-users` de `realm-management`), groupes mis en cache 30 s. `GET
+/api/v1/identity/groups` les renvoie (`supported: false` sans annuaire) et le formulaire
+de création propose les équipes comme owner du projet ; la saisie reste libre.
 
 ### Actions Day-2
 
@@ -242,7 +297,7 @@ implémentations n'en savent rien.
 | Autorisations | rôles `viewer` < `developer` < `admin` déduits des groupes OIDC (configuration), vérifiés par route | rôles par projet |
 | CSRF | requête modifiante avec cookie : `Origin` (ou `Sec-Fetch-Site`) doit être Symphony | — |
 | CORS | aucune origine tierce par défaut ; liste `cors_origins`, sans cookies | — |
-| Secrets | variables d'environnement, jamais dans les fichiers ni dans le repo de déploiement | Vault — v0.7 |
+| Secrets | providers de secrets (Vault par AppRole en démo, variables d'environnement) ; références `secret://` dans la configuration, résolues dans une copie ; jamais dans les fichiers, les logs, les résultats de tâches ni le repo de déploiement | — |
 | Argo CD | compte de service à jeton (`apiKey`), limité aux Applications du projet `default` et à leurs journaux | — |
 | Fuite de token | l'auth du registry n'est envoyée qu'au registry qui héberge l'image | — |
 | Injection CI | entrées d'action validées, clés inconnues refusées | — |
@@ -268,6 +323,9 @@ implémentations n'en savent rien.
 | Fiche dans le repo du projet | elle évolue avec le code, par l'équipe qui le connaît, avec ses droits sur le repo ; plus de fiche sans repo ni pipeline derrière | dossier `services/` du repo de config (versions ≤ 0.5) |
 | Backend-for-Frontend pour l'OIDC | le navigateur ne détient aucun jeton (pas de vol par XSS), le front n'a pas de bibliothèque OIDC ; recommandé par l'IETF pour les applications navigateur | jetons gérés par la SPA (oidc-client) |
 | Session dans un cookie signé, rôle recalculé à chaque requête | pas de stockage de sessions ; un changement de groupes → rôles dans la config s'applique sans reconnexion | sessions en base |
+| Secrets et identité en providers | Vault, OpenBao, un autre coffre ou un autre IdP s'ajoutent comme les autres outils ; la config désigne des secrets par référence, sans savoir où ils vivent | client Vault et Keycloak codés en dur |
+| Références `secret://` résolues dans une copie, tout ou rien | aucune valeur en clair dans la config gardée en mémoire ; un coffre injoignable laisse la config en place au lieu de retirer des providers | résolution provider par provider (perte silencieuse de providers) |
+| Bascule Docker sur le `HEALTHCHECK` de l'image | le service est vraiment prêt (pas seulement démarré) avant que l'ancien disparaisse ; le golden path décide de la sonde | délai fixe (3 s, insuffisant pour une appli lente, trop long pour une rapide) |
 | Découverte OIDC paresseuse et retentée | Symphony démarre même si l'IdP est absent ; `discovery_url` sépare l'URL interne de l'issuer vu par le navigateur | découverte au démarrage, bloquante |
 | Kubernetes via Argo CD | Symphony écrit des manifests, Argo CD applique et corrige les dérives : fidèle au principe de délégation, et Symphony n'a aucun droit sur le cluster | appels directs à l'API Kubernetes (client-go) |
 | Un repo de déploiement, un dossier par service | un seul endroit à brancher sur Argo CD, un historique de tous les déploiements | un repo par service, ou les manifests dans le repo du code (un commit de déploiement relancerait la CI) |
@@ -280,10 +338,10 @@ implémentations n'en savent rien.
 |---|---|
 | Binaire unique avec la SPA embarquée | **fait** (`go:embed`, image `scratch`) |
 | Configuration déclarative dans un repo Git | **fait**, avec rechargement à chaud |
-| Drivers Go stricts, pas de plugins | **fait** (4 interfaces, 7 implémentations) |
+| Drivers Go stricts, pas de plugins | **fait** (6 interfaces, 12 implémentations) |
 | L'IDP n'exécute pas de `kubectl apply` | **fait** pour Kubernetes (runtime `argocd`) ; le runtime Docker local déploie directement, pour la démo |
 | OIDC exclusif, RBAC par groupes | **fait** (Keycloak en démo, tout fournisseur OIDC ; sans section `auth`, mode développement) |
-| Vault pour les secrets | prévu en v0.7 |
+| Vault pour les secrets | **fait** : provider `vault` (KV, AppRole), références `secret://`, rotation à chaud |
 | Tâches asynchrones PENDING → RUNNING → SUCCESS via webhooks CI | **fait** : tâches en base, webhooks GitLab, sondage de secours, SSE |
 | `/metrics` Prometheus | **fait** (API, providers, rechargements) |
 | Repos d'infra séparés des repos applicatifs | **fait** pour Kubernetes : manifests dans `symphony-deployments` |

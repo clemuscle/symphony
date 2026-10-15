@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/clemuscle/symphony/internal/database"
@@ -25,7 +26,32 @@ func ListProviders(providers *provider.Registry) http.HandlerFunc {
 			"ci":       providers.ListCI(),
 			"registry": providers.ListRegistries(),
 			"runtime":  providers.ListRuntimes(),
+			"secrets":  providers.ListSecrets(),
+			"identity": providers.ListIdentity(),
 		})
+	}
+}
+
+// ListIdentityGroups : groupes de l'annuaire du provider identity par défaut
+// (équipes proposées comme owner d'un projet). supported vaut false si le
+// provider n'a pas d'annuaire, ou s'il n'y a pas de provider identity.
+func ListIdentityGroups(providers *provider.Registry) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idp, err := providers.Identity(r.URL.Query().Get("provider"))
+		if err != nil {
+			respond(w, http.StatusOK, map[string]any{"supported": false, "groups": []provider.Group{}})
+			return
+		}
+		groups, err := idp.ListGroups()
+		if errors.Is(err, provider.ErrUnsupported) {
+			respond(w, http.StatusOK, map[string]any{"provider": idp.ID(), "supported": false, "groups": []provider.Group{}})
+			return
+		}
+		if err != nil {
+			respondError(w, http.StatusBadGateway, "annuaire "+idp.ID()+": "+err.Error())
+			return
+		}
+		respond(w, http.StatusOK, map[string]any{"provider": idp.ID(), "supported": true, "groups": groups})
 	}
 }
 

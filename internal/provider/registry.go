@@ -19,11 +19,15 @@ type providerSet struct {
 	ci       map[string]CIProvider
 	registry map[string]RegistryProvider
 	runtime  map[string]RuntimeProvider
+	secrets  map[string]SecretsProvider
+	identity map[string]IdentityProvider
 
 	defaultSCM      string
 	defaultCI       string
 	defaultRegistry string
 	defaultRuntime  string
+	defaultSecrets  string
+	defaultIdentity string
 }
 
 func NewRegistry() *Registry {
@@ -32,6 +36,8 @@ func NewRegistry() *Registry {
 		ci:       make(map[string]CIProvider),
 		registry: make(map[string]RegistryProvider),
 		runtime:  make(map[string]RuntimeProvider),
+		secrets:  make(map[string]SecretsProvider),
+		identity: make(map[string]IdentityProvider),
 	}}
 }
 
@@ -83,6 +89,24 @@ func (r *Registry) RegisterRuntime(p RuntimeProvider, isDefault bool) {
 	}
 }
 
+func (r *Registry) RegisterSecrets(p SecretsProvider, isDefault bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.set.secrets[p.ID()] = p
+	if isDefault || len(r.set.secrets) == 1 {
+		r.set.defaultSecrets = p.ID()
+	}
+}
+
+func (r *Registry) RegisterIdentity(p IdentityProvider, isDefault bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.set.identity[p.ID()] = p
+	if isDefault || len(r.set.identity) == 1 {
+		r.set.defaultIdentity = p.ID()
+	}
+}
+
 func (r *Registry) current() *providerSet {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -122,6 +146,16 @@ func (r *Registry) Runtime(id string) (RuntimeProvider, error) {
 	return lookup("runtime", s.runtime, id, s.defaultRuntime)
 }
 
+func (r *Registry) Secrets(id string) (SecretsProvider, error) {
+	s := r.current()
+	return lookup("secrets", s.secrets, id, s.defaultSecrets)
+}
+
+func (r *Registry) Identity(id string) (IdentityProvider, error) {
+	s := r.current()
+	return lookup("identity", s.identity, id, s.defaultIdentity)
+}
+
 func sortedIDs[P any](m map[string]P) []string {
 	ids := make([]string, 0, len(m))
 	for id := range m {
@@ -135,3 +169,5 @@ func (r *Registry) ListSCM() []string        { return sortedIDs(r.current().scm)
 func (r *Registry) ListCI() []string         { return sortedIDs(r.current().ci) }
 func (r *Registry) ListRegistries() []string { return sortedIDs(r.current().registry) }
 func (r *Registry) ListRuntimes() []string   { return sortedIDs(r.current().runtime) }
+func (r *Registry) ListSecrets() []string    { return sortedIDs(r.current().secrets) }
+func (r *Registry) ListIdentity() []string   { return sortedIDs(r.current().identity) }

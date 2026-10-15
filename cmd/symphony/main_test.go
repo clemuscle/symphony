@@ -101,7 +101,7 @@ catalogue:
 	if err != nil {
 		t.Fatal(err)
 	}
-	providers, err := buildProviders(cfg)
+	providers, _, err := buildProviders(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

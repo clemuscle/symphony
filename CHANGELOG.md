@@ -3,6 +3,59 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
+## v0.7 — Multi-plateforme et robustesse
+
+### Ajouté
+- **Secrets en providers** (`providers.secrets`) : types `vault` (HashiCorp Vault ou
+  OpenBao, KV v2 ou v1, jeton ou AppRole renouvelé à expiration) et `env` (toujours
+  présent). Toute valeur de configuration d'un provider, et le secret des webhooks, peut
+  être une référence `secret://<provider>/<chemin>#<clé>`. Les références sont résolues
+  dans une copie de la configuration, tout ou rien, et relues à chaque cycle : un jeton
+  changé dans Vault est appliqué sans redémarrage. Le bootstrap local peut déclarer ses
+  propres secrets (jeton de `config_source` dans Vault).
+- **Identité en providers** (`providers.identity`) : `oidc` (tout fournisseur OIDC) et
+  `keycloak` (issuer et découverte déduits de l'URL et du realm, et **annuaire** par l'API
+  d'administration). `GET /api/v1/identity/groups` ; le formulaire de création propose
+  les groupes comme équipe propriétaire.
+- **Golden path GitHub de bout en bout** (`api-rest-go-github` dans la démo) : repo GitHub,
+  workflow GitHub Actions (tests, image sur GHCR, entrées `SYMPHONY_*` de
+  `workflow_dispatch`), déploiement Docker. Nouveau registry `ghcr` (tags et identifiants
+  de pull par l'API des packages).
+- Les registries ont une méthode `DeleteImages` : supprimer un projet GitHub supprime aussi
+  son package GHCR.
+- L'image de Symphony a un `HEALTHCHECK` (`symphony -healthcheck`).
+- Démo : **Vault** (mode dev) rempli par `up.sh` ; Symphony n'a plus que son AppRole dans
+  son environnement (jetons GitLab, Argo CD et GitHub, secret des webhooks, client de
+  l'annuaire dans Vault). Groupes d'équipes dans le realm Keycloak (`teams/team-*`) et
+  client de service `symphony-directory`. `GITHUB_TOKEN=… ./demo/up.sh` ajoute GitHub.
+  `VAULT_PORT` (8200).
+
+### Modifié
+- **Bascule Docker** : le nouveau conteneur remplace l'ancien quand il est `healthy`
+  (`HEALTHCHECK` de l'image, `health_timeout` du runtime, 2 min par défaut) ; sans
+  healthcheck, après 3 s comme avant. L'erreur contient la sortie du healthcheck. Les
+  golden paths de la démo sondent toutes les 10 s.
+- La section `auth` ne porte plus que `identity` et `roles`. L'ancien format (`issuer`,
+  `client_id`…) est converti en provider `oidc` avec un avertissement.
+- `webhooks.secret` (valeur ou référence) à côté de `webhooks.secret_env`.
+- GitHub : le squelette est poussé en **un seul commit** (API Git) au lieu d'un commit par
+  fichier (et d'un workflow par fichier) ; le repo est créé initialisé, dans `Namespace`
+  ou `org` s'ils sont renseignés.
+- GitHub Actions : statuts ramenés à ceux de Symphony (`failure` → `failed`,
+  `cancelled` → `canceled`, `in_progress` → `running`…), id du run lancé retrouvé (une
+  action Day-2 attendait un run d'id `pending`, introuvable).
+- CI et registry : le jeton peut venir du SCM `scm_ref` de la configuration (une seule
+  référence au secret) ; GitHub Actions et GHCR se rabattent sur `GITHUB_TOKEN`.
+- `GET /api/v1/providers` liste aussi les providers `secrets` et `identity`.
+
+### Corrigé
+- Golden paths Go : `/app -healthcheck` (le `HEALTHCHECK` de leur image) lançait un
+  second serveur au lieu d'interroger `/healthz` ; l'image n'était jamais `healthy`.
+  Révélé par la nouvelle bascule Docker.
+- Démo `--no-k8s` : le runtime `argocd-k3s` restait configuré, injoignable, et bloquait
+  la suppression des projets (elle passe par chaque runtime). Il n'est plus poussé, pas
+  plus que le golden path `api-rest-go-k8s` ; `payment-api` passe sur `api-rest-go`.
+
 ## v0.6 — De vrais projets
 
 ### Ajouté

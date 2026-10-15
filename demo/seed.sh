@@ -54,7 +54,9 @@ wait_task() {
 
 projects=$(jq -c '.[]' seed/projects.json)
 if [ "$K8S" != true ]; then
-  projects=$(echo "$projects" | jq -c '.runtime_provider = "docker-local"')
+  # Sans Kubernetes, ni runtime argocd-k3s ni golden path api-rest-go-k8s
+  projects=$(echo "$projects" | jq -c '.runtime_provider = "docker-local"
+    | if .golden_path_id == "api-rest-go-k8s" then .golden_path_id = "api-rest-go" else . end')
 fi
 
 # 1. Création : les trois tâches partent ensemble, leurs pipelines passent
