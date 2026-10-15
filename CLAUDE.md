@@ -43,8 +43,9 @@ docker build -t symphony .        # image complète (~10 Mo)
   implémentation par dossier (`scm/`, `ci/`, `registry/`, `runtime/`, `secrets/`,
   `identity/`), et `instrumented/` qui les enveloppe pour `/metrics`.
 - `internal/api` : toutes les routes dans `server.go`, un fichier de handlers par domaine.
-  Les types de tâches et leurs étapes : `handlers/tasks.go` (`RegisterTasks`) ; un handler
-  valide puis `submit` (202).
+  Les types de tâches : `handlers/tasks.go` (`RegisterTasks`, `submit`, routes des tâches),
+  leurs étapes dans `task_create.go`, `task_deploy.go`, `task_delete.go`, `task_action.go` ;
+  un handler valide puis `submit` (202).
 - `internal/tasks` (moteur de tâches, attente de pipelines, `Hub` SSE), `internal/auth` (OIDC
   en Backend-for-Frontend, rôles, CSRF), `internal/gitops` (`Syncer` des fiches
   `catalog-info.yaml`, `TemplateLoader` des golden paths), `internal/webhook`,
