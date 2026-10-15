@@ -413,9 +413,15 @@ func (p *Provider) Status(deploymentID string) (*provider.Deployment, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Nom du projet : label posé à la création (le conteneur peut garder son
+	// nom provisoire <nom>-next si le renommage a échoué)
+	name := info.Config.Labels["symphony.project"]
+	if name == "" {
+		name = strings.TrimPrefix(info.Name, "/")
+	}
 	d := &provider.Deployment{
 		ID:        info.ID[:12],
-		Name:      strings.TrimPrefix(info.Name, "/"),
+		Name:      name,
 		Image:     info.Config.Image,
 		Status:    info.State.Status,
 		Port:      info.hostPort(),

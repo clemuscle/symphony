@@ -5,6 +5,19 @@ image `ghcr.io/clemuscle/symphony:X.Y`.
 
 ## v0.8 — Prêt pour la prod (en cours)
 
+### Ajouté
+- **Droits par équipe** : un projet appartient à une équipe de l'annuaire (`projects.team`,
+  migration 004) ; seuls ses membres developers et les admins le déploient, l'arrêtent, le
+  relancent, lisent ses logs, relancent sa pipeline et lancent ses actions. À la création,
+  un developer choisit parmi ses équipes. `GET /api/v1/me` renvoie les équipes ; les
+  groupes de rôles ne sont plus proposés comme équipes. L'UI masque ce que l'équipe ne
+  permet pas.
+
+### Sécurité
+- `POST /api/v1/pipelines/trigger` acceptait n'importe quel repo et n'importe quelles
+  variables CI, ce qui contournait la validation des entrées des actions : il prend
+  désormais un nom de projet et relance sa pipeline sans variables.
+
 ### Modifié
 - **Configuration stricte** : `symphony.yaml` est décodé sans tolérance (clé inconnue =
   erreur) et chaque type de provider déclare ses clés autorisées et requises ; une faute

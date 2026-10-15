@@ -38,8 +38,9 @@ export const api = {
   getProjectImage: (name) => http.get(`/api/v1/projects/${name}/image`),
 
   // Pipelines
-  triggerPipeline: (projectPath, ref, vars) =>
-    http.post('/api/v1/pipelines/trigger', { repo_path: projectPath, ref, vars }),
+  // Relance la pipeline d'un projet (son repo, son CI, sans variables)
+  triggerPipeline: (project, ref) =>
+    http.post('/api/v1/pipelines/trigger', { project, ref }),
   getPipelineStatus: (projectPath, pipelineID) =>
     http.get(`/api/v1/pipelines/status?repo=${projectPath}&id=${pipelineID}`),
   listPipelines: (project) => http.get(`/api/v1/pipelines/${project}`),

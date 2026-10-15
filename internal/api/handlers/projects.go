@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/gitops"
@@ -31,8 +32,12 @@ type CreateProjectRequest struct {
 	RuntimeProvider string            `json:"runtime_provider"`
 	EnvVars         map[string]string `json:"env_vars"`
 
-	// Fiche catalogue (catalog-info.yaml du repo), modifiable ensuite dans Git
-	Owner     string `json:"owner"`     // équipe responsable, défaut : le créateur
+	// Équipe propriétaire : ses membres (et les admins) déploient le projet et
+	// lancent ses actions. Défaut : la seule équipe du créateur. Reprise dans
+	// la fiche catalogue (catalog-info.yaml), modifiable ensuite dans Git.
+	Owner string `json:"owner"`
+
+	// Fiche catalogue
 	Tier      string `json:"tier"`      // critical, standard, internal
 	Lifecycle string `json:"lifecycle"` // production, staging, experimental
 }
@@ -64,7 +69,12 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 		if req.Port == 0 {
 			req.Port = 8080
 		}
-		req.Owner = strings.TrimSpace(req.Owner)
+		owner, err := projectTeam(auth.UserFrom(r.Context()), strings.TrimSpace(req.Owner))
+		if err != nil {
+			respondError(w, http.StatusForbidden, err.Error())
+			return
+		}
+		req.Owner = owner
 		if req.Tier == "" {
 			req.Tier = "standard"
 		}
@@ -126,6 +136,38 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			"scm":         scm.ID(),
 		})
 	}
+}
+
+// projectTeam : l'équipe propriétaire d'un nouveau projet. Un developer
+// choisit parmi ses équipes (la seule, par défaut) ; un admin peut nommer
+// n'importe quelle équipe. Authentification désactivée : saisie libre.
+func projectTeam(u *auth.User, owner string) (string, error) {
+	if u == nil {
+		return "", errors.New("utilisateur inconnu")
+	}
+	if u.Role.AtLeast(auth.RoleAdmin) {
+		if owner == "" && len(u.Teams) == 1 {
+			return u.Teams[0], nil
+		}
+		if owner == "" {
+			return u.Name, nil // anonyme (authentification désactivée) ou admin sans équipe
+		}
+		return owner, nil
+	}
+	if owner == "" {
+		switch len(u.Teams) {
+		case 0:
+			return "", errors.New("vous n'êtes membre d'aucune équipe : un projet doit appartenir à une équipe")
+		case 1:
+			return u.Teams[0], nil
+		default:
+			return "", fmt.Errorf("owner requis : l'une de vos équipes (%s)", strings.Join(u.Teams, ", "))
+		}
+	}
+	if !u.InTeam(owner) {
+		return "", fmt.Errorf("vous n'êtes pas membre de l'équipe %s (vos équipes : %s)", owner, strings.Join(u.Teams, ", "))
+	}
+	return owner, nil
 }
 
 // catalogueFile construit la fiche catalogue d'un nouveau projet, poussée dans

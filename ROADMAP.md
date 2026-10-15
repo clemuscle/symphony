@@ -158,10 +158,10 @@ Symphony chez lui tient debout.
       le détail va dans les logs
 - [x] Compatibilité pré-1.0 retirée : `token_env` (→ `secret://env/…`), ancien format
       `auth.issuer`, avertissements `catalogue.repo`
-- [ ] Rôles par équipe : un projet appartient à une équipe de l'annuaire ; seuls ses
+- [x] Rôles par équipe : un projet appartient à une équipe de l'annuaire ; seuls ses
       membres (et les admins) le déploient, le suppriment ou lancent ses actions ; les
       groupes de rôles ne sont plus proposés comme équipes
-- [ ] Qualité : erreurs de décodage JSON vérifiées partout, `handlers/tasks.go` découpé
+- [x] Qualité : erreurs de décodage JSON vérifiées partout, `handlers/tasks.go` découpé
       par type de tâche, Go à jour (`go.mod`, CI, Dockerfile alignés)
 
 Fini quand : `helm install` donne une instance qui marche, une faute de frappe dans

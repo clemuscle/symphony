@@ -23,3 +23,12 @@ export async function loadSession() {
 export function can(role) {
   return (rank[session.user?.role] || 0) >= rank[role]
 }
+
+// Équipes de l'utilisateur : ses groupes qui ne donnent pas de rôle
+export const myTeams = () => session.user?.teams || []
+
+// canOperate(team) : peut déployer et lancer les actions d'un projet de cette
+// équipe (admin, ou developer membre de l'équipe) ; même règle que le serveur
+export function canOperate(team) {
+  return can('admin') || (can('developer') && !!team && myTeams().includes(team))
+}

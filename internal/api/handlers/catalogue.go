@@ -59,6 +59,10 @@ func TriggerAction(store *catalogue.Store, providers *provider.Registry, db *dat
 			respondError(w, http.StatusNotFound, "service introuvable: "+svcName)
 			return
 		}
+		// La fiche porte le nom du projet
+		if _, ok := authorizeProject(w, r, db, svcName); !ok {
+			return
+		}
 
 		var action *catalogue.Action
 		for i := range svc.Spec.Actions {

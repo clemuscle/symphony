@@ -51,6 +51,23 @@ func NewRoleMapper(roles map[string][]string) (*RoleMapper, error) {
 	return m, nil
 }
 
+// IsRoleGroup indique si g donne un rôle (ce n'est alors pas une équipe)
+func (m *RoleMapper) IsRoleGroup(g string) bool {
+	_, ok := m.groupRole[g]
+	return ok
+}
+
+// Teams : les groupes qui ne donnent pas de rôle, c'est-à-dire les équipes
+func (m *RoleMapper) Teams(groups []string) []string {
+	teams := []string{}
+	for _, g := range groups {
+		if !m.IsRoleGroup(g) {
+			teams = append(teams, g)
+		}
+	}
+	return teams
+}
+
 // Resolve renvoie le rôle le plus élevé parmi les groupes, ou RoleNone
 func (m *RoleMapper) Resolve(groups []string) Role {
 	best := RoleNone
@@ -68,7 +85,31 @@ type User struct {
 	Name    string   `json:"name"`
 	Email   string   `json:"email"`
 	Groups  []string `json:"groups"`
+	Teams   []string `json:"teams"` // groupes hors groupes de rôles
 	Role    Role     `json:"role"`
+}
+
+// InTeam indique si l'utilisateur est membre de l'équipe team
+func (u *User) InTeam(team string) bool {
+	if team == "" {
+		return false
+	}
+	for _, t := range u.Teams {
+		if t == team {
+			return true
+		}
+	}
+	return false
+}
+
+// CanOperate : u peut agir sur un projet de l'équipe team (le déployer,
+// lancer ses pipelines et ses actions) : admin, ou membre de l'équipe et au
+// moins developer. Authentification désactivée : l'utilisateur anonyme est admin.
+func CanOperate(u *User, team string) bool {
+	if u == nil {
+		return false
+	}
+	return u.Role.AtLeast(RoleAdmin) || (u.Role.AtLeast(RoleDeveloper) && u.InTeam(team))
 }
 
 // ID identifie l'utilisateur dans l'audit : e-mail, sinon nom, sinon sujet
@@ -83,7 +124,7 @@ func (u *User) ID() string {
 }
 
 // anonymous est l'utilisateur quand l'authentification est désactivée
-var anonymous = &User{Subject: "anonyme", Name: "anonyme", Role: RoleAdmin}
+var anonymous = &User{Subject: "anonyme", Name: "anonyme", Teams: []string{}, Role: RoleAdmin}
 
 type ctxKey struct{}
 

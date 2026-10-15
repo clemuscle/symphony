@@ -331,3 +331,36 @@ func TestSafeRedirect(t *testing.T) {
 		}
 	}
 }
+
+func TestTeamsAndCanOperate(t *testing.T) {
+	m, err := NewRoleMapper(map[string][]string{"developer": {"symphony-developers"}, "admin": {"symphony-admins"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	teams := m.Teams([]string{"symphony-developers", "team-payments", "team-identity"})
+	if strings.Join(teams, ",") != "team-payments,team-identity" {
+		t.Errorf("équipes = %v", teams)
+	}
+	bob := &User{Role: RoleDeveloper, Teams: teams}
+	carol := &User{Role: RoleViewer, Teams: []string{"team-payments"}}
+	alice := &User{Role: RoleAdmin, Teams: []string{}}
+	cases := []struct {
+		u    *User
+		team string
+		want bool
+	}{
+		{bob, "team-payments", true},
+		{bob, "team-product", false},
+		{bob, "", false},                // projet sans équipe : admins seulement
+		{carol, "team-payments", false}, // viewer, même membre de l'équipe
+		{alice, "team-product", true},
+		{alice, "", true},
+		{anonymous, "team-x", true}, // authentification désactivée
+		{nil, "team-payments", false},
+	}
+	for i, c := range cases {
+		if got := CanOperate(c.u, c.team); got != c.want {
+			t.Errorf("cas %d : CanOperate(%v, %q) = %v", i, c.u, c.team, got)
+		}
+	}
+}

@@ -60,6 +60,8 @@ docker build -t symphony .        # image complète (~10 Mo)
 **Sécurité**
 - Toute route `/api/v1` déclare son rôle (`r.With(viewer|developer|admin)`) ; sinon un
   utilisateur connecté sans rôle y a accès. Utilisateur : `auth.UserFrom(ctx)`.
+- Un handler qui agit sur un projet (déployer, pipeline, action, logs…) appelle
+  `authorizeProject` : admin, ou developer membre de l'équipe du projet (`projects.team`).
 - Un handler qui modifie quelque chose écrit dans l'audit (`audit(db, r, …)`).
 - Jamais de secret dans un fichier, un log, `x.Set` (renvoyé par l'API) ni le repo de
   déploiement. La config désigne ses secrets par `secret://<provider>/<chemin>#<clé>`

@@ -96,7 +96,7 @@ func NewServer(
 		r.With(viewer).Get("/deployments", handlers.ListDeployments(providers, db))
 		r.With(developer).Post("/deployments", handlers.Deploy(providers, db, runner))
 		r.With(developer).Delete("/deployments/{id}", handlers.StopDeployment(providers, db))
-		r.With(developer).Get("/deployments/{id}/logs", handlers.GetLogs(providers))
+		r.With(developer).Get("/deployments/{id}/logs", handlers.GetLogs(providers, db))
 		r.With(developer).Post("/deployments/{id}/restart", handlers.RestartDeployment(providers, db))
 
 		// Tâches (création, déploiement, suppression, actions) et leur flux SSE
@@ -106,7 +106,7 @@ func NewServer(
 
 		// Admin
 		r.With(viewer).Get("/providers", handlers.ListProviders(providers))
-		r.With(viewer).Get("/identity/groups", handlers.ListIdentityGroups(providers))
+		r.With(viewer).Get("/identity/groups", handlers.ListIdentityGroups(providers, security))
 		r.With(admin).Post("/sync", handlers.ForceSync(syncer, templates, db))
 		r.With(admin).Get("/audit", handlers.ListAudit(db))
 	})
