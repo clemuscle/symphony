@@ -225,11 +225,24 @@ spec:
 		t.Errorf("référence du secret : %+v", ref)
 	}
 	// Aucune valeur de secret dans les tâches (renvoyées par l'API)
+	// La promotion dit sa cible (affichée par l'activité)
 	list, _ := db.ListTasks(database.TaskFilter{Resource: name, Limit: 50})
+	promoted := false
 	for _, tk := range list {
 		if bytes.Contains(tk.Result, []byte("s3cr3t-db")) || bytes.Contains(tk.Params, []byte("s3cr3t-db")) {
 			t.Errorf("secret dans la tâche #%d", tk.ID)
 		}
+		var res struct {
+			Target struct {
+				Environment  string `json:"environment"`
+				PromotedFrom string `json:"promoted_from"`
+			} `json:"target"`
+		}
+		_ = json.Unmarshal(tk.Result, &res)
+		promoted = promoted || res.Target.Environment == "production" && res.Target.PromotedFrom == "staging"
+	}
+	if !promoted {
+		t.Error("tâche de promotion sans sa cible (target)")
 	}
 
 	// Lectures : le projet et ses environnements, les déploiements par

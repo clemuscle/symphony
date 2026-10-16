@@ -14,7 +14,7 @@ export const session = reactive<{ loaded: boolean; authEnabled: boolean; user: U
 })
 
 export async function loadSession() {
-  const { data } = await api.me() // 401 : l'intercepteur d'api.js redirige vers la connexion
+  const { data } = await api.me() // 401 : l'intercepteur d'api.ts redirige vers la connexion
   session.authEnabled = data.auth_enabled
   session.user = data.user
   session.loaded = true

@@ -27,10 +27,21 @@ type deployParams struct {
 	PromotedFrom string `json:"promoted_from,omitempty"`
 }
 
+// deployTarget : résultat « target » d'une tâche de déploiement
+type deployTarget struct {
+	Environment  string `json:"environment,omitempty"`
+	PromotedFrom string `json:"promoted_from,omitempty"`
+}
+
 func (d TaskDeps) deploy(_ context.Context, x *tasks.Exec) error {
 	var p deployParams
 	if err := x.Params(&p); err != nil {
 		return err
+	}
+	// Cible lue par l'activité (environnement, promotion), dès le début
+	var target deployTarget
+	if !x.Get("target", &target) {
+		x.Set("target", deployTarget{Environment: p.Environment, PromotedFrom: p.PromotedFrom})
 	}
 	var done provider.Deployment
 	if x.Get("deployment", &done) {

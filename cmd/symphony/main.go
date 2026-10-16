@@ -34,7 +34,7 @@ func main() {
 
 	// Charger .env
 	if err := godotenv.Load(); err != nil {
-		slog.Warn("pas de .env trouvé, utilisation des variables d'environnement")
+		slog.Info("pas de .env trouvé, utilisation des variables d'environnement")
 	}
 
 	// Charger la config : bootstrap local, puis repo Git s'il en désigne un

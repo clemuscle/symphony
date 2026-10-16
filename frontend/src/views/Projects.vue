@@ -20,11 +20,8 @@
         <option value="internal">Internal</option>
       </select>
       <select v-model="filter.lifecycle" class="filter">
-        <option value="">Tous les états</option>
-        <option value="production">Production</option>
-        <option value="staging">Staging</option>
-        <option value="experimental">Experimental</option>
-        <option value="deprecated">Deprecated</option>
+        <option value="">Tous les cycles de vie</option>
+        <option v-for="(label, value) in lifecycleLabels" :key="value" :value="value">{{ label }}</option>
       </select>
     </div>
 
@@ -54,7 +51,7 @@ import { useRoute } from 'vue-router'
 import { api } from '../api'
 import ProjectCard from '../components/ProjectCard.vue'
 import ProjectPanel from '../components/ProjectPanel.vue'
-import { deploymentsOf, filterProjects, type ProjectFilter } from '../lib/projects'
+import { deploymentsOf, filterProjects, lifecycleLabels, type ProjectFilter } from '../lib/projects'
 import { can } from '../stores/session'
 import { activeTasks } from '../stores/tasks'
 import type { Deployment, Project } from '../types'

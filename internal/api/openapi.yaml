@@ -468,7 +468,7 @@ components:
   parameters:
     name: { name: name, in: path, required: true, schema: { type: string }, description: Nom du projet }
     deploymentId: { name: id, in: path, required: true, schema: { type: string }, description: Id du déploiement (champ id de la liste) }
-    provider: { name: provider, in: query, required: true, schema: { type: string }, description: Runtime du déploiement (champ provider de la liste) }
+    provider: { name: provider, in: query, schema: { type: string }, description: "Runtime du déploiement (champ provider de la liste) ; absent : celui où l'id existe" }
   responses:
     Error:
       description: Erreur

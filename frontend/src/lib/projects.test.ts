@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ficheURL, filterProjects, owner, repoWebURL, tier } from './projects'
+import { ficheURL, filterProjects, lifecycleLabel, owner, repoWebURL, tier } from './projects'
 import type { Project, Service } from '../types'
 
 function project(over: Partial<Project> = {}, svc: Partial<Service['metadata']> | null = {}): Project {
@@ -60,5 +60,13 @@ describe('environnements', () => {
     expect(deploymentsOf(p, all)).toHaveLength(2)
     expect(deploymentIn(p, 'production', all)?.name).toBe('payment-api-production')
     expect(deploymentIn(p, 'dev', all)).toBeUndefined()
+  })
+})
+
+describe('lifecycleLabel', () => {
+  it("ne reprend pas les noms d'environnement", () => {
+    expect(lifecycleLabel('production')).toBe('✅ en service')
+    expect(lifecycleLabel('staging')).toBe('🚧 en rodage')
+    expect(lifecycleLabel('autre')).toBe('autre')
   })
 })

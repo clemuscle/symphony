@@ -5,7 +5,7 @@
         <h3>{{ project.name }}</h3>
         <div class="panel-badges">
           <span :class="['tier-badge', tier(project)]">{{ tierIcon(tier(project)) }} {{ tier(project) }}</span>
-          <span :class="['lifecycle-badge', lifecycle(project)]" v-if="lifecycle(project)">{{ lifecycle(project) }}</span>
+          <span :class="['lifecycle-badge', lifecycle(project)]" v-if="lifecycle(project)" title="Cycle de vie (fiche catalogue)">{{ lifecycleLabel(lifecycle(project)) }}</span>
         </div>
       </div>
       <button class="close" @click="emit('close')">✕</button>
@@ -152,7 +152,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue'
 import { api, errorMessage } from '../api'
-import { depIcon, ficheURL, lifecycle, linkIcon, pipelinesURL, repoWebURL, runtimeLabel, tier, tierIcon } from '../lib/projects'
+import { depIcon, ficheURL, lifecycle, lifecycleLabel, linkIcon, pipelinesURL, repoWebURL, runtimeLabel, tier, tierIcon } from '../lib/projects'
 import { can, canOperate } from '../stores/session'
 import { activeTaskFor, taskStore, trackTask } from '../stores/tasks'
 import type { Deployment, Project } from '../types'

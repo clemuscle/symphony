@@ -32,7 +32,7 @@ dit ce qui en a été repris, adapté ou écarté.
    frappe, une clé requise absente ou un type inconnu font refuser la configuration,
    au lieu d'un réglage ignoré ou d'un repli silencieux sur une valeur par défaut.
 6. **Rester léger.** Pas de SDK lourd (l'API Docker est appelée directement sur le socket),
-   pas d'ORM, un seul binaire (front embarqué, image d'environ 10 Mo) et PostgreSQL.
+   pas d'ORM, un seul binaire (front embarqué, image d'environ 15 Mo, 6 Mo compressée) et PostgreSQL.
 
 ## Vue d'ensemble
 
