@@ -3,7 +3,7 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
-## Non publié
+## v0.10 — Finitions
 
 ### Modifié
 - **Activité** : un déploiement dit son environnement, une promotion d'où elle part
