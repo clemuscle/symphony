@@ -5,7 +5,7 @@
         <span class="svc-name">{{ project.name }}</span>
         <span :class="['tier-badge', tier(project)]">{{ tierIcon(tier(project)) }} {{ tier(project) }}</span>
       </div>
-      <span :class="['lifecycle-badge', lifecycle(project)]" v-if="lifecycle(project)">{{ lifecycle(project) }}</span>
+      <span :class="['lifecycle-badge', lifecycle(project)]" v-if="lifecycle(project)" title="Cycle de vie (fiche catalogue)">{{ lifecycleLabel(lifecycle(project)) }}</span>
     </div>
     <div class="card-desc">{{ project.description || 'Pas de description' }}</div>
     <div class="svc-meta">
@@ -23,7 +23,7 @@
     <div class="deploy-line muted" v-if="!deployments.length && !task">Pas encore déployé</div>
 
     <div class="project-task" v-if="task">
-      ⚡ {{ kindLabels[task.kind] }} : {{ task.steps[task.step] }}
+      ⚡ {{ taskTitle(task) }} : {{ task.steps[task.step] }}
     </div>
     <div class="no-fiche" v-else-if="!project.service">Fiche catalogue absente du repo</div>
   </div>
@@ -31,8 +31,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { lifecycle, langIcon, owner, runtimeLabel, shortURL, tier, tierIcon } from '../lib/projects'
-import { activeTaskFor, kindLabels } from '../stores/tasks'
+import { lifecycle, lifecycleLabel, langIcon, owner, runtimeLabel, shortURL, tier, tierIcon } from '../lib/projects'
+import { taskTitle } from '../lib/tasks'
+import { activeTaskFor } from '../stores/tasks'
 import type { Deployment, Project } from '../types'
 
 const props = defineProps<{ project: Project; deployments: Deployment[]; active: boolean }>()

@@ -56,11 +56,3 @@ export const activeTasks = computed(() =>
 export function activeTaskFor(resource: string, kind?: string): Task | undefined {
   return activeTasks.value.find(t => t.resource === resource && (!kind || t.kind === kind))
 }
-
-export const kindLabels: Record<string, string> = {
-  create_project: 'Création',
-  deploy: 'Déploiement',
-  delete_project: 'Suppression',
-  action_webhook: 'Action',
-  action_pipeline: 'Action (pipeline)',
-}

@@ -5,7 +5,25 @@ image `ghcr.io/clemuscle/symphony:X.Y`.
 
 ## Non publié
 
+### Modifié
+- **Activité** : un déploiement dit son environnement, une promotion d'où elle part
+  (« Promotion staging → production ») ; résultat `target` des tâches de déploiement.
+- **Cycle de vie** d'un projet affiché en mots qui ne se confondent pas avec les
+  environnements (« en service », « en rodage »…), avec son infobulle.
+- **API** : `provider` devient facultatif pour les logs, la relance et l'arrêt d'un
+  déploiement ; sans lui, Symphony cherche le déploiement dans chaque runtime (400 s'il
+  existe dans plusieurs).
+
 ### Corrigé
+- Heures des tâches au format français, quelle que soit la langue du navigateur.
+- Plus d'erreur en console au premier chargement : le 401 attendu avant la connexion
+  laisse la page partir vers Keycloak sans rejeter la requête.
+- Sans `provider`, logs, relance et arrêt d'un déploiement hors du runtime par défaut
+  répondaient 404 « introuvable ».
+- Squelettes Go des golden paths formatés avec `gofmt`, désormais vérifiés par la CI.
+- « pas de .env trouvé » logué en information, plus en avertissement (cas normal en
+  conteneur).
+- Taille de l'image dans la documentation : ~15 Mo (6 Mo compressée), pas ~10 Mo.
 - Migrations sérialisées par un verrou consultatif PostgreSQL : deux instances (ou deux
   paquets de tests) démarrées ensemble sur une base neuve créaient les mêmes tables en
   même temps et l'une échouait.

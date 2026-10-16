@@ -199,6 +199,19 @@ rien installer, et plus aucun point faible visible à la relecture du code.
 - [x] Mode visite sans GitLab (données de démo, lecture seule) pour essayer en une minute
 - [x] Nouveau GIF, documentation et démo à jour de toutes les fonctionnalités
 
+## v0.10 — Finitions
+
+Objectif (vérification complète du 16 octobre 2026 : tests, démo k3s, parcours par l'API et
+par l'interface) : corriger les petits défauts relevés avant d'attaquer la v1.0.
+
+- [x] Interface : heures en français, l'activité dit l'environnement d'un déploiement et
+      l'origine d'une promotion, cycle de vie distinct des environnements, pas d'erreur
+      en console pendant la redirection vers la connexion
+- [x] API : logs, relance et arrêt d'un déploiement retrouvent son runtime sans
+      `?provider=` (404 trompeur auparavant)
+- [x] Squelettes Go des golden paths formatés (vérifiés par la CI), plus d'avertissement
+      « pas de .env » en conteneur, taille de l'image corrigée dans la doc
+
 ## v1.0 — Utilisable par de vraies équipes
 
 Objectif : une équipe plateforme peut installer Symphony, le mettre à jour et s'y fier

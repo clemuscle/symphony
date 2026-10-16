@@ -97,7 +97,7 @@ flowchart LR
   UI[SPA Vue 3] -->|REST + cookie de session| API
   UI -.->|connexion| IDP[Keycloak / OIDC]
   API -->|code + PKCE, JWKS| IDP
-  subgraph Symphony["Symphony — un binaire Go, ~10 Mo"]
+  subgraph Symphony["Symphony — un binaire Go, ~15 Mo"]
     API[API chi] --> REG[Registry de providers]
     W[configWatcher] -->|remplace d'un bloc| REG
     S[Syncer des fiches]

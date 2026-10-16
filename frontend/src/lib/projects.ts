@@ -4,6 +4,13 @@ import type { Deployment, Project } from '../types'
 
 export const tier = (p: Project): string => p.service?.metadata.tier || 'standard'
 export const lifecycle = (p: Project): string => p.service?.metadata.lifecycle || ''
+
+// Cycle de vie (maturité déclarée dans la fiche), en mots qui ne se confondent
+// pas avec les environnements où le projet est déployé
+export const lifecycleLabels: Record<string, string> = {
+  experimental: '🧪 expérimental', staging: '🚧 en rodage', production: '✅ en service', deprecated: '⛔ obsolète',
+}
+export const lifecycleLabel = (value: string): string => lifecycleLabels[value] || value
 export const owner = (p: Project): string => p.service?.metadata.owner || p.team || ''
 
 const lookup = (table: Record<string, string>, fallback: string) =>

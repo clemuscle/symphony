@@ -194,32 +194,54 @@ func GetLogs(providers *provider.Registry, db *database.DB) http.HandlerFunc {
 	}
 }
 
-// deploymentRuntime : le runtime rtID, si l'utilisateur peut agir sur le
-// projet du déploiement id (le déploiement porte le nom du projet)
+// deploymentRuntime : le runtime qui porte le déploiement id (rtID, sinon
+// celui des runtimes où il existe), si l'utilisateur peut agir sur le projet
+// du déploiement
 func deploymentRuntime(w http.ResponseWriter, r *http.Request, providers *provider.Registry, db *database.DB,
 	rtID, id string) (provider.RuntimeProvider, bool) {
-	rt, err := providers.Runtime(rtID)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
-		return nil, false
+	candidates := providers.ListRuntimes()
+	if rtID != "" {
+		candidates = []string{rtID}
 	}
-	d, err := rt.Status(id)
-	if errors.Is(err, provider.ErrNotFound) {
+	var (
+		found  []provider.RuntimeProvider
+		dep    *provider.Deployment
+		failed error
+	)
+	for _, cid := range candidates {
+		rt, err := providers.Runtime(cid)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return nil, false
+		}
+		d, err := rt.Status(id)
+		switch {
+		case errors.Is(err, provider.ErrNotFound):
+		case err != nil:
+			failed = err
+		default:
+			found, dep = append(found, rt), d
+		}
+	}
+	switch {
+	case len(found) > 1:
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("%s existe dans plusieurs runtimes : préciser provider", id))
+		return nil, false
+	case len(found) == 0 && failed != nil:
+		providerError(w, r, "état du déploiement", failed)
+		return nil, false
+	case len(found) == 0:
 		respondError(w, http.StatusNotFound, "déploiement introuvable : "+id)
 		return nil, false
 	}
-	if err != nil {
-		providerError(w, r, "état du déploiement", err)
-		return nil, false
-	}
-	project := d.Project
+	project := dep.Project
 	if project == "" {
-		project = d.Name
+		project = dep.Name
 	}
 	if _, ok := authorizeProject(w, r, db, project); !ok {
 		return nil, false
 	}
-	return rt, true
+	return found[0], true
 }
 
 // registryAuth : identifiants du registry du projet (ou du registry par

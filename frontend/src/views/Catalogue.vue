@@ -90,9 +90,9 @@
             <div class="field">
               <label>Cycle de vie</label>
               <select v-model="form.lifecycle">
-                <option value="experimental">experimental</option>
-                <option value="staging">staging</option>
-                <option value="production">production</option>
+                <option value="experimental">{{ lifecycleLabels.experimental }}</option>
+                <option value="staging">{{ lifecycleLabels.staging }}</option>
+                <option value="production">{{ lifecycleLabels.production }}</option>
               </select>
             </div>
           </div>
@@ -133,7 +133,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted } from 'vue'
 import { api, errorMessage } from '../api'
-import { langIcon } from '../lib/projects'
+import { langIcon, lifecycleLabels } from '../lib/projects'
 import { can, myTeams } from '../stores/session'
 import TaskProgress from '../components/TaskProgress.vue'
 import { taskStore, trackTask } from '../stores/tasks'

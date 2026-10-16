@@ -36,6 +36,8 @@ func TestTeamRights(t *testing.T) {
 	forge := fake.NewForge(nil)
 	providers := provider.NewRegistry()
 	providers.RegisterRuntime(rt, true)
+	k8s := fake.NewRuntime("argocd-k8s", true)
+	providers.RegisterRuntime(k8s, false)
 	providers.RegisterCI(forge.CI(), true)
 	envs := environments.NewHolder([]environments.Environment{
 		{Name: "staging", Runtime: "docker-local"},
@@ -62,6 +64,10 @@ func TestTeamRights(t *testing.T) {
 	}
 	t.Cleanup(func() { db.DeleteProject(mobile, "apps/"+mobile) })
 	rt.Deploy(provider.DeployRequest{Name: mobile + "-staging", Project: mobile, Environment: "staging", Image: "img", Tag: "latest"})
+	// Sur l'autre runtime : un déploiement retrouvé sans ?provider=, un
+	// homonyme présent dans les deux
+	k8s.Deploy(provider.DeployRequest{Name: name + "-production", Project: name, Environment: "production", Image: "img:1"})
+	k8s.Deploy(provider.DeployRequest{Name: mobile + "-staging", Project: mobile, Environment: "staging", Image: "img"})
 
 	r := chi.NewRouter()
 	r.Post("/deployments", Deploy(providers, db, templates, envs, runner))
@@ -105,6 +111,10 @@ func TestTeamRights(t *testing.T) {
 		{"bob déploie en production", bob, "POST", "/deployments", deploy("production"), 403, "protégé"},
 		{"bob sans environnement", bob, "POST", "/deployments", deploy(""), 400, "staging, production"},
 		{"bob lit les logs", bob, "GET", logs, nil, 200, "prêt"},
+		{"bob lit les logs sans provider", bob, "GET", "/deployments/" + name + "-production/logs", nil, 200, "prêt"},
+		{"eve lit les logs sans provider", eve, "GET", "/deployments/" + name + "-production/logs", nil, 403, "réservé"},
+		{"bob lit les logs d'un homonyme", bob, "GET", "/deployments/" + mobile + "-staging/logs", nil, 400, "plusieurs runtimes"},
+		{"bob lit les logs d'un inconnu", bob, "GET", "/deployments/inconnu/logs", nil, 404, "introuvable"},
 		{"bob promeut une image latest", bob, "POST", "/projects/" + mobile + "/promote", map[string]any{"to": "production"}, 409, "tag immuable"},
 		{"bob relance la pipeline", bob, "POST", "/pipelines/trigger", map[string]any{"project": name}, 200, ""},
 		{"bob déploie en staging", bob, "POST", "/deployments", deploy("staging"), 202, "deploy"},

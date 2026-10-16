@@ -25,8 +25,13 @@ export function goToLogin() {
 }
 
 // Session absente ou expirée : direction la page de connexion
+// (la requête reste alors en suspens : pas d'erreur affichée pendant que la page
+// part vers Keycloak)
 http.interceptors.response.use(undefined, (err: AxiosError) => {
-  if (err.response?.status === 401) goToLogin()
+  if (err.response?.status === 401 && !visitMode) {
+    goToLogin()
+    return new Promise(() => {})
+  }
   return Promise.reject(err)
 })
 

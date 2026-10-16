@@ -2,7 +2,7 @@
   <div class="task" :class="task.status">
     <div class="task-head">
       <span class="task-title">
-        {{ kindLabels[task.kind] || task.kind }} · <strong>{{ task.resource }}</strong>
+        {{ taskTitle(task) }} · <strong>{{ task.resource }}</strong>
         <span class="task-id">#{{ task.id }}</span>
       </span>
       <span :class="['task-status', task.status]">{{ statusLabel }}</span>
@@ -30,7 +30,7 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { kindLabels } from '../stores/tasks'
+import { taskTitle } from '../lib/tasks'
 import type { Task } from '../types'
 
 const props = withDefaults(defineProps<{
@@ -79,7 +79,7 @@ let timer: ReturnType<typeof setInterval> | undefined
 onMounted(() => { timer = setInterval(() => { now.value = Date.now() }, 1000) })
 onUnmounted(() => clearInterval(timer))
 
-const when = computed(() => new Date(props.task.created_at).toLocaleTimeString())
+const when = computed(() => new Date(props.task.created_at).toLocaleTimeString('fr-FR'))
 const duration = computed(() => {
   const end = props.task.finished_at ? new Date(props.task.finished_at).getTime() : now.value
   const s = Math.max(0, Math.round((end - new Date(props.task.created_at).getTime()) / 1000))

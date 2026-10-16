@@ -31,7 +31,7 @@ jobs:
           go-version-file: go.mod
       - name: gofmt
         run: |
-          unformatted=$(gofmt -l cmd internal)
+          unformatted=$(gofmt -l cmd internal demo/gitlab/symphony-templates)
           if [ -n "$unformatted" ]; then
             echo "Fichiers à formater avec gofmt :"; echo "$unformatted"; exit 1
           fi
