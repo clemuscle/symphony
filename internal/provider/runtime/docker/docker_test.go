@@ -161,3 +161,20 @@ func TestTCPEndpoint(t *testing.T) {
 		t.Errorf("projet %q, nom %q : attendu le projet du label symphony.project", d.Project, d.Name)
 	}
 }
+
+func TestCheck(t *testing.T) {
+	p := fakeDocker(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1.43/version" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte(`{"Version":"27.3.1"}`))
+	})
+	if detail, err := p.Check(); err != nil || detail != "Docker 27.3.1" {
+		t.Errorf("Check = %q, %v", detail, err)
+	}
+	// Socket absent : l'erreur le dit
+	if _, err := New("docker", filepath.Join(t.TempDir(), "absent.sock")).Check(); err == nil {
+		t.Error("erreur attendue sans socket")
+	}
+}

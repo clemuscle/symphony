@@ -18,6 +18,8 @@
         <RouterLink to="/tasks" class="nav-link">
           ⚡ Activité<span class="count" v-if="activeTasks.length">{{ activeTasks.length }}</span>
         </RouterLink>
+        <!-- Le serveur refuse /api/v1/admin aux autres rôles : le lien est masqué -->
+        <RouterLink to="/admin" class="nav-link" v-if="session.loaded && can('admin')">🛠 Administration</RouterLink>
       </nav>
       <div class="user" v-if="session.loaded">
         <template v-if="session.authEnabled && session.user">
@@ -43,7 +45,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { visitMode } from './api'
-import { session, loadSession } from './stores/session'
+import { session, loadSession, can } from './stores/session'
 import { connectTasks, activeTasks } from './stores/tasks'
 
 // Le flux des tâches s'ouvre une fois la session connue (et un rôle attribué)

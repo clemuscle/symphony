@@ -1,0 +1,32 @@
+# Bootstrap de référence : le seul fichier local de Symphony (SYMPHONY_CONFIG,
+# défaut symphony.yaml). Il dit où lire la configuration dans Git, et avec
+# quel jeton ; il n'est lu qu'au démarrage. Sans section config_source, le
+# fichier local est lu comme une configuration complète (documentation/
+# reference/symphony.yaml), relue toutes les 15 s.
+#
+#   symphony validate -config bootstrap.yaml   # vérifie ce fichier
+#
+# ${VAR} est remplacé par la variable d'environnement.
+
+config_source:
+  # Le SCM qui lit la configuration : même format qu'un provider scm (gitlab
+  # ou github). Il ne sert qu'à cette lecture.
+  scm:
+    type: gitlab
+    config:
+      url: https://gitlab.example.com
+      token: secret://env/GITLAB_TOKEN # ou secret://vault/… (providers ci-dessous)
+  repo: platform/symphony-config # requis
+  branch: main # défaut main
+  path: symphony.yaml # défaut symphony.yaml
+
+# Providers de secrets du bootstrap : le jeton du SCM ci-dessus peut venir de
+# Vault plutôt que de l'environnement (AppRole lu dans l'environnement)
+providers:
+  secrets:
+    - id: vault
+      type: vault
+      config:
+        url: https://vault.example.com
+        role_id: secret://env/VAULT_ROLE_ID
+        secret_id: secret://env/VAULT_SECRET_ID

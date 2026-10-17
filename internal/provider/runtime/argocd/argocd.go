@@ -599,3 +599,33 @@ func apiError(op string, status int, data []byte) error {
 }
 
 var _ provider.RuntimeProvider = (*Provider)(nil)
+
+// Check : le jeton ouvre une session (GET /api/v1/session/userinfo), et la
+// version d'Argo CD
+func (p *Provider) Check() (string, error) {
+	data, status, err := p.argo("GET", "/api/v1/session/userinfo", nil)
+	if err != nil {
+		return "", err
+	}
+	if err := provider.CheckStatus("argocd "+p.cfg.URL, status, data); err != nil {
+		return "", err
+	}
+	var u struct {
+		LoggedIn bool   `json:"loggedIn"`
+		Username string `json:"username"`
+	}
+	json.Unmarshal(data, &u)
+	if !u.LoggedIn {
+		return "", fmt.Errorf("argocd %s : jeton refusé (pas de session)", p.cfg.URL)
+	}
+	detail := "connecté en tant que " + u.Username
+	if data, status, err := p.argo("GET", "/api/version", nil); err == nil && status == http.StatusOK {
+		var v struct {
+			Version string `json:"Version"`
+		}
+		if json.Unmarshal(data, &v) == nil && v.Version != "" {
+			detail = "Argo CD " + v.Version + ", " + detail
+		}
+	}
+	return detail, nil
+}

@@ -3,11 +3,15 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/clemuscle/symphony/internal/auth"
+	"github.com/clemuscle/symphony/internal/config"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/provider"
+	"github.com/clemuscle/symphony/internal/provider/instrumented"
 )
 
 func ListGoldenPaths(templates *gitops.TemplateLoader) http.HandlerFunc {
@@ -86,4 +90,104 @@ func ListAudit(db *database.DB) http.HandlerFunc {
 		}
 		respond(w, http.StatusOK, entries)
 	}
+}
+
+// AdminStatus : ce que l'admin plateforme doit savoir sans lire les logs :
+// configuration en place et dernier refus, providers et leur dernier appel,
+// golden paths chargés et refusés, fiches catalogue en erreur
+func AdminStatus(providers *provider.Registry, configStatus func() config.Status, templates *gitops.TemplateLoader, syncer *gitops.Syncer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cfg := configStatus()
+		entries := providers.Entries()
+		list := make([]providerStatus, 0, len(entries))
+		for _, e := range entries {
+			ps := providerStatus{Kind: e.Kind, ID: e.ID, Type: cfg.Types[e.Kind+"/"+e.ID], Default: e.Default}
+			if c, ok := instrumented.Last(e.Kind, e.ID); ok {
+				ps.LastCall = &c
+			}
+			list = append(list, ps)
+		}
+		gps := templates.GetGoldenPaths()
+		loaded := make([]string, len(gps))
+		for i, gp := range gps {
+			loaded[i] = gp.ID
+		}
+		respond(w, http.StatusOK, map[string]any{
+			"config":       cfg,
+			"providers":    list,
+			"golden_paths": goldenPathsStatus{TemplateReport: templates.Report(), Loaded: loaded},
+			"catalogue":    syncer.Report(),
+		})
+	}
+}
+
+type providerStatus struct {
+	Kind     string                 `json:"kind"`
+	ID       string                 `json:"id"`
+	Type     string                 `json:"type"`
+	Default  bool                   `json:"default"`
+	LastCall *instrumented.LastCall `json:"last_call"`
+}
+
+type goldenPathsStatus struct {
+	gitops.TemplateReport
+	Loaded []string `json:"loaded"`
+}
+
+// providerCheck : résultat de la vérification d'un provider
+type providerCheck struct {
+	Kind       string `json:"kind"`
+	ID         string `json:"id"`
+	OK         bool   `json:"ok"`
+	Detail     string `json:"detail,omitempty"`
+	Error      string `json:"error,omitempty"`
+	DurationMS int64  `json:"duration_ms"`
+}
+
+// checkTimeout : au-delà, un provider qui ne répond pas est signalé sans
+// attendre la fin de son appel
+var checkTimeout = 20 * time.Second
+
+// CheckProviders vérifie chaque provider en place, en parallèle : il répond
+// et accepte ses identifiants. Rien n'est modifié chez les providers.
+func CheckProviders(providers *provider.Registry) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		entries := providers.Entries()
+		results := make([]providerCheck, len(entries))
+		var wg sync.WaitGroup
+		for i, e := range entries {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				results[i] = check(e)
+			}()
+		}
+		wg.Wait()
+		respond(w, http.StatusOK, results)
+	}
+}
+
+func check(e provider.Entry) providerCheck {
+	res := providerCheck{Kind: e.Kind, ID: e.ID}
+	type outcome struct {
+		detail string
+		err    error
+	}
+	done := make(chan outcome, 1)
+	start := time.Now()
+	go func() {
+		detail, err := e.Check()
+		done <- outcome{detail, err}
+	}()
+	select {
+	case o := <-done:
+		res.OK, res.Detail = o.err == nil, o.detail
+		if o.err != nil {
+			res.Error = o.err.Error()
+		}
+	case <-time.After(checkTimeout):
+		res.Error = "pas de réponse après " + checkTimeout.String()
+	}
+	res.DurationMS = time.Since(start).Milliseconds()
+	return res
 }

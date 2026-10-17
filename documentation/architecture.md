@@ -80,8 +80,12 @@ redémarrage, comme l'`app-config` de Backstage.
 
 ### Installer Symphony
 
-Deux façons : `docker compose` (la démo) ou le chart Helm `deploy/helm/symphony` pour un
-cluster Kubernetes. Le chart crée un Deployment à une réplique (`Recreate` : une seule
+Trois façons : le [quickstart](../quickstart/README.md) (Symphony et PostgreSQL en
+`docker compose`, branchés sur une forge existante), la démo complète, ou le chart Helm
+`deploy/helm/symphony` pour un cluster Kubernetes. Chaque clé de configuration est
+décrite dans [la configuration de référence](reference/symphony.yaml) (avec
+[le bootstrap](reference/bootstrap.yaml) et [un golden path](reference/template.yaml)),
+que la CI vérifie à chaque changement du schéma. Le chart crée un Deployment à une réplique (`Recreate` : une seule
 instance exécute les tâches), un Service, un Ingress en option, et monte le bootstrap
 depuis une ConfigMap (son empreinte relance le pod quand il change). Les secrets restent
 dans un Secret existant chargé dans l'environnement, que la configuration référence par
@@ -94,8 +98,8 @@ cluster ; on y utilise `argocd`.
 
 | Paquet | Rôle |
 |---|---|
-| `cmd/symphony` | Composition : bootstrap et source de config (`config.go`), secrets et résolution des références (`secrets.go`), construction des providers (`providers.go`), assemblage (`main.go`) |
-| `internal/config` | Types de `symphony.yaml` et décodage (`${VAR}` remplacées par l'environnement) |
+| `cmd/symphony` | Composition : bootstrap et source de config (`config.go`), secrets et résolution des références (`secrets.go`), construction des providers (`providers.go`), schéma des providers (`schema.go`), `symphony validate` (`validate.go`), assemblage (`main.go`) |
+| `internal/config` | Types de `symphony.yaml` et décodage (`${VAR}` remplacées par l'environnement) ; `Status`, l'état de la configuration en place pour la page Administration |
 | `internal/provider` | Interfaces, `Registry` (providers par id, remplaçable d'un bloc), références `secret://` (`secretref.go`) et implémentations : `scm/gitlab`, `scm/github`, `ci/gitlabci`, `ci/githubactions`, `registry/gitlabregistry`, `registry/ghcr`, `runtime/docker`, `runtime/argocd`, `secrets/env`, `secrets/vault`, `identity/oidc`, `identity/keycloak` |
 | `internal/gitops` | `Syncer` (fiche `catalog-info.yaml` de chaque projet) et `TemplateLoader` (golden paths) |
 | `internal/catalogue` | Store en mémoire des fiches (`kind: Service`) |
@@ -103,10 +107,10 @@ cluster ; on y utilise `argocd`.
 | `internal/webhook` | Réception des événements de pipeline GitLab (`/webhooks/gitlab`, secret partagé) |
 | `internal/database` | PostgreSQL via `database/sql` : `projects`, `pipelines`, `deployments`, `tasks`, `audit_log` ; migrations embarquées |
 | `internal/api` | Routeur chi, handlers par domaine, `/healthz` |
-| `internal/metrics` | Métriques Prometheus sur `/metrics` ; `internal/provider/instrumented` enveloppe chaque provider pour mesurer ses appels |
+| `internal/metrics` | Métriques Prometheus sur `/metrics` ; `internal/provider/instrumented` enveloppe chaque provider pour mesurer ses appels et retient le dernier (page Administration) |
 | `internal/auth` | OIDC (connexion, retour, déconnexion), cookie de session signé, rôles, CSRF, CORS ; `Holder` remplacé d'un bloc au rechargement de la config |
 | `internal/web` | Front compilé embarqué (`go:embed`), avec repli sur `index.html` pour les routes Vue |
-| `frontend/` | Vue 3 + Vite : pages Projets (avec leur fiche), Catalogue (golden paths), Déploiements, Activité |
+| `frontend/` | Vue 3 + Vite : pages Projets (avec leur fiche), Catalogue (golden paths), Déploiements, Activité, Administration (admin) |
 
 ## Flux principaux
 
@@ -183,6 +187,29 @@ valide, un nouveau `Registry` est construit puis substitué d'un bloc
 providers, soit le nouveau. Le syncer et le template loader sont repointés
 (`SetSource`) et rechargés. Une configuration illisible ou invalide est refusée et la
 précédente reste en place.
+
+Le watcher garde l'état de la configuration (`config.Status`) : source, empreinte de la
+version en place, dernière version refusée et sa raison, erreur de lecture ou de
+secrets. Le template loader et le syncer gardent le leur (golden paths refusés et
+pourquoi, fiches illisibles, projets sans fiche). La page **Administration**
+(`GET /api/v1/admin/status`, admin) les réunit, avec chaque provider et son dernier
+appel ; `GET /api/v1/admin/providers/check` vérifie chaque provider en parallèle par sa
+méthode `Check` (un appel en lecture : l'utilisateur du jeton, la version du daemon, la
+découverte OIDC…), 20 s au plus chacun. Un admin lit ainsi pourquoi un golden path
+n'apparaît pas sans ouvrir les logs.
+
+### Valider avant de pousser (`symphony validate`)
+
+`symphony validate -config symphony.yaml -templates templates/` refait hors ligne ce
+que fait le chargement : décodage strict, schéma de chaque provider, références de
+secrets (forme et provider déclaré), construction des providers, environnements,
+`auth`, webhooks, puis chaque golden path contre ces providers. Les secrets ne sont
+pas lus : chaque provider de secrets est remplacé par un substitut (sa propre
+définition est vérifiée), et une variable `${VAR}` absente est laissée telle quelle et
+signalée. Code de sortie 1 s'il y a une erreur, toutes rapportées d'un coup. L'image
+étant `scratch` (sans shell), la CI d'un repo de configuration l'appelle par
+`go run github.com/clemuscle/symphony/cmd/symphony@vX.Y validate …` (GitLab CI) ou
+`docker run … ghcr.io/clemuscle/symphony:X.Y validate …` (GitHub Actions).
 
 ### Secrets (providers `secrets`)
 
@@ -367,7 +394,7 @@ implémentations n'en savent rien.
 | Fuite de token | l'auth du registry n'est envoyée qu'au registry qui héberge l'image | — |
 | Injection CI | entrées d'action validées, clés inconnues refusées | — |
 | Webhooks entrants | GitLab : secret partagé (16 caractères min.) comparé en temps constant ; GitHub : signature HMAC-SHA256 du corps ; routes hors `/api/v1`, sans session ; repos réabonnés quand le secret change | — |
-| Configuration | une config invalide est refusée, la précédente reste en place | — |
+| Configuration | une config invalide est refusée, la précédente reste en place ; la raison du refus n'est montrée qu'aux admins (page Administration), sans valeur de secret | — |
 | Traçabilité | `audit_log` des actions mutantes, avec l'utilisateur OIDC et son adresse | — |
 | `/metrics` | public | à protéger au niveau réseau |
 

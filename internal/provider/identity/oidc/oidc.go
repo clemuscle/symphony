@@ -4,6 +4,8 @@ package oidc
 
 import (
 	"errors"
+	"net/http"
+	"time"
 
 	"github.com/clemuscle/symphony/internal/provider"
 )
@@ -25,3 +27,8 @@ func (p *Provider) Type() string                { return "oidc" }
 func (p *Provider) OIDC() provider.OIDCSettings { return p.settings }
 
 func (p *Provider) ListGroups() ([]provider.Group, error) { return nil, provider.ErrUnsupported }
+
+// Check : la découverte OIDC répond et annonce l'issuer configuré
+func (p *Provider) Check() (string, error) {
+	return provider.CheckOIDC(&http.Client{Timeout: 10 * time.Second}, p.settings)
+}

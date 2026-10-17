@@ -183,3 +183,22 @@ func TestEnsureWebhook(t *testing.T) {
 		t.Errorf("appels : %v", calls)
 	}
 }
+
+func TestCheck(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("PRIVATE-TOKEN") != "bon" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path == "/api/v4/user" {
+			w.Write([]byte(`{"username":"root"}`))
+		}
+	}))
+	defer srv.Close()
+	if detail, err := New("gitlab", srv.URL, "bon").Check(); err != nil || detail != "connecté en tant que root sur "+srv.URL {
+		t.Errorf("Check = %q, %v", detail, err)
+	}
+	if _, err := New("gitlab", srv.URL, "expiré").Check(); err == nil || !strings.Contains(err.Error(), "jeton refusé") {
+		t.Errorf("jeton refusé attendu, obtenu %v", err)
+	}
+}

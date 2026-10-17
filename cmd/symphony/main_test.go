@@ -99,7 +99,7 @@ func TestConfigWatcher(t *testing.T) {
         scm_ref: gitlab-a
 `
 	content, readErr := []byte(v1), error(nil)
-	source := &configSource{read: func() ([]byte, error) { return content, readErr }}
+	source := &configSource{label: "test", read: func() ([]byte, error) { return content, readErr }}
 
 	cfg, raw, err := source.load()
 	if err != nil {
@@ -145,18 +145,32 @@ func TestConfigWatcher(t *testing.T) {
 		content = []byte(bad)
 		w.check()
 		assertSCM("gitlab-b")
+		// Le refus et sa raison sont rapportés, la révision en place ne change pas
+		st := w.Status()
+		if st.Refused == nil || st.Refused.Revision != config.Revision([]byte(bad)) || st.Refused.Error == "" ||
+			st.Revision != config.Revision([]byte(strings.ReplaceAll(v1, "-a", "-b"))) {
+			t.Errorf("statut après refus = %+v", st)
+		}
 	}
 
 	// Repo illisible : on garde la configuration en place
 	readErr = errors.New("gitlab injoignable")
 	w.check()
 	assertSCM("gitlab-b")
+	if st := w.Status(); st.ReadError == "" {
+		t.Error("erreur de lecture non rapportée")
+	}
 
 	// De retour : la configuration (valide) est appliquée
 	readErr = nil
 	content = []byte(v1)
 	w.check()
 	assertSCM("gitlab-a")
+	st := w.Status()
+	if st.ReadError != "" || st.Refused != nil || st.Revision != config.Revision([]byte(v1)) ||
+		st.Source != "test" || st.Types["ci/ci-a"] != "gitlab_ci" || st.Types["secrets/env"] != "env" {
+		t.Errorf("statut après application = %+v", st)
+	}
 }
 
 func TestCatalogueFile(t *testing.T) {

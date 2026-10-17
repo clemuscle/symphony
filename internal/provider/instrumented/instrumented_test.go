@@ -29,3 +29,19 @@ func TestSCM(t *testing.T) {
 		t.Errorf("DeleteFile = %v, attendu ErrNotFound", err)
 	}
 }
+
+// Le dernier appel de chaque provider est retenu ; une ressource introuvable
+// n'est pas une panne du provider
+func TestLast(t *testing.T) {
+	p := SCM(fakeSCM{})
+	p.DeleteFile("r", "main", "a.yaml", "msg")
+	if c, ok := Last("scm", "fake"); !ok || c.Method != "DeleteFile" || c.Error != "" {
+		t.Errorf("dernier appel = %+v, %v", c, ok)
+	}
+	p.Check()
+	if c, _ := Last("scm", "fake"); c.Method != "Check" || c.Error != "jeton refusé" {
+		t.Errorf("dernier appel = %+v", c)
+	}
+}
+
+func (fakeSCM) Check() (string, error) { return "", errors.New("jeton refusé") }

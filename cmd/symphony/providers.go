@@ -30,11 +30,17 @@ import (
 // erreur fait refuser la configuration entière : une configuration à moitié
 // appliquée retirerait des providers qui marchaient.
 func buildProviders(cfg *config.Config) (*provider.Registry, *config.Config, error) {
+	return assembleProviders(cfg, registerSecrets)
+}
+
+// assembleProviders : buildProviders, avec les providers de secrets créés par
+// secrets (des vrais, ou des substituts pour symphony validate)
+func assembleProviders(cfg *config.Config, secrets func(*provider.Registry, []config.ProviderDef) error) (*provider.Registry, *config.Config, error) {
 	if err := validateProviders(cfg.Providers); err != nil {
 		return nil, nil, err
 	}
 	providers := provider.NewRegistry()
-	if err := registerSecrets(providers, cfg.Providers.Secrets); err != nil {
+	if err := secrets(providers, cfg.Providers.Secrets); err != nil {
 		return nil, nil, err
 	}
 	resolved, err := resolveConfig(cfg, providers.Secrets)

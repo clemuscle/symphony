@@ -59,6 +59,12 @@ func TestSyncerReadsProjectFiches(t *testing.T) {
 	if store.Count() != 1 {
 		t.Errorf("seule la fiche valide est au catalogue : %d", store.Count())
 	}
+	// Fiches invalides et absentes rapportées (page Administration)
+	report := s.Report()
+	if len(report.Errors) != 1 || report.Errors[0].Project != "invalid" ||
+		len(report.Missing) != 1 || report.Missing[0] != "sans-fiche" || report.File != "catalog-info.yaml" {
+		t.Errorf("rapport = %+v", report)
+	}
 
 	// Repo illisible : la fiche connue est gardée
 	scm.broken["apps/auth"] = true

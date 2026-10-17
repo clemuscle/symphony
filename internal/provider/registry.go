@@ -171,3 +171,30 @@ func (r *Registry) ListRegistries() []string { return sortedIDs(r.current().regi
 func (r *Registry) ListRuntimes() []string   { return sortedIDs(r.current().runtime) }
 func (r *Registry) ListSecrets() []string    { return sortedIDs(r.current().secrets) }
 func (r *Registry) ListIdentity() []string   { return sortedIDs(r.current().identity) }
+
+// Entry : un provider en place, avec sa section (scm, ci, registry, runtime,
+// secrets, identity) et sa vérification
+type Entry struct {
+	Kind    string
+	ID      string
+	Default bool
+	Check   func() (string, error)
+}
+
+// Entries : tous les providers en place, par section puis par id
+func (r *Registry) Entries() []Entry {
+	s := r.current()
+	var out []Entry
+	add := func(kind string, ids []string, def string, check func(string) func() (string, error)) {
+		for _, id := range ids {
+			out = append(out, Entry{Kind: kind, ID: id, Default: id == def, Check: check(id)})
+		}
+	}
+	add("scm", sortedIDs(s.scm), s.defaultSCM, func(id string) func() (string, error) { return s.scm[id].Check })
+	add("ci", sortedIDs(s.ci), s.defaultCI, func(id string) func() (string, error) { return s.ci[id].Check })
+	add("registry", sortedIDs(s.registry), s.defaultRegistry, func(id string) func() (string, error) { return s.registry[id].Check })
+	add("runtime", sortedIDs(s.runtime), s.defaultRuntime, func(id string) func() (string, error) { return s.runtime[id].Check })
+	add("secrets", sortedIDs(s.secrets), s.defaultSecrets, func(id string) func() (string, error) { return s.secrets[id].Check })
+	add("identity", sortedIDs(s.identity), s.defaultIdentity, func(id string) func() (string, error) { return s.identity[id].Check })
+	return out
+}

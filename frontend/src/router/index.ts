@@ -3,6 +3,7 @@ import Catalogue from '../views/Catalogue.vue'
 import Projects from '../views/Projects.vue'
 import Deployments from '../views/Deployments.vue'
 import Tasks from '../views/Tasks.vue'
+import Admin from '../views/Admin.vue'
 
 export default createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -13,5 +14,6 @@ export default createRouter({
     { path: '/projects', redirect: '/' },
     { path: '/deployments', component: Deployments },
     { path: '/tasks', component: Tasks },
+    { path: '/admin', component: Admin },
   ]
 })

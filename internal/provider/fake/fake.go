@@ -348,3 +348,8 @@ var (
 	_ provider.RegistryProvider = (*Registry)(nil)
 	_ provider.RuntimeProvider  = (*Runtime)(nil)
 )
+
+func (forgeSCM) Check() (string, error)  { return "forge simulée", nil }
+func (forgeCI) Check() (string, error)   { return "forge simulée", nil }
+func (*Registry) Check() (string, error) { return "registry simulé", nil }
+func (*Runtime) Check() (string, error)  { return "runtime simulé", nil }

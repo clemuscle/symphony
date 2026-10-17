@@ -36,7 +36,9 @@ de les remplacer.
   (Server-Sent Events), poussée par les webhooks de pipeline de GitLab.
 - **Plateforme pilotée par Git** : la configuration elle-même (providers, repos) est lue
   dans Git et appliquée à chaud ; une version invalide est refusée et l'ancienne reste en
-  place.
+  place. La page **Administration** dit ce qui est chargé, ce qui est refusé et pourquoi,
+  et vérifie chaque provider ; `symphony validate` contrôle configuration et golden paths
+  avant le push, en local ou en CI.
 - **Sécurisé** : connexion OIDC (Keycloak en démo, tout fournisseur OIDC), rôles
   `viewer` / `developer` / `admin` déduits des groupes de l'annuaire, **droits par équipe**
   (on ne déploie que les projets de ses équipes), audit de qui a fait quoi. En démo, GitLab
@@ -55,7 +57,11 @@ de les remplacer.
 **En une minute, sans rien installer** : le [mode visite](https://clemuscle.github.io/symphony/),
 la vraie interface sur des données capturées en démo, en lecture seule.
 
-**Pour de vrai**, sur ta machine. Prérequis : Docker avec Compose v2, `curl`, `jq`, ~6 Go de RAM libres (GitLab, Keycloak,
+**Sur ta forge**, en trois commandes : le [quickstart](quickstart/README.md) lance
+Symphony et PostgreSQL en Docker Compose, branchés sur gitlab.com, une GitLab
+auto-hébergée ou GitHub ; les projets créés tournent en conteneurs sur la machine.
+
+**La démo complète**, sur ta machine. Prérequis : Docker avec Compose v2, `curl`, `jq`, ~6 Go de RAM libres (GitLab, Keycloak,
 Vault, k3s et Argo CD ; `--no-k8s` en économise 1,5 Go).
 
 ```bash
@@ -155,14 +161,25 @@ sans section `config_source`, il est lu comme une configuration complète (hors 
 
 ## Feuille de route
 
+Le cap : [documentation/vision.md](documentation/vision.md), « un Cycloid open source qui
+s'administre comme un Backstage facile ».
+
 Fait : v0.1 (binaire unique, `/metrics`, CI et image publiée), v0.2 (démo), v0.3 (OIDC,
 rôles, audit), v0.4 (Kubernetes en GitOps avec Argo CD), v0.5 (tâches asynchrones,
 webhooks, temps réel), v0.6 (vrais projets de démo, fiche catalogue dans le repo du projet,
 connexion unique à GitLab), v0.7 (secrets et identité en providers : Vault, Keycloak et
 son annuaire ; golden path GitHub de bout en bout ; bascule Docker sur le `HEALTHCHECK`),
-v0.8 (chart Helm testé en CI, configuration stricte, droits par équipe, erreurs masquées).
-À venir, v0.9 : secrets des applis, environnements et promotion, mode visite ; puis v1.0, quand Symphony sera utilisable par de vraies équipes.
+v0.8 (chart Helm testé en CI, configuration stricte, droits par équipe, erreurs masquées),
+v0.9 (secrets des applis, environnements et promotion, webhooks GitHub, OpenAPI, mode
+visite), v0.10 (finitions), v0.11 (page Administration, `symphony validate`,
+configuration de référence, quickstart, licence Apache 2.0). À venir : golden paths
+paramétrables, l'infra avec l'appli, import des services existants, gouvernance par
+équipe, puis la v1.0, ouverte aux utilisateurs.
 Détail : [ROADMAP.md](ROADMAP.md) et [CHANGELOG.md](CHANGELOG.md).
 
 **Stack** : Go 1.27, chi, go-oidc, PostgreSQL, Prometheus client, Vue 3 + Vite, GitLab CE,
 Keycloak, Vault, Docker, k3s, Argo CD.
+
+## Licence
+
+[Apache 2.0](LICENSE).

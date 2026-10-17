@@ -2,6 +2,7 @@ package gitops
 
 import (
 	"errors"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	gitlabci "github.com/clemuscle/symphony/internal/provider/ci/gitlabci"
 	dockerrt "github.com/clemuscle/symphony/internal/provider/runtime/docker"
 	gitlabscm "github.com/clemuscle/symphony/internal/provider/scm/gitlab"
+	"gopkg.in/yaml.v3"
 )
 
 // fakeSCM sert un repo en mémoire (chemin → contenu) ; err simule un repo illisible
@@ -132,6 +134,14 @@ func TestReload(t *testing.T) {
 	if len(gps) != 1 || gps[0].ID != "api-rest-go" {
 		t.Fatalf("golden paths = %+v, attendu [api-rest-go]", gps)
 	}
+	// Les refusés sont rapportés avec leur raison (page Administration)
+	report := l.Report()
+	if report.Error != "" || report.LoadedAt.IsZero() || len(report.Refused) != 2 ||
+		report.Refused[0].File != "templates/api-github/template.yaml" ||
+		!strings.Contains(report.Refused[0].Error, "incompatible") ||
+		!strings.Contains(report.Refused[1].Error, "skeleton") {
+		t.Errorf("rapport = %+v", report)
+	}
 
 	files, err := l.GetScaffoldFiles(gps[0])
 	if err != nil {
@@ -150,6 +160,9 @@ func TestReload(t *testing.T) {
 	if _, err := l.GetGoldenPath("api-rest-go"); err != nil {
 		t.Errorf("liste précédente perdue : %v", err)
 	}
+	if r := l.Report(); !strings.Contains(r.Error, "gitlab injoignable") || len(r.Refused) != 2 {
+		t.Errorf("échec non rapporté : %+v", r)
+	}
 
 	// Template supprimé du repo : il disparaît au rechargement suivant
 	scm.err = nil
@@ -157,6 +170,9 @@ func TestReload(t *testing.T) {
 	l.Reload()
 	if gps := l.GetGoldenPaths(); len(gps) != 0 {
 		t.Errorf("golden paths = %+v, attendu aucun", gps)
+	}
+	if r := l.Report(); r.Error != "" {
+		t.Errorf("erreur non effacée après un rechargement réussi : %q", r.Error)
 	}
 }
 
@@ -187,4 +203,30 @@ func TestSetSource(t *testing.T) {
 	if ci, _ := l.GetCITemplate(*old); ci != "ancien" {
 		t.Errorf("golden path chargé avant SetSource, ci = %q, attendu ancien", ci)
 	}
+}
+
+// TestReferenceTemplate : le golden path de référence est valide et renseigne
+// chaque champ du format ; un champ ajouté sans être documenté échoue ici
+func TestReferenceTemplate(t *testing.T) {
+	raw, err := os.ReadFile("../../documentation/reference/template.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseTemplate("templates/api-rest-go", string(raw)); err != nil {
+		t.Fatalf("référence invalide : %v", err)
+	}
+	var doc templateDoc
+	yaml.Unmarshal(raw, &doc)
+	var walk func(prefix string, v reflect.Value)
+	walk = func(prefix string, v reflect.Value) {
+		for i := 0; i < v.NumField(); i++ {
+			f, name := v.Field(i), prefix+v.Type().Field(i).Tag.Get("yaml")
+			if f.Kind() == reflect.Struct {
+				walk(name+".", f)
+			} else if f.IsZero() {
+				t.Errorf("%s absent de la référence", name)
+			}
+		}
+	}
+	walk("", reflect.ValueOf(doc))
 }

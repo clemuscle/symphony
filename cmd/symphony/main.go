@@ -26,6 +26,10 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
 		os.Exit(healthcheck())
 	}
+	// Vérification hors ligne d'une configuration et de golden paths
+	if len(os.Args) > 1 && os.Args[1] == "validate" {
+		os.Exit(runValidate(os.Args[2:], os.Stdout))
+	}
 
 	// Logger structuré JSON
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -142,13 +146,14 @@ func main() {
 		fingerprint: fingerprint(resolved),
 		resubscribe: resubscribeWebhooks(db, providers),
 	}
+	watcher.applied(raw, cfg)
 	go watcher.Start()
 
 	// Démarrer le serveur
 	addr := ":" + getEnv("PORT", "8080")
 	slog.Info("Symphony démarré", "addr", addr)
 
-	if err := http.ListenAndServe(addr, api.NewServer(providers, store, db, syncer, tmplLoader, security, runner, hooks, envs)); err != nil {
+	if err := http.ListenAndServe(addr, api.NewServer(providers, store, db, syncer, tmplLoader, security, runner, hooks, envs, watcher.Status)); err != nil {
 		slog.Error("serveur HTTP", "error", err)
 		os.Exit(1)
 	}

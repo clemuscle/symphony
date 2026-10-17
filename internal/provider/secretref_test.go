@@ -32,8 +32,9 @@ func TestParseSecretRef(t *testing.T) {
 
 type mapSecrets map[string]string
 
-func (m mapSecrets) ID() string   { return "fake" }
-func (m mapSecrets) Type() string { return "fake" }
+func (m mapSecrets) ID() string             { return "fake" }
+func (m mapSecrets) Type() string           { return "fake" }
+func (m mapSecrets) Check() (string, error) { return "", nil }
 func (m mapSecrets) Get(path, key string) (string, error) {
 	v, ok := m[path+"#"+key]
 	if !ok {

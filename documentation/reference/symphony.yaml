@@ -1,0 +1,216 @@
+# Configuration de référence de Symphony : chaque section, chaque type de
+# provider et chacune de ses clés, commentés. Une vraie configuration n'en
+# garde que ce dont elle a besoin (voir demo/gitlab/symphony-config/ et
+# quickstart/). Vérifiée par la CI : `symphony validate -config` la lit sans
+# erreur, et chaque clé connue de Symphony y figure (cmd/symphony/schema.go).
+#
+# Où la mettre : dans un repo Git (le bootstrap local, bootstrap.yaml, dit
+# lequel), relue toutes les 15 s. Une version valide est appliquée à chaud ;
+# une version invalide est refusée en entier, la précédente reste en place, et
+# la page Administration dit pourquoi.
+#
+# Règles communes :
+# - Une clé inconnue est une erreur (faute de frappe = refus, jamais ignorée).
+# - ${VAR} est remplacé par la variable d'environnement de Symphony.
+# - Un secret ne s'écrit jamais ici : secret://<provider>/<chemin>#<clé> le lit
+#   dans un provider de secrets (secret://env/<VARIABLE> pour une variable
+#   d'environnement). Il est relu à chaque cycle : une rotation est appliquée
+#   à chaud. Une référence introuvable fait refuser toute la configuration.
+# - Dans chaque section de providers, default: true désigne celui utilisé
+#   quand rien n'en désigne un autre (sinon : le premier déclaré).
+
+providers:
+  # ─── Secrets : lus en premier, les autres providers y font référence ───────
+  # Le provider env (variables d'environnement) existe toujours, sans être
+  # déclaré.
+  secrets:
+    - id: vault
+      type: vault # HashiCorp Vault ou OpenBao, moteur KV
+      default: true
+      config:
+        url: https://vault.example.com # requis
+        namespace: "" # Vault Enterprise / HCP (en-tête X-Vault-Namespace)
+        mount: secret # montage du moteur KV ; défaut secret
+        kv_version: "2" # 2 (défaut) ou 1
+        # Authentification : un jeton, ou un AppRole (role_id et secret_id),
+        # préférable : le jeton obtenu est renouvelé par Symphony
+        token: ""
+        role_id: secret://env/VAULT_ROLE_ID
+        secret_id: secret://env/VAULT_SECRET_ID
+        approle_mount: approle # défaut approle
+    # Un second provider de variables d'environnement, sous un autre id : rare
+    # (env existe déjà), mais le type est déclarable
+    - id: environnement
+      type: env
+
+  # ─── Identité : connexion des utilisateurs (OIDC) et annuaire ──────────────
+  identity:
+    # Keycloak : issuer et découverte déduits de l'URL et du realm ; l'annuaire
+    # propose les groupes du realm comme équipes propriétaires des projets
+    - id: keycloak
+      type: keycloak
+      default: true
+      config:
+        url: http://keycloak:8080 # requis : Keycloak vu par Symphony
+        public_url: https://sso.example.com # vu par le navigateur ; défaut : url
+        realm: entreprise # requis
+        client_id: symphony # requis : client OIDC (Authorization Code + PKCE)
+        client_secret: secret://vault/symphony/keycloak#client_secret # vide : client public
+        redirect_url: https://symphony.example.com/auth/callback # défaut : déduite de la requête
+        groups_claim: groups # claim des groupes dans le jeton ; défaut groups
+        # Annuaire : client de service (client credentials) qui a les rôles
+        # query-groups et view-users de realm-management ; vide : pas d'annuaire
+        directory_client_id: symphony-directory
+        directory_client_secret: secret://vault/symphony/keycloak#directory_secret
+    # OIDC générique (GitLab, Dex, Entra ID, Authentik…) : connexion seule, sans
+    # annuaire (l'équipe d'un projet se saisit alors librement)
+    - id: sso
+      type: oidc
+      config:
+        issuer: https://login.example.com # requis : tel que le voit le navigateur (claim iss)
+        discovery_url: http://dex:5556 # si Symphony lit la découverte ailleurs que l'issuer
+        client_id: symphony # requis
+        client_secret: secret://vault/symphony/sso#client_secret
+        redirect_url: https://symphony.example.com/auth/callback
+        groups_claim: groups
+
+  # ─── Forges (SCM) : repos des projets, de la configuration et des golden paths
+  # Le SCM par défaut lit la configuration (bootstrap) et les golden paths.
+  scm:
+    - id: gitlab
+      type: gitlab # gitlab.com ou GitLab auto-hébergée
+      default: true
+      config:
+        url: https://gitlab.example.com # requis
+        # requis : jeton (personnel, de groupe ou de compte de service) au
+        # scope api
+        token: secret://vault/symphony/gitlab#token
+        namespace: apps # groupe des repos créés ; vide : celui du jeton
+    - id: github
+      type: github
+      config:
+        # requis : jeton classique aux scopes repo, workflow, delete_repo,
+        # read:packages, write:packages, delete:packages
+        token: secret://vault/symphony/github#token
+        org: mon-organisation # organisation des repos créés ; vide : compte du jeton
+
+  # ─── CI : chaque CI tourne sur la forge de sa plateforme ────────────────────
+  ci:
+    - id: gitlab-ci
+      type: gitlab_ci
+      default: true
+      config:
+        url: https://gitlab.example.com # requis
+        # Le jeton : token, ou scm_ref pour reprendre celui d'un SCM (une seule
+        # référence au secret). L'une des deux est requise.
+        token: ""
+        scm_ref: gitlab
+    - id: github-actions
+      type: github_actions
+      config:
+        token: ""
+        scm_ref: github
+
+  # ─── Registries d'images : tags proposés au déploiement, pull authentifié ──
+  registry:
+    - id: gitlab-registry
+      type: gitlab_registry # registry intégré à GitLab, purgé avec le repo
+      default: true
+      config:
+        url: https://gitlab.example.com # requis : API GitLab
+        registry_host: registry.example.com # requis : hôte des images, vu par le runtime
+        token: ""
+        scm_ref: gitlab # token ou scm_ref
+    - id: ghcr
+      type: ghcr # images publiées par le workflow sur ghcr.io/<owner>/<repo>
+      config:
+        owner: mon-organisation # propriétaire par défaut des images
+        token: ""
+        scm_ref: github # token ou scm_ref
+
+  # ─── Runtimes : où tournent les services ────────────────────────────────────
+  runtime:
+    # Docker : un conteneur par service et environnement, bascule sur le
+    # HEALTHCHECK de l'image. Préférer un proxy de socket limité au socket
+    # monté (voir documentation/architecture.md, Sécurité).
+    - id: docker
+      type: docker
+      default: true
+      config:
+        socket: tcp://docker-proxy:2375 # ou /var/run/docker.sock (défaut)
+        health_timeout: 2m # attente maximale de l'état healthy (durée Go) ; défaut 2m
+    # Kubernetes en GitOps : Symphony commite les manifests dans un repo de
+    # déploiement et pilote Argo CD ; jamais d'appel à l'API Kubernetes
+    - id: argocd
+      type: argocd
+      config:
+        url: https://argocd.example.com # requis : API Argo CD
+        token: secret://vault/symphony/argocd#token # requis : jeton d'un compte Argo CD (apiKey)
+        insecure: "false" # "true" : TLS sans vérification du certificat
+        scm_ref: gitlab # SCM qui écrit dans le repo de déploiement ; défaut : SCM par défaut
+        repo: platform/deployments # requis : repo de déploiement, tel que le SCM le nomme
+        branch: main # défaut main
+        path: apps # dossier des services dans ce repo ; défaut : racine
+        repo_url: https://gitlab.example.com/platform/deployments.git # requis : le même repo vu par Argo CD
+        project: default # projet Argo CD ; défaut default
+        cluster: https://kubernetes.default.svc # cluster cible vu par Argo CD ; défaut : celui d'Argo CD
+        namespace: apps # namespace des services ; défaut default
+        ingress_domain: apps.example.com # service sur <service>-<env>.<domaine> ; vide : pas d'Ingress
+        ingress_class: nginx # vide : classe par défaut du cluster
+        ingress_port: "" # port public de l'Ingress, s'il n'est pas 80
+        # Secrets des applis : ClusterSecretStore d'External Secrets Operator
+        # qui lit le même coffre ; vide : les secrets ne sont pas acceptés
+        secret_store: symphony-vault
+        secret_store_provider: vault # provider de secrets de ce coffre ; défaut vault
+
+# ─── Environnements, dans l'ordre de promotion ─────────────────────────────────
+# Absent : un seul déploiement par projet. Noms DNS courts (ils finissent dans
+# <projet>-<env>). Le premier n'est pas protégé ; un environnement protégé ne
+# reçoit qu'une promotion (image déjà saine dans le précédent). Un golden path
+# peut changer le runtime d'un environnement (spec.environments).
+environments:
+  - name: staging
+    runtime: docker
+  - name: production
+    runtime: argocd
+    protected: true
+
+# ─── Webhooks entrants ─────────────────────────────────────────────────────────
+# Chaque repo créé est abonné aux événements de pipeline, reçus sur
+# <url>/webhooks/<plateforme>. Absent : les pipelines sont suivies par sondage
+# (15 s). Un changement d'url ou de secret réabonne les repos des projets.
+webhooks:
+  url: https://symphony.example.com # Symphony vu par la forge
+  secret: secret://vault/symphony/webhook#secret # 16 caractères au moins
+
+# ─── Catalogue ────────────────────────────────────────────────────────────────
+# Chaque projet porte sa fiche dans son repo, à la racine
+catalogue:
+  file: catalog-info.yaml # défaut catalog-info.yaml
+
+# ─── Golden paths ─────────────────────────────────────────────────────────────
+# Lus avec le SCM par défaut : <path>/<nom>/template.yaml (format :
+# documentation/reference/template.yaml). Un golden path invalide est refusé
+# seul, les autres restent proposés.
+templates:
+  repo: platform/templates # défaut root/symphony-templates
+  branch: main # défaut main
+  path: templates # défaut templates ; "" : racine du repo
+
+# ─── Connexion ────────────────────────────────────────────────────────────────
+# Absent : authentification désactivée, tout le monde est admin (développement
+# local seulement). SESSION_SECRET (32 caractères au moins, environnement)
+# signe les sessions.
+auth:
+  identity: keycloak # provider identity de la connexion ; défaut : celui par défaut
+  # Rôle → groupes OIDC qui le donnent. viewer lit ; developer crée, déploie et
+  # lance les actions des projets de ses équipes ; admin fait tout. Les autres
+  # groupes de l'utilisateur sont ses équipes.
+  roles:
+    admin: [plateforme]
+    developer: [developpeurs]
+    viewer: [lecteurs]
+
+# Origines autorisées à appeler l'API depuis un autre site (CORS). Vide : même
+# origine seulement (le front est servi par Symphony)
+cors_origins: []
