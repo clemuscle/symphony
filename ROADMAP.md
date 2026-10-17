@@ -1,9 +1,11 @@
 # Roadmap de Symphony
 
-Symphony est un projet de portfolio : une IDP que doit pouvoir évaluer un recruteur tech
-ou un lead DevOps en quelques minutes (README, démo, architecture, qualité du code), puis
-essayer s'il le souhaite. D'où l'ordre : **la vitrine d'abord, les fonctionnalités
-ensuite**.
+Symphony est né comme un projet de portfolio : une IDP qu'un recruteur tech ou un lead
+DevOps évalue en quelques minutes. Depuis la v0.10, **le produit passe avant la
+vitrine** : la v1.0 doit pouvoir être adoptée par de vraies équipes. Le cap et les
+décisions qui y mènent sont dans [documentation/vision.md](documentation/vision.md) :
+
+> **Symphony, c'est un Cycloid open source qui s'administre comme un Backstage facile.**
 
 Chaque version est taguée (`vX.Y`), décrite dans `CHANGELOG.md` et publiée en release
 GitHub avec son image Docker. Une version est finie quand tous ses critères sont remplis.
@@ -212,25 +214,93 @@ par l'interface) : corriger les petits défauts relevés avant d'attaquer la v1.
 - [x] Squelettes Go des golden paths formatés (vérifiés par la CI), plus d'avertissement
       « pas de .env » en conteneur, taille de l'image corrigée dans la doc
 
-## v1.0 — Utilisable par de vraies équipes
+## v0.11 — L'admin y voit clair
 
-Objectif : une équipe plateforme peut installer Symphony, le mettre à jour et s'y fier
-sans lire son code. La v1.0 fige ce qu'elle promet : API `/api/v1`, format de
-`symphony.yaml`, des golden paths et des fiches. Critères à affiner avant de la commencer.
+Objectif : un admin plateforme sait, sans lire les logs, ce que Symphony a chargé, ce
+qu'il a refusé et pourquoi ; il vérifie sa configuration et ses golden paths avant de
+les pousser.
 
-- [ ] Contrat stable : API, configuration et formats versionnés, toute rupture annoncée
-      et accompagnée d'une migration
-- [ ] Montée de version sûre : migrations testées d'une version à l'autre, retour
-      arrière documenté, sauvegarde et restauration de la base
-- [ ] Guide d'exploitation : installation (Helm), configuration de référence, métriques et
-      alertes, dépannage
-- [ ] Sécurité revue : audit des droits par route, dépendances surveillées (Dependabot,
+- [ ] Licence Apache 2.0
+- [ ] Page Administration (admin) : configuration en place (source, révision, dernier
+      refus et sa raison), providers et leur état (vérification à la demande, dernier
+      appel), golden paths chargés et refusés avec la raison, fiches catalogue en
+      erreur, journal d'audit
+- [ ] `symphony validate` : configuration et golden paths vérifiés hors ligne, en local
+      ou dans la CI des repos de configuration (code de sortie, toutes les erreurs
+      d'un coup)
+- [ ] Configuration de référence commentée (chaque clé, chaque type de provider),
+      vérifiée par la CI
+- [ ] Quickstart léger : Symphony et PostgreSQL en Docker Compose, branchés sur une
+      forge existante (gitlab.com, GitLab auto-hébergée ou GitHub)
+
+Fini quand : une faute dans un golden path poussé dans Git se lit dans l'interface avec
+sa raison, `symphony validate` la signale avant le push, et le quickstart donne une
+instance qui crée un projet sur une forge existante.
+
+## v0.12 — Stacks paramétrables
+
+- [ ] Paramètres d'un golden path (`spec.parameters` : `name`, `title`, `type`,
+      `choices`, `default`, `required`, `when`, `locked`), validés en JSON Schema,
+      rendus en formulaire et injectés dans le squelette
+- [ ] Manifests Kubernetes fournis par le golden path (chart Helm ou base Kustomize),
+      sinon générés comme aujourd'hui
+- [ ] Catalogue officiel de golden paths dans un repo public, à côté de celui du client
+- [ ] Vocabulaire tranché : « golden path » ou « stack »
+
+## v0.13 — L'infra avec l'appli
+
+- [ ] Un golden path porte son infra, appliquée par la CI du repo (OpenTofu en plan
+      puis apply, ou manifests d'opérateurs en GitOps) : Symphony déclenche et suit,
+      sans identifiants cloud
+- [ ] PostgreSQL par CloudNativePG de bout en bout (démo k3s et CI)
+- [ ] Un projet supprimé emporte son infra
+
+## v0.14 — Les services existants
+
+- [ ] Fiches compatibles Backstage (`backstage.io/v1alpha1`), nos ajouts en annotations
+      ou champs étendus
+- [ ] Import par scan d'un groupe GitLab ou d'une organisation GitHub
+
+## v0.15 — L'équipe et la gouvernance
+
+- [ ] Rôle `lead` par équipe (viewer < developer < lead < admin)
+- [ ] Approbation par environnement (`approval: lead` ou `none`)
+- [ ] Notifications : Slack ou Teams par webhook (un canal par équipe), et dans Symphony
+- [ ] Matrice versions × environnements ; retour arrière en un clic
+
+## v0.16 — Exploiter ses services
+
+- [ ] Secrets en self-service (Vault ou OpenBao, Secrets Kubernetes / SOPS), écrits sous
+      `apps/<projet>/` et jamais réaffichés
+- [ ] Provider d'observabilité (Prometheus, Loki) : état, erreurs, latence et SLO par
+      service et environnement
+- [ ] Runtime Docker prêt pour la production : hôtes distants, TLS, reverse proxy
+
+## v0.17 — Prêt à être adopté
+
+- [ ] Site de documentation : installation, configuration de référence, écrire un
+      golden path, brancher Symphony sur ses outils
+- [ ] Sauvegarde et restauration documentées et testées
+- [ ] Nom tranché ; appel à bêta-testeurs
+
+## v1.0 — Ouvert aux utilisateurs
+
+Objectif : une équipe plateforme peut installer Symphony, le brancher sur ses outils, le
+mettre à jour et s'y fier sans lire son code.
+
+- [ ] Contrat stable (SemVer strict) : API `/api/v1`, configuration, fiches et golden
+      paths versionnés ; toute dépréciation annoncée une version à l'avance, avec son
+      outil de migration
+- [ ] Montée de version testée d'une version à l'autre, retour arrière documenté
+- [ ] Guide d'exploitation : installation (Compose et Helm), métriques et alertes,
+      dépannage
+- [ ] Sécurité revue : droits par route, dépendances surveillées (Dependabot,
       govulncheck), politique de signalement des failles
-- [ ] Utilisé pour de vrai : au moins une instance réelle (pas la démo) sur plusieurs
-      semaines, et ses retours traités
+- [ ] Au moins une installation par un bêta-testeur, et ses retours traités
 
 ## Hors périmètre
 
-Haute disponibilité multi-réplicas (le catalogue est en mémoire, un seul processus
-exécute les tâches), Harbor, Jenkins, Terraform. Symphony lui-même dans le k3s de la démo
+Avant la v1.0 : haute disponibilité multi-réplicas (le catalogue est en mémoire, un seul
+processus exécute les tâches), multi-organisation, plugins, interface en anglais,
+TechDocs, scorecards, indicateurs DORA, Harbor, Jenkins. Symphony lui-même dans le k3s de la démo
 (le chart Helm est installé et vérifié par la CI sur kind). Voir [les écarts avec KoreIDP](documentation/architecture.md#écarts-avec-la-proposition-koreidp).
