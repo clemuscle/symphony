@@ -1,7 +1,7 @@
 // Formulaire des paramètres d'une stack (spec.parameters). L'API valide les
 // valeurs avec le JSON Schema de la stack : ici, l'affichage (conditions,
 // défauts) et un premier contrôle pour guider la saisie.
-import type { ParamValue, StackParameter } from '../types'
+import type { ParamValue, Stack, StackParameter } from '../types'
 
 export type ParamValues = Record<string, ParamValue>
 
@@ -12,9 +12,23 @@ function matches(got: ParamValue | undefined, want: ParamValue | ParamValue[]): 
   return Array.isArray(want) ? want.includes(got) : got === want
 }
 
+// whenMatches : les valeurs remplissent-elles la condition when ?
+function whenMatches(when: Record<string, ParamValue | ParamValue[]> | undefined, values: ParamValues): boolean {
+  return Object.entries(when || {}).every(([name, want]) => matches(values[name], want))
+}
+
+// keepFile : le fichier (ou dossier) p du repo créé l'est-il avec ces
+// valeurs (spec.files de la stack) ? Comme Stack.Keep côté serveur.
+export function keepFile(st: Pick<Stack, 'files'>, p: string, values: ParamValues): boolean {
+  return (st.files || []).every(rule => {
+    const r = rule.path.replace(/^\/+|\/+$/g, '')
+    return !(p === r || p.startsWith(r + '/')) || whenMatches(rule.when, values)
+  })
+}
+
 // visible : le paramètre existe-t-il avec ces valeurs (sa condition when) ?
 export function visible(p: StackParameter, values: ParamValues): boolean {
-  return Object.entries(p.when || {}).every(([name, want]) => matches(values[name], want))
+  return whenMatches(p.when, values)
 }
 
 // fillDefaults : les valeurs complétées par les défauts des paramètres qui

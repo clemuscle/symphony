@@ -258,17 +258,27 @@ type Runtime struct {
 	// LastEnv : variables du dernier déploiement, par nom (tests)
 	LastEnv       map[string]map[string]string
 	LastSecretEnv map[string]map[string]provider.SecretRef
+	// LastInfra : infra du dernier déploiement, par nom ; Kind : le type
+	// annoncé (argocd pour simuler Kubernetes), fake par défaut
+	LastInfra map[string]*provider.Infra
+	Kind      string
 }
 
 // NewRuntime : secretRefs dit si le runtime reçoit les secrets en références
 // (comme argocd) ou en valeurs (comme docker)
 func NewRuntime(id string, secretRefs bool) *Runtime {
 	return &Runtime{id: id, refs: secretRefs, deps: map[string]provider.Deployment{},
-		LastEnv: map[string]map[string]string{}, LastSecretEnv: map[string]map[string]provider.SecretRef{}}
+		LastEnv: map[string]map[string]string{}, LastSecretEnv: map[string]map[string]provider.SecretRef{},
+		LastInfra: map[string]*provider.Infra{}}
 }
 
-func (r *Runtime) ID() string       { return r.id }
-func (r *Runtime) Type() string     { return "fake" }
+func (r *Runtime) ID() string { return r.id }
+func (r *Runtime) Type() string {
+	if r.Kind != "" {
+		return r.Kind
+	}
+	return "fake"
+}
 func (r *Runtime) SecretRefs() bool { return r.refs }
 
 func (r *Runtime) Deploy(req provider.DeployRequest) (*provider.Deployment, error) {
@@ -285,6 +295,7 @@ func (r *Runtime) Deploy(req provider.DeployRequest) (*provider.Deployment, erro
 	r.deps[req.Name] = d
 	r.LastEnv[req.Name] = req.EnvVars
 	r.LastSecretEnv[req.Name] = req.SecretEnv
+	r.LastInfra[req.Name] = req.Infra
 	return &d, nil
 }
 

@@ -48,6 +48,10 @@
         <template v-if="byEnv(e.name)">
           <a v-if="byEnv(e.name)!.url" :href="byEnv(e.name)!.url" target="_blank" class="deploy-url">{{ byEnv(e.name)!.url }} ↗</a>
           <code class="deploy-image">{{ byEnv(e.name)!.image }}</code>
+          <div class="infra" v-for="r in byEnv(e.name)!.infra || []" :key="r.kind + r.name">
+            <span :class="['dot', healthDot(r.health)]"></span> {{ r.kind }} <code>{{ r.name }}</code>
+            <span class="muted">{{ r.health }}</span>
+          </div>
         </template>
         <button class="btn-ghost block" v-if="i > 0 && allowed"
           :disabled="!canPromote(i) || promoting"
@@ -155,7 +159,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue'
 import { api, errorMessage } from '../api'
-import { depIcon, ficheURL, lifecycle, lifecycleLabel, linkIcon, pipelinesURL, repoWebURL, runtimeLabel, tier, tierIcon } from '../lib/projects'
+import { depIcon, ficheURL, healthDot, lifecycle, lifecycleLabel, linkIcon, pipelinesURL, repoWebURL, runtimeLabel, tier, tierIcon } from '../lib/projects'
 import { formatValue } from '../lib/parameters'
 import { can, canOperate } from '../stores/session'
 import { activeTaskFor, taskStore, trackTask } from '../stores/tasks'
@@ -262,6 +266,8 @@ h4 { font-size: 11px; text-transform: uppercase; color: #aaa; letter-spacing: .0
 .status-badge.success { background: #f0fff4; color: #276749; }
 .status-badge.failed { background: #fff5f5; color: #c53030; }
 .status-badge.running { background: #ebf8ff; color: #2b6cb0; }
+.infra { font-size: 12px; margin-top: 6px; display: flex; align-items: center; gap: 6px; }
+.infra code { font-size: 11px; }
 .env-item { background: #f8f9fb; border-radius: 10px; padding: 12px; margin-bottom: 8px; font-size: 13px; }
 .lock { margin-left: 4px; }
 .feedback { margin-top: 8px; padding: 8px 12px; border-radius: 6px; font-size: 13px; }

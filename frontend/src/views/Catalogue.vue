@@ -128,6 +128,7 @@
               <div class="summary-item">✅ Webhook de pipeline (suivi en direct)</div>
               <div class="summary-item">✅ Première pipeline : tests et image dans le registry</div>
               <div class="summary-item">✅ Runtime de déploiement : <code>{{ runtimeLabel(selected.runtime_provider) }}</code></div>
+              <div class="summary-item" v-if="infraShown">✅ Infra (Kubernetes, dans chaque environnement) : <code>{{ selected.infra!.kubernetes }}</code><template v-if="infraVars"> ; l'appli lit {{ infraVars }}</template></div>
               <div class="summary-item" v-if="kubeManifests">✅ Manifests Kubernetes dans le repo : <code>{{ kubeManifests }}</code></div>
             </div>
           </div>
@@ -159,7 +160,7 @@
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { api, errorMessage } from '../api'
 import { langIcon, lifecycleLabels } from '../lib/projects'
-import { paramErrors, visible, fillDefaults, type ParamValues } from '../lib/parameters'
+import { keepFile, paramErrors, visible, fillDefaults, type ParamValues } from '../lib/parameters'
 import { can, myTeams } from '../stores/session'
 import TaskProgress from '../components/TaskProgress.vue'
 import { taskStore, trackTask } from '../stores/tasks'
@@ -192,9 +193,20 @@ watch(params, (v) => {
 const shownParams = computed(() => (selected.value?.parameters || []).filter(p => visible(p, params.value)))
 const paramErrs = computed(() => paramErrors(selected.value?.parameters || [], params.value))
 const hasParamErrors = computed(() => Object.keys(paramErrs.value).length > 0)
+// Infra : créée si son dossier est dans le repo (un paramètre peut l'omettre)
+const infraShown = computed(() => {
+  const st = selected.value
+  if (!st?.infra) return false
+  const dir = st.infra.kubernetes
+  return keepFile(st, dir, params.value)
+})
+const infraVars = computed(() => Object.keys(selected.value?.infra?.env || {}).join(', '))
 const kubeManifests = computed(() => {
-  const k = selected.value?.kubernetes
-  if (!k) return ''
+  const st = selected.value
+  const k = st?.kubernetes
+  if (!st || !k) return ''
+  const dir = (k.helm || k.kustomize)!
+  if (!keepFile(st, dir, params.value)) return '' // option décochée : manifests générés
   return k.helm ? `chart Helm ${k.helm}` : `base Kustomize ${k.kustomize}`
 })
 

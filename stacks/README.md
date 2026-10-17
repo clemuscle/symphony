@@ -16,7 +16,7 @@ d'une stack officielle et l'adapter, copier son dossier dans le repo de stacks.
 | Stack | Paramètres | Kubernetes |
 |---|---|---|
 | `api-rest-go` | version de Go (verrouillée), niveau de log, métriques et leur chemin | chart Helm en option |
-| `api-rest-python` | version de Python (verrouillée), niveau de log | base Kustomize en option |
+| `api-rest-python` | version de Python (verrouillée), niveau de log, base PostgreSQL et sa taille | base Kustomize en option ; infra : PostgreSQL (CloudNativePG) en option |
 | `api-rest-node` | version de Node.js (verrouillée), niveau de log | manifests générés |
 | `worker-python` | version de Python (verrouillée), intervalle, niveau de log | manifests générés |
 

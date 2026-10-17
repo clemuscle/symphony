@@ -342,6 +342,35 @@ Arrêter et relancer modifient `values.yaml` ou `kustomization.yaml` de la même
 fichiers d'un déploiement précédent qui ne servent plus (passage des manifests générés à
 ceux de la stack, fichier retiré du chart) sont supprimés du repo de déploiement.
 
+### L'infra avec l'appli
+
+Une stack peut porter l'infra de son service (`spec.infra`) : des **manifests
+d'opérateurs Kubernetes** dans un dossier du repo créé (un `Cluster` CloudNativePG pour
+une base PostgreSQL, par exemple), et les variables que l'appli lit dans les secrets que
+cette infra crée (`DATABASE_URL` ← clé `uri` du secret `db-app`). Elle est reprise dans
+la fiche, que l'équipe peut modifier.
+
+- **Une infra par environnement, en GitOps.** Au déploiement, le runtime `argocd` copie
+  le dossier dans `infra/src/` du dossier du service et écrit `infra/kustomization.yaml` :
+  objets nommés `<déploiement>-<nom>` (`payment-api-staging-db`), étiquetés, et annotés
+  `Prune=false`. La même Application les applique avec le service ; Argo CD sait lire la
+  santé d'un `Cluster` CloudNativePG, montrée sur la page du projet (`infra` de chaque
+  déploiement, d'après les types relevés dans les manifests et notés sur l'Application).
+- **Aucun identifiant chez Symphony.** L'opérateur crée la base et son secret dans le
+  cluster ; le Deployment le lit (`secretKeyRef`). Ni le mot de passe ni l'URI ne passent
+  par Symphony ou Git.
+- **Pas de perte par erreur.** Un objet de l'infra retiré de Git n'est pas élagué : il
+  reste dans le cluster (Argo CD le montre « à élaguer »). Seule la suppression du projet
+  (Applications supprimées en cascade) emporte l'infra, volumes compris.
+- **Kubernetes seulement.** Une stack dont l'infra serait créée est refusée à la création
+  si un environnement du projet tourne sur un autre runtime ; le runtime `docker` refuse
+  un déploiement avec infra. Avec un chart Helm, l'infra est dans le chart.
+
+L'infra cloud (OpenTofu, appliqué par la CI du repo en plan puis apply, avec les
+identifiants de la CI) viendra avec les premières cibles cloud (AWS, Scaleway, OVHcloud).
+La CI teste la chaîne sur kind avec l'opérateur (`TestCNPGOnCluster` : base créée, jointe
+avec l'URI de son secret, supprimée avec ses volumes).
+
 Les identifiants du registry ne sont jamais écrits dans Git : le cluster tire les images
 avec les siens (en démo, `registries.yaml` de k3s avec un jeton `read_registry`). Le
 compte Argo CD de Symphony n'a droit qu'aux Applications du projet `default` et à leurs
@@ -450,6 +479,7 @@ implémentations n'en savent rien.
 | « Stack » plutôt que « golden path » | un seul mot dans l'interface, la doc et le format ; il dit « une appli et son infra » (l'infra arrive en v0.13), comme chez Cycloid. L'ancien format (`template.yaml`, `kind: GoldenPath`, section `templates`) est lu jusqu'à la v1.0, signalé dans Administration | garder « golden path » (le concept du platform engineering, moins parlant pour l'infra) |
 | Paramètres en YAML maison, traduits en JSON Schema | un admin DevOps les écrit sans connaître JSON Schema ; le schéma généré valide (un validateur éprouvé, pas du code maison) et sert aux clients de l'API | JSON Schema écrit à la main (illisible), validation maison seule |
 | Catalogue officiel embarqué dans le binaire | versionné avec Symphony, aucun accès réseau ni jeton GitHub, marche hors ligne ; l'admin choisit ce qu'il expose | repo public séparé lu par Git (un jeton, une version à épingler, une instance GitLab sans accès à GitHub) |
+| Infra par manifests d'opérateurs en GitOps d'abord (CloudNativePG) | testable de bout en bout dans la démo k3s et en CI, sans compte cloud ; aucun identifiant chez Symphony (l'opérateur crée les secrets dans le cluster) ; une infra par environnement, supprimée avec le projet | OpenTofu d'abord (demande un cloud pour être testé ; viendra avec les cibles AWS et Scaleway) |
 | Manifests de la stack copiés dans le repo de déploiement | Argo CD ne lit qu'un repo, avec les identifiants qu'il a déjà ; le contrat (valeurs Helm, noms Kustomize) garde la main de Symphony sur l'image, les réplicas et les secrets | Application qui lit le repo du service (un accès Argo CD par repo) |
 | Config dans Git, bootstrap local minimal | la plateforme se pilote par commits ; le bootstrap règle le problème de poule et d'œuf | tout en local ; tout dans Git sans bootstrap (impossible) |
 | Rechargement de la config par polling (15 s) | simple, sans webhook entrant à exposer pour les repos de la plateforme | webhooks Git |

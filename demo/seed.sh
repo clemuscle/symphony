@@ -55,9 +55,10 @@ wait_task() {
 
 projects=$(jq -c '.[]' seed/projects.json)
 if [ "$K8S" != true ]; then
-  # Sans Kubernetes, pas de stack api-rest-go-k8s (la production est alors
-  # sur Docker, voir up.sh) : la stack officielle api-rest-go à la place
-  projects=$(echo "$projects" | jq -c 'if .stack == "api-rest-go-k8s" then .stack = "api-rest-go" else . end')
+  # Sans Kubernetes, pas de stacks *-k8s (la production est alors sur Docker,
+  # voir up.sh) : la stack officielle à la place, sans base PostgreSQL (son
+  # infra demande Kubernetes)
+  projects=$(echo "$projects" | jq -c 'if (.stack | endswith("-k8s")) then .stack |= rtrimstr("-k8s") | del(.parameters.postgres) else . end')
 fi
 
 # 1. Création : les trois tâches partent ensemble, leurs pipelines passent
@@ -97,7 +98,8 @@ while read -r p; do
   grep -q '^  slo:' <<<"$current" && continue
 
   fiche=$(sed -e "s|__REPO_URL__|$GITLAB_URL/$repo|g" -e "s|__ARGOCD_URL__|$ARGOCD_URL|g" "seed/$name.yaml")
-  [ "$K8S" = true ] || fiche=$(sed '/title: Application Argo CD/,+2d' <<<"$fiche")
+  [ "$K8S" = true ] || fiche=$(sed -e '/title: Application Argo CD/,+2d' -e '/# k8s:début/,/# k8s:fin/d' \
+    -e 's/^\(    stack: .*\)-k8s$/\1/' <<<"$fiche")
   jq -n --arg c "$fiche" \
     '{branch: "main", content: $c, commit_message: "docs: fiche catalogue complète (équipe, SLO, dépendances) [skip ci]"}' \
     | curl -sf -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" -H "Content-Type: application/json" --data @- \

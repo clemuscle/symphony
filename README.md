@@ -17,7 +17,9 @@ de les remplacer.
   chart Helm ou base Kustomize) et son **formulaire borné** (choix, valeurs verrouillées
   par l'équipe plateforme, champs conditionnels, validés en JSON Schema) devient un repo
   GitLab ou GitHub qui se construit tout seul (GitLab CI ou GitHub Actions, image dans le
-  registry GitLab ou sur GHCR). Un **catalogue officiel** est embarqué (Go, Python,
+  registry GitLab ou sur GHCR). Une stack peut porter **son infra** : une base PostgreSQL
+  par environnement (CloudNativePG), appliquée en GitOps avec le service et supprimée
+  avec lui, sans qu'aucun identifiant ne passe par Symphony. Un **catalogue officiel** est embarqué (Go, Python,
   Node.js, worker) ; ajouter une stack à soi, c'est pousser un dossier dans un repo Git :
   elle est disponible en moins de 15 s, sans redémarrage.
 - **Projets et leur fiche** : équipe, criticité, SLO, dépendances, liens et actions Day-2
@@ -178,9 +180,9 @@ v0.8 (chart Helm testé en CI, configuration stricte, droits par équipe, erreur
 v0.9 (secrets des applis, environnements et promotion, webhooks GitHub, OpenAPI, mode
 visite), v0.10 (finitions), v0.11 (page Administration, `symphony validate`,
 configuration de référence, quickstart, licence Apache 2.0), v0.12 (stacks
-paramétrables, manifests Helm ou Kustomize fournis par la stack, catalogue officiel). À
-venir : l'infra avec l'appli, import des services existants, gouvernance par équipe,
-puis la v1.0, ouverte aux utilisateurs.
+paramétrables, manifests Helm ou Kustomize fournis par la stack, catalogue officiel),
+v0.13 (l'infra avec l'appli : PostgreSQL par CloudNativePG). À venir : import des
+services existants, gouvernance par équipe, puis la v1.0, ouverte aux utilisateurs.
 Détail : [ROADMAP.md](ROADMAP.md) et [CHANGELOG.md](CHANGELOG.md).
 
 **Stack** : Go 1.27, chi, go-oidc, PostgreSQL, Prometheus client, Vue 3 + Vite, GitLab CE,

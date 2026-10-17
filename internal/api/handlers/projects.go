@@ -56,7 +56,7 @@ var projectNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // CreateProject valide la demande puis lance la création en tâche (202) :
 // repo, squelette, fiche catalogue, webhook et première pipeline
-func CreateProject(providers *provider.Registry, db *database.DB, stacks *gitops.StackLoader, runner *tasks.Runner) http.HandlerFunc {
+func CreateProject(providers *provider.Registry, db *database.DB, stacks *gitops.StackLoader, envs *environments.Holder, runner *tasks.Runner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req CreateProjectRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -124,6 +124,10 @@ func CreateProject(providers *provider.Registry, db *database.DB, stacks *gitops
 			respondError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		if err := checkInfraRuntimes(providers, envs, stack, req); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		if _, err := db.GetProjectByName(req.Name); err == nil {
 			respondError(w, http.StatusConflict, "le projet existe déjà: "+req.Name)
 			return
@@ -145,6 +149,37 @@ func CreateProject(providers *provider.Registry, db *database.DB, stacks *gitops
 			"scm":      scm.ID(),
 		})
 	}
+}
+
+// checkInfraRuntimes : l'infra d'une stack (manifests d'opérateurs) ne
+// s'applique que sur Kubernetes ; un projet qui l'aurait est refusé si l'un de
+// ses environnements tourne sur un autre runtime, avant de créer son repo
+func checkInfraRuntimes(providers *provider.Registry, envs *environments.Holder, stack *gitops.Stack, req CreateProjectRequest) error {
+	if stack.InfraKept(req.Parameters) == nil {
+		return nil
+	}
+	targets := map[string]string{} // environnement → runtime
+	if list := envs.List(); len(list) > 0 {
+		for _, e := range list {
+			targets[e.Name] = stack.RuntimeFor(e.Name, e.Runtime)
+		}
+	} else {
+		targets[""] = firstNonEmpty(req.RuntimeProvider, stack.RTProvider)
+	}
+	for env, id := range targets {
+		rt, err := providers.Runtime(id)
+		if err != nil {
+			return fmt.Errorf("runtime %s : %w", id, err)
+		}
+		if rt.Type() != "argocd" {
+			where := "le runtime " + rt.ID()
+			if env != "" {
+				where = fmt.Sprintf("l'environnement %s tourne sur %s (%s)", env, rt.ID(), rt.Type())
+			}
+			return fmt.Errorf("cette stack crée son infra (manifests d'opérateurs) sur Kubernetes, mais %s : choisir une stack sans infra, ou en désactiver l'option", where)
+		}
+	}
+	return nil
 }
 
 // projectTeam : l'équipe propriétaire d'un nouveau projet. Un developer
@@ -182,9 +217,10 @@ func projectTeam(u *auth.User, owner string) (string, error) {
 // catalogueFile construit la fiche catalogue d'un nouveau projet, poussée dans
 // son repo avec le squelette. Une fiche fournie par la stack (même nom dans
 // le skeleton) sert de base : elle peut y déclarer liens, SLO et actions.
-// kube : les manifests Kubernetes de la stack créés dans le repo (nil sinon).
+// kube : les manifests Kubernetes de la stack créés dans le repo (nil sinon) ;
+// infra : son infra, si elle y est.
 func catalogueFile(base string, p createParams, stack *gitops.Stack, repo *provider.Repo,
-	ci provider.CIProvider, createdBy string, kube *catalogue.Kubernetes) (string, error) {
+	ci provider.CIProvider, createdBy string, kube *catalogue.Kubernetes, infra *catalogue.Infra) (string, error) {
 	svc := catalogue.Service{}
 	if base != "" {
 		var err error
@@ -211,6 +247,9 @@ func catalogueFile(base string, p createParams, stack *gitops.Stack, repo *provi
 	sp.Repo = repo.WebURL
 	if sp.Kubernetes == nil {
 		sp.Kubernetes = kube
+	}
+	if sp.Infra == nil {
+		sp.Infra = infra
 	}
 	sp.Links = append([]catalogue.Link{
 		{Title: "Repository", URL: repo.WebURL, Icon: "code"},

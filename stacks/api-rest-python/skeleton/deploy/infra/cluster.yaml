@@ -1,0 +1,15 @@
+# Base PostgreSQL du service (CloudNativePG), une par environnement. Symphony
+# la nomme <déploiement>-db ; l'opérateur crée le secret <déploiement>-db-app,
+# dont l'appli lit l'URI (DATABASE_URL, spec.infra de la fiche).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: db
+spec:
+  instances: 1
+  storage:
+    size: {{params.db_size}}
+  bootstrap:
+    initdb:
+      database: app
+      owner: app

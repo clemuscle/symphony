@@ -554,6 +554,20 @@ components:
           type: array
           items: { $ref: "#/components/schemas/StackParameter" }
         schema: { type: object, description: "JSON Schema (draft 2020-12) des valeurs des paramètres" }
+        files:
+          type: array
+          description: Fichiers du squelette créés sous condition des paramètres
+          items:
+            type: object
+            properties:
+              path: { type: string }
+              when: { type: object }
+        infra:
+          type: object
+          description: Infra de la stack (manifests d'opérateurs), appliquée avec le service
+          properties:
+            kubernetes: { type: string }
+            env: { type: object, description: "Variable → {secret, key} d'un secret créé par l'infra" }
         kubernetes:
           type: object
           description: Chart Helm ou base Kustomize du repo créé
@@ -662,6 +676,15 @@ components:
         provider: { type: string, description: Runtime }
         sync: { type: string, description: Argo CD }
         health: { type: string, description: Argo CD }
+        infra:
+          type: array
+          description: Objets de l'infra de la stack (runtime argocd) et leur santé
+          items:
+            type: object
+            properties:
+              kind: { type: string, examples: [Cluster] }
+              name: { type: string }
+              health: { type: string, examples: [Healthy, Progressing] }
         created_at: { type: string, format: date-time }
     ProjectImage:
       type: object

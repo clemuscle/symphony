@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/provider"
 	"gopkg.in/yaml.v3"
 )
@@ -55,9 +56,11 @@ type Stack struct {
 	Schema     json.RawMessage `json:"schema"`
 	params     *paramSchema
 	// Files : fichiers du squelette créés sous condition
-	Files []FileRule `json:"-"`
+	Files []FileRule `json:"files,omitempty"`
 	// Kubernetes : manifests fournis par la stack (chemins dans le repo créé)
 	Kubernetes *Kubernetes `json:"kubernetes,omitempty"`
+	// Infra : l'infra du service (manifests d'opérateurs), appliquée avec lui
+	Infra *catalogue.Infra `json:"infra,omitempty"`
 	// Legacy : décrite par template.yaml (kind GoldenPath), à renommer
 	Legacy bool `json:"-"`
 }
@@ -65,8 +68,8 @@ type Stack struct {
 // FileRule : le fichier ou dossier Path du squelette n'est créé que si les
 // paramètres remplissent When
 type FileRule struct {
-	Path string `yaml:"path"`
-	When When   `yaml:"when"`
+	Path string `yaml:"path" json:"path"`
+	When When   `yaml:"when" json:"when"`
 }
 
 // Kubernetes : chart Helm ou base Kustomize du service, dans son repo. Le
@@ -107,6 +110,7 @@ type stackDoc struct {
 		Parameters   []Parameter       `yaml:"parameters"`
 		Files        []FileRule        `yaml:"files"`
 		Kubernetes   *Kubernetes       `yaml:"kubernetes"`
+		Infra        *catalogue.Infra  `yaml:"infra"`
 	} `yaml:"spec"`
 }
 
@@ -201,6 +205,14 @@ func parseStack(dir, file, content string) (Stack, error) {
 		}
 		k.Helm, k.Kustomize = strings.Trim(k.Helm, "/"), strings.Trim(k.Kustomize, "/")
 	}
+	if in := doc.Spec.Infra; in != nil {
+		if err := CheckInfra(in); err != nil {
+			return Stack{}, fmt.Errorf("spec.infra: %w", err)
+		}
+		if k := doc.Spec.Kubernetes; k != nil && k.Helm != "" {
+			return Stack{}, fmt.Errorf("spec.infra : avec un chart Helm, l'infra est dans le chart")
+		}
+	}
 
 	title := doc.Metadata.Title
 	if title == "" {
@@ -230,6 +242,7 @@ func parseStack(dir, file, content string) (Stack, error) {
 		params:       params,
 		Files:        doc.Spec.Files,
 		Kubernetes:   doc.Spec.Kubernetes,
+		Infra:        doc.Spec.Infra,
 		Legacy:       legacy,
 	}, nil
 }
@@ -346,6 +359,17 @@ func checkFiles(s Stack, exists map[string]bool) error {
 			return fmt.Errorf("spec.kubernetes : %s introuvable dans le squelette", want)
 		}
 	}
+	if in := s.Infra; in != nil {
+		found := false
+		for f := range exists {
+			if strings.HasPrefix(f, s.Skeleton+"/") && strings.HasPrefix(RepoPath(s, f), in.Kubernetes+"/") {
+				found = true
+			}
+		}
+		if !found {
+			return fmt.Errorf("spec.infra : dossier %s introuvable ou vide dans le squelette", in.Kubernetes)
+		}
+	}
 	return nil
 }
 
@@ -410,4 +434,37 @@ func contains(list []string, v string) bool {
 		}
 	}
 	return false
+}
+
+var (
+	envNameRe    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	secretNameRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+)
+
+// CheckInfra vérifie l'infra d'une stack (ou d'une fiche) : un dossier du
+// repo, et des variables lues dans les secrets que cette infra crée
+func CheckInfra(in *catalogue.Infra) error {
+	if err := checkRepoPath(in.Kubernetes); err != nil {
+		return fmt.Errorf("kubernetes: %w", err)
+	}
+	in.Kubernetes = strings.Trim(path.Clean(in.Kubernetes), "/")
+	for name, ref := range in.Env {
+		if !envNameRe.MatchString(name) {
+			return fmt.Errorf("env.%s : nom de variable invalide", name)
+		}
+		if !secretNameRe.MatchString(ref.Secret) || ref.Key == "" {
+			return fmt.Errorf("env.%s : secret (nom DNS, sans le préfixe du déploiement) et key requis", name)
+		}
+	}
+	return nil
+}
+
+// InfraKept : l'infra de la stack, si son dossier est dans les fichiers du
+// repo créé (un paramètre peut l'omettre)
+func (s Stack) InfraKept(params map[string]any) *catalogue.Infra {
+	if s.Infra == nil || !s.Keep(s.Infra.Kubernetes, params) {
+		return nil
+	}
+	in := *s.Infra
+	return &in
 }

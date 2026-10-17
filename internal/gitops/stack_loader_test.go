@@ -119,6 +119,11 @@ func TestParseStackInvalid(t *testing.T) {
 		"helm et kustomize":   {StackFile, goStack + "  kubernetes: {helm: a, kustomize: b}\n"},
 		"kubernetes vide":     {StackFile, goStack + "  kubernetes: {}\n"},
 		"kubernetes absolu":   {StackFile, goStack + "  kubernetes: {helm: /chart}\n"},
+		"infra sans dossier":  {StackFile, goStack + "  infra: {env: {A: {secret: db, key: uri}}}\n"},
+		"infra variable":      {StackFile, goStack + "  infra: {kubernetes: i, env: {A-B: {secret: db, key: uri}}}\n"},
+		"infra secret":        {StackFile, goStack + "  infra: {kubernetes: i, env: {A: {secret: Db_App, key: uri}}}\n"},
+		"infra sans clé":      {StackFile, goStack + "  infra: {kubernetes: i, env: {A: {secret: db}}}\n"},
+		"infra et helm":       {StackFile, goStack + "  kubernetes: {helm: c}\n  infra: {kubernetes: i}\n"},
 	}
 	for name, c := range cases {
 		if _, err := parseStack("stacks/api-rest-go", c.file, c.content); err == nil {
@@ -137,6 +142,14 @@ func TestCheckFiles(t *testing.T) {
 	}
 	if _, err := CheckStack("stacks/api-rest-go", StackFile, stack, exists, nil); err != nil {
 		t.Errorf("stack valide refusée : %v", err)
+	}
+	infra := goStack + "  infra: {kubernetes: deploy/infra}\n"
+	if _, err := CheckStack("stacks/api-rest-go", StackFile, infra, exists, nil); err == nil || !strings.Contains(err.Error(), "deploy/infra") {
+		t.Errorf("dossier de l'infra absent : %v", err)
+	}
+	exists["stacks/api-rest-go/skeleton/deploy/infra/cluster.yaml.tmpl"] = true
+	if _, err := CheckStack("stacks/api-rest-go", StackFile, infra, exists, nil); err != nil {
+		t.Errorf("infra présente refusée : %v", err)
 	}
 	delete(exists, "stacks/api-rest-go/skeleton/deploy/chart/Chart.yaml")
 	if _, err := CheckStack("stacks/api-rest-go", StackFile, stack, exists, nil); err == nil || !strings.Contains(err.Error(), "Chart.yaml") {
@@ -381,7 +394,7 @@ func TestReferenceStack(t *testing.T) {
 	var doc stackDoc
 	yaml.Unmarshal(raw, &doc)
 	// Clés exclusives d'une autre : documentées en commentaire
-	exclusive := map[string]string{"spec.ci_template": "# ci_template:", "spec.kubernetes.kustomize": "# kustomize:"}
+	exclusive := map[string]string{"spec.ci_template": "# ci_template:", "spec.kubernetes.helm": "# helm:"}
 	missing := func(name string) {
 		if c, ok := exclusive[name]; ok && strings.Contains(string(raw), c) {
 			return

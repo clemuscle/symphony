@@ -43,6 +43,7 @@ for arg in "$@"; do
 done
 ARGOCD_VERSION=v3.1.8
 ESO_CHART_VERSION=2.11.0
+CNPG_CHART_VERSION=0.29.1
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 info() { echo -e "${BLUE}[démo]${NC} $*"; }
@@ -405,6 +406,23 @@ spec:
   createNamespace: true
 EOF
   ok "External Secrets Operator ${ESO_CHART_VERSION} en cours d'installation"
+
+  # CloudNativePG : l'opérateur des bases PostgreSQL que créent les stacks avec
+  # infra (Cluster dans le repo du service, appliqué par Argo CD)
+  kube apply -f - >/dev/null <<EOF
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: cloudnative-pg
+  namespace: kube-system
+spec:
+  repo: https://cloudnative-pg.github.io/charts
+  chart: cloudnative-pg
+  version: ${CNPG_CHART_VERSION}
+  targetNamespace: cnpg-system
+  createNamespace: true
+EOF
+  ok "CloudNativePG ${CNPG_CHART_VERSION} en cours d'installation"
 else
   warn "Sans Kubernetes (--no-k8s) : seul le runtime docker-local est utilisable"
 fi
@@ -501,6 +519,15 @@ spec:
           key: token
 EOF
   ok "External Secrets branché sur Vault (ClusterSecretStore symphony-vault, lecture de secret/apps/*)"
+
+  for i in $(seq 60); do
+    kube get crd clusters.postgresql.cnpg.io >/dev/null 2>&1 && break
+    [ "$i" = 60 ] && fail "CloudNativePG ne s'installe pas : kubectl -n cnpg-system get pods"
+    sleep 5
+  done
+  kube -n cnpg-system rollout status deployment/cloudnative-pg --timeout=300s >/dev/null \
+    || fail "CloudNativePG ne démarre pas"
+  ok "CloudNativePG prêt (bases PostgreSQL de l'infra des stacks)"
 fi
 
 # ── 7. Symphony ───────────────────────────────────────────────────────────────

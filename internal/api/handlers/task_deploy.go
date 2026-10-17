@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/clemuscle/symphony/internal/database"
+	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/provider"
 	"github.com/clemuscle/symphony/internal/tasks"
 )
@@ -61,6 +62,10 @@ func (d TaskDeps) deploy(_ context.Context, x *tasks.Exec) error {
 	if err != nil {
 		return err
 	}
+	infra, err := d.stackInfra(p.ProjectName)
+	if err != nil {
+		return err
+	}
 	if p.PromotedFrom != "" {
 		x.Progress("promotion %s → %s, %s : %s:%s", p.PromotedFrom, p.Environment, rt.ID(), p.Image, orLatest(p.Tag))
 	} else {
@@ -79,6 +84,7 @@ func (d TaskDeps) deploy(_ context.Context, x *tasks.Exec) error {
 		// Identifiants lus au moment du déploiement, jamais enregistrés dans la tâche
 		RegistryAuth: registryAuth(d.Providers, d.DB, p.ProjectName, p.Image),
 		Manifests:    manifests,
+		Infra:        infra,
 	})
 	if err != nil {
 		return err
@@ -195,6 +201,40 @@ func (d TaskDeps) stackManifests(project string, rt provider.RuntimeProvider) (*
 	if dir == "" || dir == "." || strings.HasPrefix(dir, "..") {
 		return nil, fmt.Errorf("fiche du projet : spec.kubernetes %q invalide", dir)
 	}
+	files, err := d.repoDir(project, dir)
+	if err != nil {
+		return nil, fmt.Errorf("manifests %s : %w", m.Kind, err)
+	}
+	m.Files = files
+	return m, nil
+}
+
+// stackInfra : l'infra que la fiche du projet déclare (spec.infra, écrite par
+// sa stack), lue sur main dans son repo. Le runtime l'applique, ou refuse
+// s'il ne sait pas (docker) : le service n'irait pas sans sa base.
+func (d TaskDeps) stackInfra(project string) (*provider.Infra, error) {
+	svc, ok := d.Store.Get(project)
+	if !ok || svc.Spec.Infra == nil {
+		return nil, nil
+	}
+	spec := *svc.Spec.Infra
+	if err := gitops.CheckInfra(&spec); err != nil {
+		return nil, fmt.Errorf("fiche du projet : spec.infra : %w", err)
+	}
+	files, err := d.repoDir(project, spec.Kubernetes)
+	if err != nil {
+		return nil, fmt.Errorf("infra : %w", err)
+	}
+	in := &provider.Infra{Files: files, Env: map[string]provider.InfraSecretRef{}}
+	for name, ref := range spec.Env {
+		in.Env[name] = provider.InfraSecretRef{Secret: ref.Secret, Key: ref.Key}
+	}
+	return in, nil
+}
+
+// repoDir : les fichiers du dossier dir du repo du projet, sur main, par
+// chemin relatif à dir
+func (d TaskDeps) repoDir(project, dir string) (map[string]string, error) {
 	proj, err := d.DB.GetProjectByName(project)
 	if err != nil {
 		return nil, fmt.Errorf("projet %s : %w", project, err)
@@ -203,16 +243,17 @@ func (d TaskDeps) stackManifests(project string, rt provider.RuntimeProvider) (*
 	if err != nil {
 		return nil, err
 	}
-	files, err := scm.ListFiles(proj.RepoPath, "main", dir)
+	list, err := scm.ListFiles(proj.RepoPath, "main", dir)
 	if err != nil {
-		return nil, fmt.Errorf("manifests %s (%s) du repo %s : %w", m.Kind, dir, proj.RepoPath, err)
+		return nil, fmt.Errorf("%s du repo %s : %w", dir, proj.RepoPath, err)
 	}
-	for _, f := range files {
+	files := make(map[string]string, len(list))
+	for _, f := range list {
 		content, err := scm.GetFileContent(proj.RepoPath, "main", f)
 		if err != nil {
 			return nil, fmt.Errorf("lecture de %s : %w", f, err)
 		}
-		m.Files[strings.TrimPrefix(f, dir+"/")] = content
+		files[strings.TrimPrefix(f, dir+"/")] = content
 	}
-	return m, nil
+	return files, nil
 }

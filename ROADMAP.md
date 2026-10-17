@@ -257,11 +257,18 @@ officielles sans rien pousser sur la forge.
 
 ## v0.13 — L'infra avec l'appli
 
-- [ ] Une stack porte son infra, appliquée par la CI du repo (OpenTofu en plan
-      puis apply, ou manifests d'opérateurs en GitOps) : Symphony déclenche et suit,
-      sans identifiants cloud
-- [ ] PostgreSQL par CloudNativePG de bout en bout (démo k3s et CI)
-- [ ] Un projet supprimé emporte son infra
+- [x] Une stack porte son infra (`spec.infra`) : manifests d'opérateurs appliqués en
+      GitOps avec le service, une infra par environnement ; Symphony la suit (santé sur
+      la page du projet) sans détenir d'identifiants. OpenTofu, appliqué par la CI du
+      repo, viendra avec les cibles cloud (AWS, Scaleway)
+- [x] PostgreSQL par CloudNativePG de bout en bout : démo k3s (`auth-service` et sa
+      base) et CI (kind)
+- [x] Un projet supprimé emporte son infra (volumes compris) ; un objet retiré de Git
+      n'est jamais élagué par erreur
+
+Fini quand : un projet créé avec l'option PostgreSQL a sa base dans chaque
+environnement, son appli s'y connecte sans que le mot de passe passe par Symphony, et sa
+suppression ne laisse rien dans le cluster.
 
 ## v0.14 — Les services existants
 

@@ -119,6 +119,9 @@ export interface Stack {
   parameters: StackParameter[]
   schema: Record<string, unknown> // JSON Schema des paramètres, appliqué par l'API
   kubernetes?: { helm?: string; kustomize?: string }
+  files?: { path: string; when: Record<string, ParamValue | ParamValue[]> }[] // fichiers sous condition
+  // Infra : manifests d'opérateurs appliqués avec le service (Kubernetes)
+  infra?: { kubernetes: string; env?: Record<string, { secret: string; key: string }> }
 }
 
 export type ParamValue = string | number | boolean
@@ -151,6 +154,7 @@ export interface Deployment {
   provider: string // runtime qui porte le déploiement
   sync?: string // Argo CD : Synced, OutOfSync
   health?: string // Argo CD : Healthy, Progressing, Degraded…
+  infra?: { kind: string; name: string; health: string }[] // objets de l'infra de la stack
 }
 
 export interface Pipeline {
