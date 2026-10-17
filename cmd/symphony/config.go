@@ -150,11 +150,11 @@ func stacksSource(cfg *config.Config) (gitops.StackSource, []string, error) {
 		return gitops.StackSource{}, nil, fmt.Errorf("stacks et templates (son ancien nom) : n'en garder qu'une")
 	case cfg.Templates != nil:
 		return gitops.StackSource{
-				Repo:   orDefault(cfg.Templates.Repo, "root/symphony-templates"),
-				Branch: orDefault(cfg.Templates.Branch, "main"),
-				Path:   orDefault(cfg.Templates.Path, "templates"),
-			}, []string{"section templates : renommée stacks (l'ancien nom est lu jusqu'à la v1.0 ; " +
-				"défauts de stacks : dossier stacks, et official pour le catalogue officiel)"}, nil
+			Repo:   orDefault(cfg.Templates.Repo, "root/symphony-templates"),
+			Branch: orDefault(cfg.Templates.Branch, "main"),
+			Path:   orDefault(cfg.Templates.Path, "templates"),
+		}, []string{"section templates : renommée stacks (l'ancien nom est lu jusqu'à la v1.0 ; " +
+			"défauts de stacks : dossier stacks, et official pour le catalogue officiel)"}, nil
 	case cfg.Stacks == nil:
 		return gitops.StackSource{Repo: "root/symphony-templates", Branch: "main", Path: "templates"},
 			[]string{"pas de section stacks : stacks lues dans root/symphony-templates, dossier templates " +
