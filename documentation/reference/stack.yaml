@@ -1,0 +1,105 @@
+# Stack de référence : <dossier des stacks>/<nom>/stack.yaml, dans le repo de
+# stacks (section stacks de la configuration) ou le catalogue officiel. Le
+# dossier porte aussi la CI et le squelette du repo créé.
+#
+#   stacks/
+#     api-rest-go/
+#       stack.yaml           ← ce fichier
+#       ci.gitlab-ci.yml     ← CI du repo créé, pour GitLab
+#       ci.github-actions.yml   … et pour GitHub (spec.ci_templates)
+#       skeleton/            ← fichiers du repo créé (spec.skeleton)
+#
+#   symphony validate -config symphony.yaml -stacks stacks/
+#
+# Une clé inconnue est une erreur. Une stack invalide est refusée seule : les
+# autres restent proposées, et la page Administration dit pourquoi.
+#
+# Dans le squelette et la CI, ces variables sont remplacées à la création du
+# projet : {{SERVICE_NAME}}, {{SERVICE_DESCRIPTION}}, {{LANGUAGE}}, {{TYPE}},
+# {{PORT}}, {{YEAR}}, et {{params.<nom>}} pour chaque paramètre (vide s'il est
+# sans objet ; true/false pour un booléen). Un fichier du squelette en .tmpl
+# est créé sans ce suffixe (go.mod.tmpl → go.mod) : les outils du repo de
+# stacks ne le prennent pas pour le leur.
+#
+# Ancien format (golden path) : template.yaml avec kind GoldenPath, encore lu
+# jusqu'à la v1.0 et signalé dans la page Administration.
+
+apiVersion: symphony/v1
+kind: Stack # requis
+metadata:
+  name: api-rest-go # requis : le nom du dossier (minuscules, chiffres, tirets)
+  title: API REST Go # affiché dans le catalogue ; défaut : name
+  description: API REST avec logs structurés, healthcheck et métriques
+  icon: go # réservé : le catalogue choisit l'icône d'après spec.language
+spec:
+  language: go # go, python, node… (icône et étiquette du catalogue)
+  type: api # api, worker…
+  # Providers du projet, par id dans la configuration ; vides : ceux par
+  # défaut (une stack du catalogue officiel n'en désigne aucun). Le CI doit
+  # tourner sur la plateforme du SCM (gitlab_ci sur gitlab, github_actions
+  # sur github).
+  providers:
+    scm: gitlab
+    ci: gitlab-ci
+    registry: gitlab-registry # facultatif
+    runtime: docker
+  skeleton: skeleton # dossier du squelette, relatif à la stack ; défaut skeleton
+  # La CI : une par plateforme (gitlab, github), choisie d'après le SCM ; ou
+  # une seule, pour la plateforme du CI de la stack :
+  # ci_template: ci.gitlab-ci.yml
+  # L'une des deux est requise.
+  ci_templates:
+    gitlab: ci.gitlab-ci.yml
+    github: ci.github-actions.yml
+  # Runtime par environnement, à la place de celui de la configuration
+  # (ex. une API qui tourne sur Kubernetes dès staging)
+  environments:
+    staging: argocd
+
+  # ─── Paramètres : le formulaire de création ─────────────────────────────────
+  # Traduits en JSON Schema (servi par GET /api/v1/stacks, champ schema), qui
+  # valide les valeurs saisies. Dans l'ordre d'affichage.
+  parameters:
+    - name: go_version # requis : minuscules, chiffres, _ ; {{params.go_version}}
+      title: Version de Go # libellé ; défaut : name
+      description: Fixée par l'équipe plateforme # aide sous le champ
+      # string, number, boolean, ou choice (l'une des valeurs de choices)
+      type: choice
+      choices: ["1.22", "1.23"]
+      default: "1.22" # du type du paramètre
+      # Valeur fixée par l'équipe plateforme (default), montrée sans pouvoir
+      # la changer
+      locked: true
+    - name: metrics
+      title: Exposer les métriques Prometheus
+      type: boolean
+      default: true
+    - name: metrics_path
+      title: Chemin des métriques
+      type: string
+      default: /metrics
+      required: true # une valeur, non vide, est exigée
+      # N'existe que si d'autres paramètres, déclarés avant, ont ces valeurs
+      # (une liste : l'une d'elles) ; sinon il n'est ni demandé ni accepté
+      when: { metrics: true }
+
+  # Fichiers ou dossiers du squelette (chemins dans le repo créé) créés
+  # seulement si les paramètres remplissent when
+  files:
+    - path: cmd/metrics.go
+      when: { metrics: true }
+
+  # Manifests Kubernetes du service, dans le repo créé : un chart Helm (son
+  # dossier, avec Chart.yaml) ou une base Kustomize, l'un ou l'autre :
+  # kustomize: deploy/kustomize
+  # Le runtime argocd les déploie (lus sur main au déploiement) à la place
+  # des manifests qu'il génère. Contrat d'un chart, valeurs écrites par
+  # Symphony : fullnameOverride, replicaCount, image.repository, image.tag,
+  # containerPort, env (nom → valeur), secretEnv (Secret des variables
+  # secrètes, vide sans secret), ingress.enabled, ingress.host,
+  # ingress.className, podAnnotations. Contrat d'une base : un Deployment et
+  # un Service nommés app, l'image app et un port nommé http ; Symphony
+  # préfixe les noms et fixe image, réplicas, variables (envFrom du premier
+  # conteneur) et Ingress. Absent du repo (paramètre) : manifests générés.
+  kubernetes:
+    helm: deploy/chart

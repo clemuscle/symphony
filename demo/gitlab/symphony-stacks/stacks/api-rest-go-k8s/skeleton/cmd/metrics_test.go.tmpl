@@ -1,0 +1,16 @@
+package main
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func TestMetrics(t *testing.T) {
+	w := httptest.NewRecorder()
+	newMux().ServeHTTP(w, httptest.NewRequest("GET", "{{params.metrics_path}}", nil))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "http_requests_total") {
+		t.Errorf("expected metrics, got %d %q", w.Code, w.Body.String())
+	}
+}

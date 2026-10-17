@@ -4,7 +4,7 @@ Configuration de Symphony, tenue par l'équipe plateforme (groupe `platform`).
 
 ```
 symphony.yaml     # providers (scm, ci, registry, runtime, secrets, identity), catalogue,
-                  # repo des golden paths, authentification
+                  # repo des stacks, authentification
 ```
 
 ## symphony.yaml
@@ -33,7 +33,7 @@ config_source:
 ```
 
 Relu toutes les 15 s : une version valide est appliquée à chaud (providers, repo
-des templates, authentification), une version invalide est refusée et la
+des stacks, authentification), une version invalide est refusée et la
 précédente reste en place (voir les logs de Symphony). Seul le bootstrap demande
 un redémarrage.
 
@@ -58,7 +58,7 @@ qui donnent chaque rôle.
 
 ## Où sont les autres repos
 
-- `platform/symphony-templates` : les golden paths (le catalogue de Symphony) ;
+- `platform/symphony-stacks` : les stacks de la plateforme, proposées avec le catalogue officiel ;
 - `platform/symphony-deployments` : l'état voulu des services sur Kubernetes (Argo CD) ;
 - `apps/*` : les projets créés par Symphony. Chacun porte sa fiche catalogue
   (`catalog-info.yaml`, à la racine) : son équipe la modifie par un commit.

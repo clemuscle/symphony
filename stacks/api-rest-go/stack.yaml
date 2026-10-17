@@ -1,0 +1,51 @@
+apiVersion: symphony/v1
+kind: Stack
+metadata:
+  name: api-rest-go
+  title: API REST Go
+  description: API REST en Go, logs structurés, healthcheck, métriques Prometheus et chart Helm en option
+  icon: go
+spec:
+  language: go
+  type: api
+  ci_templates:
+    gitlab: ci.gitlab-ci.yml
+    github: ci.github-actions.yml
+  parameters:
+    - name: go_version
+      title: Version de Go
+      description: Fixée par l'équipe plateforme (images de build validées)
+      type: choice
+      choices: ["1.22", "1.23"]
+      default: "1.22"
+      locked: true
+    - name: log_level
+      title: Niveau de journalisation
+      description: Par défaut ; la variable LOG_LEVEL le change au déploiement
+      type: choice
+      choices: [debug, info, warn, error]
+      default: info
+    - name: metrics
+      title: Exposer les métriques Prometheus
+      type: boolean
+      default: true
+    - name: metrics_path
+      title: Chemin des métriques
+      type: string
+      default: /metrics
+      required: true
+      when: { metrics: true }
+    - name: helm_chart
+      title: Chart Helm dans le repo
+      description: Déployé tel quel sur Kubernetes (runtime argocd), et modifiable par l'équipe ; sinon Symphony génère les manifests
+      type: boolean
+      default: false
+  files:
+    - path: cmd/metrics.go
+      when: { metrics: true }
+    - path: cmd/metrics_test.go
+      when: { metrics: true }
+    - path: deploy/chart
+      when: { helm_chart: true }
+  kubernetes:
+    helm: deploy/chart

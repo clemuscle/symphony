@@ -138,7 +138,12 @@ func TestReferenceCoversSchema(t *testing.T) {
 	fields := reflect.TypeOf(config.Config{})
 	for i := 0; i < fields.NumField(); i++ {
 		key := strings.Split(fields.Field(i).Tag.Get("yaml"), ",")[0]
-		if key != "config_source" && !regexp.MustCompile(`(?m)^`+key+`:`).Match(raw) {
+		// templates : ancien nom de stacks, exclusif d'elle, documenté en commentaire
+		pattern := `(?m)^` + key + `:`
+		if key == "templates" {
+			pattern = `(?m)^# templates:`
+		}
+		if key != "config_source" && !regexp.MustCompile(pattern).Match(raw) {
 			t.Errorf("section %s absente de %s", key, file)
 		}
 	}

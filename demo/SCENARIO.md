@@ -6,7 +6,8 @@ Compter 15 à 20 minutes, dont 3 à 4 d'attente de pipeline.
 Organisation de la GitLab de démo :
 
 - groupe **platform** (équipe plateforme, alice) : `symphony-config` (configuration de
-  Symphony), `symphony-templates` (les golden paths), `symphony-deployments` (l'état voulu
+  Symphony), `symphony-stacks` (les stacks propres à la plateforme, à côté du catalogue
+  officiel de Symphony), `symphony-deployments` (l'état voulu
   des services sur Kubernetes, appliqué par Argo CD) ;
 - groupe **apps** (développeurs : bob en Developer, carol en Reporter) : les projets créés
   par Symphony, chacun avec sa CI et sa fiche `catalog-info.yaml`.
@@ -26,9 +27,10 @@ pour Symphony et GitLab.
 
 ## 1. Les projets (1 min)
 
-La page **Projets** liste trois services créés par `up.sh` avec les golden paths de la démo,
+La page **Projets** liste trois services créés par `up.sh` avec les stacks de la démo,
 comme un développeur l'aurait fait : `auth-service` (Python, Docker), `payment-api`
-(Go, Kubernetes) et `notification-service` (Node, Kubernetes). Ce sont de vrais projets :
+(Go, Kubernetes, déployé par son chart Helm) et `notification-service` (Node, Kubernetes).
+Ce sont de vrais projets :
 
 - chaque carte montre son équipe, son tier et l'URL où il répond (un hello world) ;
 - le panneau de détail réunit le repo, les pipelines, les déploiements (avec l'état
@@ -42,14 +44,27 @@ Côté GitLab, bob voit le groupe **apps** (les projets, en Developer) mais pas 
 
 ## 2. Créer un service depuis le catalogue (4 min, suivi en direct)
 
-**Catalogue** : les golden paths approuvés par l'équipe plateforme. Choisir **API REST Go**,
-nommer le service `hello-api`, choisir l'équipe (le champ propose les groupes de
-l'annuaire Keycloak : `team-payments`…) et le tier, créer. L'API répond tout de
-suite : la création est une **tâche**, dont les étapes s'affichent en direct sous le formulaire.
+**Catalogue** : les stacks approuvées par l'équipe plateforme, celles du catalogue
+officiel (étiquette « officielle ») et celles de `platform/symphony-stacks`. Choisir
+**API REST Go**, nommer le service `hello-api`, choisir l'équipe (le champ propose les
+groupes de l'annuaire Keycloak : `team-payments`…) et le tier.
+
+**Paramètres de la stack** : la version de Go est verrouillée (🔒, fixée par l'équipe
+plateforme) ; choisir le niveau de log ; décocher « Exposer les métriques » fait
+disparaître le champ « Chemin des métriques » (il n'existe que si les métriques sont
+exposées) ; cocher **Chart Helm dans le repo** (le service sera déployé sur Kubernetes par
+son propre chart). Une valeur hors des choix est refusée par l'API, qui valide le
+formulaire avec le JSON Schema de la stack.
+
+Créer : l'API répond tout de suite, la création est une **tâche**, dont les étapes
+s'affichent en direct sous le formulaire.
 
 1. **Repo et squelette** : le repo `apps/hello-api` est créé, le squelette (code,
-   Dockerfile, tests), le `.gitlab-ci.yml` du golden path et la fiche `catalog-info.yaml`
-   y sont poussés en un commit, ce qui lance la première pipeline.
+   Dockerfile, tests, `deploy/chart/`), le `.gitlab-ci.yml` de la stack et la fiche
+   `catalog-info.yaml` y sont poussés en un commit, ce qui lance la première pipeline.
+   Le code tient compte des paramètres : niveau de log par défaut, `cmd/metrics.go`
+   présent ou non ; la fiche note la stack et le chart (`spec.kubernetes.helm`), et la
+   page du projet affiche les valeurs choisies.
 2. **Projet et webhook** : le projet apparaît dans **Projets**, et le repo reçoit un
    webhook vers Symphony.
 3. **Première pipeline** : `pipeline #N : pending → running → success`, poussé par le
@@ -72,7 +87,7 @@ la tâche tire l'image, démarre le conteneur `hello-api-staging`, puis attend q
 le service apparaît avec son URL (`/healthz` répond).
 
 Redéployer ensuite : la bascule garde le même port et attend que le nouveau conteneur soit
-`healthy` (le `HEALTHCHECK` du Dockerfile du golden path) avant de supprimer l'ancien ;
+`healthy` (le `HEALTHCHECK` du Dockerfile de la stack) avant de supprimer l'ancien ;
 s'il ne le devient pas, l'ancien est relancé et la tâche montre la sortie du healthcheck.
 
 ## 3 bis. Promouvoir en production, sur Kubernetes en GitOps (2 min)
@@ -87,11 +102,14 @@ est refusé (`403`, l'API le dit : « production est protégé »).
 Symphony n'a rien appliqué lui-même :
 
 - dans GitLab, `platform/symphony-deployments` a reçu un commit
-  `deploy: hello-api-production …` avec `apps/hello-api-production/` ;
+  `deploy: hello-api-production …` avec `apps/hello-api-production/` : le chart Helm du
+  repo du service (`chart/`), et le `values.yaml` de Symphony (image, réplicas,
+  variables, Ingress) ;
 - dans Argo CD (http://localhost:8088, identifiants affichés par `up.sh`), l'Application
-  `hello-api-production` pointe sur ce dossier.
+  `hello-api-production` lit ce chart avec ces valeurs. Sans chart (case décochée), Symphony
+  aurait généré les manifests.
 
-**Stop** commite `count: 0` dans `kustomization.yaml`, **Relancer** remet un réplica.
+**Stop** commite `replicaCount: 0` dans `values.yaml`, **Relancer** remet un réplica.
 Modifier le cluster à la main ne tient pas : Argo CD le ramène à l'état de Git.
 
 ```bash
@@ -117,14 +135,15 @@ secrets d'un autre projet ferait échouer le déploiement : un projet ne lit que
 
 Se connecter à GitLab en **alice** (bouton Keycloak) : elle tient le groupe **platform**.
 
-**Ajouter un golden path sans redémarrer.** Dans `platform/symphony-templates`,
-dupliquer `templates/api-rest-go` en `templates/api-rest-go-v2` (dans `template.yaml`,
-changer `name` et `title`). Dans Symphony, **Catalogue → ↻ Recharger depuis Git** : le
-nouveau golden path apparaît.
+**Ajouter une stack sans redémarrer.** Dans `platform/symphony-stacks`, dupliquer
+`stacks/api-rest-go-k8s` en `stacks/api-rest-go-v2` (dans `stack.yaml`, changer `name` et
+`title`). Dans Symphony, **Catalogue → ↻ Recharger depuis Git** : la nouvelle stack
+apparaît. Une stack du repo qui porte le nom d'une stack officielle la remplace.
 
-**Un template cassé est ignoré, pas fatal.** Dans ce `template.yaml`, mettre un `name`
-différent du dossier : le golden path disparaît de la liste, les autres restent, et les logs
-(`docker compose logs symphony` dans `demo/`) disent pourquoi.
+**Une stack cassée est refusée seule, pas fatale.** Dans ce `stack.yaml`, donner à un
+paramètre un `default` hors de ses `choices` : la stack disparaît du Catalogue, les autres
+restent, et la page **Administration** (en alice) dit laquelle et pourquoi.
+`symphony validate -stacks stacks` l'aurait signalé avant le push.
 
 **Changer la configuration à chaud.** Dans `platform/symphony-config/symphony.yaml`, retirer un
 provider : il disparaît de `GET /api/v1/providers` en moins de 15 s. Une configuration
@@ -185,7 +204,7 @@ http://hello-api-production.localhost:8081 ne répond plus.
 ## 6. Observer (30 s)
 
 http://localhost:8080/metrics : requêtes de l'API par route, appels à GitLab, Docker, Argo CD,
-Vault et Keycloak par méthode (durée, erreurs), relectures des fiches, des templates et de
+Vault et Keycloak par méthode (durée, erreurs), relectures des fiches, des stacks et de
 la configuration.
 
 ## Nettoyer

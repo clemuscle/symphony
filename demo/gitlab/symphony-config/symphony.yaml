@@ -39,7 +39,7 @@ providers:
         # Groupe des projets créés : ouvert aux développeurs, à part des
         # repos de la plateforme (groupe platform)
         namespace: apps
-    # github:début — GitHub (golden path api-rest-go-github) : retiré par
+    # github:début — GitHub (stacks *-github) : retiré par
     # up.sh sans GITHUB_TOKEN. Repos créés dans le compte du jeton (ou org: …)
     - id: github
       type: github
@@ -112,7 +112,7 @@ providers:
     # k8s:fin
 
 # Environnements, dans l'ordre de promotion. production est protégée : on n'y
-# déploie qu'une image déjà saine en staging (promotion). Un golden path peut
+# déploie qu'une image déjà saine en staging (promotion). Une stack peut
 # changer le runtime d'un environnement (api-rest-go-k8s : staging sur k3s).
 environments:
   - name: staging
@@ -132,10 +132,14 @@ webhooks:
 catalogue:
   file: catalog-info.yaml
 
-templates:
-  repo: platform/symphony-templates
+# Stacks proposées : le catalogue officiel de Symphony, et celles de la
+# plateforme (variantes Kubernetes et GitHub) ; une stack du repo remplace
+# l'officielle du même nom
+stacks:
+  repo: platform/symphony-stacks
   branch: main
-  path: templates
+  path: stacks
+  official: ["*"]
 
 # Connexion par le provider identity keycloak (realm de démo : alice admin,
 # bob developer, carol viewer, dave sans rôle ; mot de passe = identifiant)

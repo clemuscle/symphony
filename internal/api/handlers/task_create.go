@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path"
 	"time"
 
+	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/provider"
@@ -37,7 +39,7 @@ func (d TaskDeps) createRepo(_ context.Context, x *tasks.Exec) error {
 	if created && x.Get("pushed_at", &pushedAt) {
 		return nil
 	}
-	gp, err := d.Templates.GetGoldenPath(p.GoldenPathID)
+	stack, err := d.Stacks.GetStack(p.Stack)
 	if err != nil {
 		return err
 	}
@@ -50,9 +52,9 @@ func (d TaskDeps) createRepo(_ context.Context, x *tasks.Exec) error {
 		return err
 	}
 
-	// Lus avant de créer le repo : un template cassé ne laisse pas de repo vide
-	x.Progress("lecture du golden path %s", gp.ID)
-	files, err := scaffoldFiles(d.Templates, gp, ci, p.Name, p.Description, p.Port)
+	// Lus avant de créer le repo : une stack cassée ne laisse pas de repo vide
+	x.Progress("lecture de la stack %s", stack.ID)
+	files, err := scaffoldFiles(d.Stacks, stack, ci, p.Name, p.Description, p.Port, p.Parameters)
 	if err != nil {
 		return err
 	}
@@ -74,7 +76,7 @@ func (d TaskDeps) createRepo(_ context.Context, x *tasks.Exec) error {
 
 	// La fiche catalogue vit dans le repo : elle dépend de son URL
 	file := d.Syncer.File()
-	fiche, err := catalogueFile(files[file], p, gp, &repo, ci, x.Task().CreatedBy)
+	fiche, err := catalogueFile(files[file], p, stack, &repo, ci, x.Task().CreatedBy, stackKubernetes(stack, files))
 	if err != nil {
 		return err
 	}
@@ -91,23 +93,41 @@ func (d TaskDeps) createRepo(_ context.Context, x *tasks.Exec) error {
 	return nil
 }
 
-// scaffoldFiles : skeleton et template CI du golden path, placeholders remplacés
-func scaffoldFiles(templates *gitops.TemplateLoader, gp *gitops.GoldenPath, ci provider.CIProvider,
-	name, description string, port int) (map[string]string, error) {
-	skeleton, err := templates.GetScaffoldFiles(*gp)
+// scaffoldFiles : squelette et CI de la stack, variables remplacées ; les
+// fichiers dont la condition (spec.files) n'est pas remplie sont omis
+func scaffoldFiles(stacks *gitops.StackLoader, stack *gitops.Stack, ci provider.CIProvider,
+	name, description string, port int, params map[string]any) (map[string]string, error) {
+	skeleton, err := stacks.GetScaffoldFiles(*stack)
 	if err != nil {
 		return nil, fmt.Errorf("skeleton: %w", err)
 	}
 	files := make(map[string]string, len(skeleton)+1)
-	for path, content := range skeleton {
-		files[path] = replacePlaceholders(content, name, description, gp, port)
+	for file, content := range skeleton {
+		if stack.Keep(file, params) {
+			files[file] = replacePlaceholders(content, name, description, stack, port, params)
+		}
 	}
-	ciContent, err := templates.GetCITemplate(*gp)
+	ciContent, err := stacks.GetCITemplate(*stack)
 	if err != nil {
 		return nil, fmt.Errorf("template CI: %w", err)
 	}
-	files[ci.ConfigFile()] = replacePlaceholders(ciContent, name, description, gp, port)
+	files[ci.ConfigFile()] = replacePlaceholders(ciContent, name, description, stack, port, params)
 	return files, nil
+}
+
+// stackKubernetes : les manifests Kubernetes de la stack, s'ils sont dans
+// les fichiers du repo créé (un paramètre peut les omettre)
+func stackKubernetes(stack *gitops.Stack, files map[string]string) *catalogue.Kubernetes {
+	k := stack.Kubernetes
+	switch {
+	case k == nil:
+		return nil
+	case k.Helm != "" && files[path.Join(k.Helm, "Chart.yaml")] != "":
+		return &catalogue.Kubernetes{Helm: k.Helm}
+	case k.Kustomize != "" && files[path.Join(k.Kustomize, "kustomization.yaml")] != "":
+		return &catalogue.Kubernetes{Kustomize: k.Kustomize}
+	}
+	return nil
 }
 
 // registerProject enregistre le projet et abonne Symphony aux pipelines du
@@ -122,7 +142,7 @@ func (d TaskDeps) registerProject(_ context.Context, x *tasks.Exec) error {
 	if !x.Get("repo", &repo) {
 		return errors.New("repo absent des résultats de l'étape précédente")
 	}
-	gp, err := d.Templates.GetGoldenPath(p.GoldenPathID)
+	stack, err := d.Stacks.GetStack(p.Stack)
 	if err != nil {
 		return err
 	}
@@ -135,31 +155,32 @@ func (d TaskDeps) registerProject(_ context.Context, x *tasks.Exec) error {
 	if errors.Is(err, sql.ErrNoRows) {
 		// Registry : facultatif, un projet sans registry reste déployable avec
 		// une image saisie à la main
-		regProvider, registryURL := gp.RegProvider, ""
-		if reg, err := d.Providers.GetRegistry(gp.RegProvider); err == nil {
+		regProvider, registryURL := stack.RegProvider, ""
+		if reg, err := d.Providers.GetRegistry(stack.RegProvider); err == nil {
 			regProvider, registryURL = reg.ID(), reg.GetImageURL(repo.Path)
 		}
 		rtProvider := p.RuntimeProvider
 		if rtProvider == "" {
-			rtProvider = gp.RTProvider
+			rtProvider = stack.RTProvider
 		}
 		proj = &database.Project{
-			Name:        p.Name,
-			Description: p.Description,
-			Language:    gp.Language,
-			Type:        gp.Type,
-			Port:        p.Port,
-			Namespace:   p.Namespace,
-			SCMProvider: p.SCMProvider,
-			CIProvider:  ci.ID(),
-			RegProvider: regProvider,
-			RTProvider:  rtProvider,
-			RepoPath:    repo.Path,
-			RepoURL:     repo.HTTPCloneURL,
-			RegistryURL: registryURL,
-			GoldenPath:  gp.ID,
-			Team:        p.Owner,
-			CreatedBy:   x.Task().CreatedBy,
+			Name:            p.Name,
+			Description:     p.Description,
+			Language:        stack.Language,
+			Type:            stack.Type,
+			Port:            p.Port,
+			Namespace:       p.Namespace,
+			SCMProvider:     p.SCMProvider,
+			CIProvider:      ci.ID(),
+			RegProvider:     regProvider,
+			RTProvider:      rtProvider,
+			RepoPath:        repo.Path,
+			RepoURL:         repo.HTTPCloneURL,
+			RegistryURL:     registryURL,
+			Stack:           stack.ID,
+			StackParameters: p.Parameters,
+			Team:            p.Owner,
+			CreatedBy:       x.Task().CreatedBy,
 		}
 		if err := d.DB.CreateProject(proj); err != nil {
 			return fmt.Errorf("enregistrement du projet: %w", err)

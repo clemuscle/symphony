@@ -19,7 +19,7 @@ done | jq -s 'add // {}')
 jq -n \
   --argjson projects "$projects" \
   --argjson deployments "$(get /deployments)" \
-  --argjson goldenPaths "$(get /golden-paths)" \
+  --argjson stacks "$(get /stacks)" \
   --argjson environments "$(get /environments)" \
   --argjson tasks "$(get '/tasks?limit=200')" \
   --argjson groups "$(get /identity/groups)" \
@@ -27,7 +27,7 @@ jq -n \
   --argjson images "$images" \
   '{
     "/me": {auth_enabled: true, user: {subject: "visite", name: "Visiteur", email: "", groups: [], teams: [], role: "viewer"}},
-    "/projects": $projects, "/deployments": $deployments, "/golden-paths": $goldenPaths,
+    "/projects": $projects, "/deployments": $deployments, "/stacks": $stacks,
     "/environments": $environments, "/tasks": $tasks, "/identity/groups": $groups,
     "/providers": $providers, images: $images
   }' \

@@ -24,10 +24,12 @@ import (
 )
 
 type CreateProjectRequest struct {
-	Name            string            `json:"name"`
-	Description     string            `json:"description"`
-	Namespace       string            `json:"namespace"`
-	GoldenPathID    string            `json:"golden_path_id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Namespace   string `json:"namespace"`
+	Stack       string `json:"stack"`
+	// Parameters : valeurs des paramètres de la stack (spec.parameters)
+	Parameters      map[string]any    `json:"parameters"`
 	Port            int               `json:"port"`
 	SCMProvider     string            `json:"scm_provider"`
 	RuntimeProvider string            `json:"runtime_provider"`
@@ -54,7 +56,7 @@ var projectNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // CreateProject valide la demande puis lance la création en tâche (202) :
 // repo, squelette, fiche catalogue, webhook et première pipeline
-func CreateProject(providers *provider.Registry, db *database.DB, templates *gitops.TemplateLoader, runner *tasks.Runner) http.HandlerFunc {
+func CreateProject(providers *provider.Registry, db *database.DB, stacks *gitops.StackLoader, runner *tasks.Runner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req CreateProjectRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -91,27 +93,33 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			return
 		}
 
-		gp, err := templates.GetGoldenPath(req.GoldenPathID)
+		stack, err := stacks.GetStack(req.Stack)
 		if err != nil {
-			respondError(w, http.StatusBadRequest, "golden path introuvable: "+req.GoldenPathID)
+			respondError(w, http.StatusBadRequest, "stack introuvable: "+req.Stack)
+			return
+		}
+		// Défauts, valeurs verrouillées et conditions, validés par le JSON
+		// Schema de la stack : la tâche reçoit les valeurs complètes
+		if req.Parameters, err = stack.Resolve(req.Parameters); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		scmID := req.SCMProvider
 		if scmID == "" {
-			scmID = gp.SCMProvider
+			scmID = stack.SCMProvider
 		}
 		scm, err := providers.SCM(scmID)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "scm provider: "+err.Error())
 			return
 		}
-		ci, err := providers.CI(gp.CIProvider)
+		ci, err := providers.CI(stack.CIProvider)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "ci provider: "+err.Error())
 			return
 		}
-		// Le template CI du golden path est propre à son CI : changer de SCM
-		// vers une autre plateforme donnerait un repo dont la CI ne tourne pas
+		// La CI de la stack est propre à son CI : changer de SCM vers une autre
+		// plateforme donnerait un repo dont la CI ne tourne pas
 		if err := provider.CheckCompatible(scm, ci); err != nil {
 			respondError(w, http.StatusBadRequest, err.Error())
 			return
@@ -132,9 +140,9 @@ func CreateProject(providers *provider.Registry, db *database.DB, templates *git
 			SCMProvider:          scm.ID(),
 			CIProvider:           ci.ID(),
 		}, map[string]any{
-			"golden_path": gp.ID,
-			"language":    gp.Language,
-			"scm":         scm.ID(),
+			"stack":    stack.ID,
+			"language": stack.Language,
+			"scm":      scm.ID(),
 		})
 	}
 }
@@ -172,15 +180,16 @@ func projectTeam(u *auth.User, owner string) (string, error) {
 }
 
 // catalogueFile construit la fiche catalogue d'un nouveau projet, poussée dans
-// son repo avec le squelette. Une fiche fournie par le golden path (même nom
-// dans le skeleton) sert de base : il peut y déclarer liens, SLO et actions.
-func catalogueFile(base string, p createParams, gp *gitops.GoldenPath, repo *provider.Repo,
-	ci provider.CIProvider, createdBy string) (string, error) {
+// son repo avec le squelette. Une fiche fournie par la stack (même nom dans
+// le skeleton) sert de base : elle peut y déclarer liens, SLO et actions.
+// kube : les manifests Kubernetes de la stack créés dans le repo (nil sinon).
+func catalogueFile(base string, p createParams, stack *gitops.Stack, repo *provider.Repo,
+	ci provider.CIProvider, createdBy string, kube *catalogue.Kubernetes) (string, error) {
 	svc := catalogue.Service{}
 	if base != "" {
 		var err error
 		if svc, err = gitops.ParseService(p.Name, base); err != nil {
-			return "", fmt.Errorf("fiche catalogue du golden path: %w", err)
+			return "", fmt.Errorf("fiche catalogue de la stack: %w", err)
 		}
 	}
 	svc.APIVersion, svc.Kind, svc.Metadata.Name = "symphony/v1", "Service", p.Name
@@ -188,18 +197,21 @@ func catalogueFile(base string, p createParams, gp *gitops.GoldenPath, repo *pro
 	m.Owner = firstNonEmpty(p.Owner, m.Owner, createdBy)
 	m.Tier = firstNonEmpty(p.Tier, m.Tier)
 	m.Lifecycle = firstNonEmpty(p.Lifecycle, m.Lifecycle)
-	if !slices.Contains(m.Tags, gp.Language) {
-		m.Tags = append(m.Tags, gp.Language)
+	if !slices.Contains(m.Tags, stack.Language) {
+		m.Tags = append(m.Tags, stack.Language)
 	}
 	if m.Labels == nil {
 		m.Labels = map[string]string{}
 	}
-	m.Labels["golden_path"] = gp.ID
+	m.Labels["stack"] = stack.ID
 
 	sp := &svc.Spec
-	sp.Type = firstNonEmpty(sp.Type, gp.Type)
-	sp.Language = firstNonEmpty(sp.Language, gp.Language)
+	sp.Type = firstNonEmpty(sp.Type, stack.Type)
+	sp.Language = firstNonEmpty(sp.Language, stack.Language)
 	sp.Repo = repo.WebURL
+	if sp.Kubernetes == nil {
+		sp.Kubernetes = kube
+	}
 	sp.Links = append([]catalogue.Link{
 		{Title: "Repository", URL: repo.WebURL, Icon: "code"},
 		{Title: "Pipelines", URL: ci.PipelinesURL(repo.WebURL), Icon: "ci"},
@@ -210,7 +222,7 @@ func catalogueFile(base string, p createParams, gp *gitops.GoldenPath, repo *pro
 			Description: "Relance la pipeline CI sur main",
 		}}
 	}
-	// Les actions pipeline du golden path visent le CI du projet
+	// Les actions pipeline de la stack visent le CI du projet
 	for i := range sp.Actions {
 		if sp.Actions[i].WebhookURL == "" && sp.Actions[i].CIProvider == "" {
 			sp.Actions[i].CIProvider = ci.ID()
@@ -272,7 +284,7 @@ type projectView struct {
 	Environments []environments.Environment `json:"environments"`
 }
 
-func ListProjects(db *database.DB, store *catalogue.Store, templates *gitops.TemplateLoader, envs *environments.Holder) http.HandlerFunc {
+func ListProjects(db *database.DB, store *catalogue.Store, stacks *gitops.StackLoader, envs *environments.Holder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		projects, err := db.ListProjects()
 		if err != nil {
@@ -294,7 +306,7 @@ func ListProjects(db *database.DB, store *catalogue.Store, templates *gitops.Tem
 		views := make([]projectView, len(projects))
 		for i, p := range projects {
 			p.Deleting = deleting[p.Name]
-			views[i] = projectView{Project: p, Environments: projectEnvironments(envs, templates, &p)}
+			views[i] = projectView{Project: p, Environments: projectEnvironments(envs, stacks, &p)}
 			if svc, ok := store.Get(p.Name); ok {
 				views[i].Service = &svc
 			}
@@ -359,14 +371,16 @@ func ListRepos(providers *provider.Registry) http.HandlerFunc {
 	}
 }
 
-func replacePlaceholders(content, name, description string, gp *gitops.GoldenPath, port int) string {
-	replacer := strings.NewReplacer(
+// replacePlaceholders : variables du squelette et de la CI, et
+// {{params.<nom>}} pour chaque paramètre de la stack
+func replacePlaceholders(content, name, description string, stack *gitops.Stack, port int, params map[string]any) string {
+	pairs := []string{
 		"{{SERVICE_NAME}}", name,
 		"{{SERVICE_DESCRIPTION}}", description,
-		"{{LANGUAGE}}", gp.Language,
-		"{{TYPE}}", gp.Type,
+		"{{LANGUAGE}}", stack.Language,
+		"{{TYPE}}", stack.Type,
 		"{{PORT}}", fmt.Sprintf("%d", port),
 		"{{YEAR}}", fmt.Sprintf("%d", time.Now().Year()),
-	)
-	return replacer.Replace(content)
+	}
+	return strings.NewReplacer(append(pairs, stack.ParamPlaceholders(params)...)...).Replace(content)
 }

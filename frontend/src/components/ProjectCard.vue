@@ -11,7 +11,7 @@
     <div class="svc-meta">
       <span v-if="owner(project)">👤 {{ owner(project) }}</span>
       <span>{{ langIcon(project.language) }} {{ project.language }}</span>
-      <span class="muted">{{ project.golden_path }}</span>
+      <span class="muted">{{ project.stack }}</span>
     </div>
 
     <div class="deploy-line" v-for="d in deployments" :key="d.provider + d.id">

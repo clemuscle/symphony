@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -17,33 +18,35 @@ import (
 	"github.com/clemuscle/symphony/internal/config"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/provider"
+	officialstacks "github.com/clemuscle/symphony/stacks"
 )
 
-const validateUsage = `symphony validate : vérifie une configuration et des golden paths avant de les pousser
+const validateUsage = `symphony validate : vérifie une configuration et des stacks avant de les pousser
 
   symphony validate -config symphony.yaml
-  symphony validate -templates ./templates
-  symphony validate -config symphony.yaml -templates ./templates
+  symphony validate -stacks ./stacks
+  symphony validate -config symphony.yaml -stacks ./stacks
 
 Hors ligne : aucun provider n'est appelé, aucun secret n'est lu (les références
 secret:// sont vérifiées dans leur forme et leur provider). Une variable ${VAR}
-non définie est laissée telle quelle et signalée. Avec -config, les golden
-paths sont vérifiés contre ses providers. Code de sortie 1 s'il y a une erreur.
+non définie est laissée telle quelle et signalée. Avec -config, les stacks (du
+dossier et officielles exposées) sont vérifiées contre ses providers. Code de
+sortie 1 s'il y a une erreur.
 `
 
 // runValidate : la commande symphony validate, pour un admin en local ou la
-// CI des repos de configuration et de templates. Toutes les erreurs sont
+// CI des repos de configuration et de stacks. Toutes les erreurs sont
 // rapportées d'un coup.
 func runValidate(args []string, out io.Writer) int {
 	flags := flag.NewFlagSet("validate", flag.ContinueOnError)
 	flags.SetOutput(out)
 	flags.Usage = func() { fmt.Fprint(out, validateUsage) }
 	configPath := flags.String("config", "", "fichier de configuration (ou bootstrap)")
-	templatesDir := flags.String("templates", "", "dossier des golden paths (un sous-dossier par golden path)")
+	stacksDir := flags.String("stacks", "", "dossier des stacks (un sous-dossier par stack)")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
-	if *configPath == "" && *templatesDir == "" || flags.NArg() > 0 {
+	if *configPath == "" && *stacksDir == "" || flags.NArg() > 0 {
 		flags.Usage()
 		return 2
 	}
@@ -56,8 +59,8 @@ func runValidate(args []string, out io.Writer) int {
 	if *configPath != "" {
 		providers = validateConfig(r, *configPath)
 	}
-	if *templatesDir != "" {
-		validateTemplates(r, *templatesDir, providers, *configPath != "")
+	if *stacksDir != "" {
+		validateStacks(r, *stacksDir, providers, *configPath != "")
 	}
 	fmt.Fprintln(out)
 	if r.errors > 0 {
@@ -100,7 +103,7 @@ func (r *report) fail(what string, err error) {
 // validateConfig vérifie la configuration comme au chargement : décodage
 // strict, schéma de chaque provider, références de secrets, construction des
 // providers, environnements, authentification et webhooks. Renvoie les
-// providers construits (pour vérifier les golden paths), nil en cas d'erreur.
+// providers construits (pour vérifier les stacks), nil en cas d'erreur.
 func validateConfig(r *report, file string) *provider.Registry {
 	r.section("Configuration " + file)
 	data, err := os.ReadFile(file)
@@ -133,6 +136,10 @@ func validateConfig(r *report, file string) *provider.Registry {
 		return nil
 	}
 
+	stacks, warnings, err := stacksSource(cfg)
+	if err != nil {
+		r.fail("stacks", err)
+	}
 	providers, resolved, err := assembleProviders(cfg, registerPlaceholderSecrets)
 	if err != nil {
 		r.fail("providers", err)
@@ -174,9 +181,50 @@ func validateConfig(r *report, file string) *provider.Registry {
 	} else {
 		r.ok("webhooks : %s", cfg.Webhooks.URL)
 	}
-	repo, branch, dir := templatesSource(cfg)
-	r.ok("golden paths lus dans %s (branche %s, dossier %s)", repo, branch, dir)
+	for _, w := range warnings {
+		r.warn("%s", w)
+	}
+	if stacks.Repo != "" {
+		r.ok("stacks lues dans %s (branche %s, dossier %s)", stacks.Repo, stacks.Branch, stacks.Path)
+	}
+	validateOfficial(r, stacks.Official, providers)
 	return providers
+}
+
+// validateOfficial vérifie les stacks officielles exposées contre les
+// providers de la configuration (CI de la plateforme du SCM par défaut…)
+func validateOfficial(r *report, names []string, providers *provider.Registry) {
+	if len(names) == 0 {
+		return
+	}
+	official := officialstacks.FS()
+	if slices.Contains(names, "*") {
+		names = gitops.OfficialNames(official)
+	}
+	exists := filesOf(official)
+	for _, name := range names {
+		content, err := fs.ReadFile(official, path.Join(name, gitops.StackFile))
+		if err != nil {
+			continue // nom inconnu : déjà signalé par stacksSource
+		}
+		if _, err := gitops.CheckStack(name, gitops.StackFile, string(content), exists, providers); err != nil {
+			r.fail("stack officielle "+name, err)
+			continue
+		}
+		r.ok("stack officielle %s", name)
+	}
+}
+
+// filesOf : les fichiers de fsys
+func filesOf(fsys fs.FS) map[string]bool {
+	exists := map[string]bool{}
+	fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			exists[p] = true
+		}
+		return nil
+	})
+	return exists
 }
 
 // validateBootstrap : un bootstrap ne porte que config_source et ses
@@ -203,56 +251,69 @@ func validateBootstrap(r *report, cfg *config.Config) {
 		src.Repo, orDefault(src.Path, "symphony.yaml"), orDefault(src.Branch, "main"))
 }
 
-// validateTemplates vérifie chaque golden path du dossier dir, comme au
-// chargement ; contre les providers de la configuration s'il y en a
-func validateTemplates(r *report, dir string, providers *provider.Registry, withConfig bool) {
-	r.section("Golden paths " + dir)
+// validateStacks vérifie chaque stack du dossier dir, comme au chargement ;
+// contre les providers de la configuration s'il y en a
+func validateStacks(r *report, dir string, providers *provider.Registry, withConfig bool) {
+	r.section("Stacks " + dir)
 	root := os.DirFS(dir)
-	exists := map[string]bool{}
-	err := fs.WalkDir(root, ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() {
-			exists[p] = true
-		}
-		return nil
-	})
-	if err != nil {
+	if _, err := fs.Stat(root, "."); err != nil {
 		r.fail("lecture", err)
 		return
 	}
+	exists := filesOf(root)
 	switch {
 	case providers == nil && withConfig:
-		r.warn("configuration invalide : providers des golden paths non vérifiés")
+		r.warn("configuration invalide : providers des stacks non vérifiés")
 	case providers == nil:
-		r.warn("sans -config : providers des golden paths non vérifiés")
+		r.warn("sans -config : providers des stacks non vérifiés")
 	}
 
-	var files []string
+	var dirs []string
 	for f := range exists {
-		if path.Base(f) == gitops.TemplateFile && path.Dir(path.Dir(f)) == "." && path.Dir(f) != "." {
-			files = append(files, f)
+		d, base := path.Split(f)
+		d = strings.TrimSuffix(d, "/")
+		if (base == gitops.StackFile || base == gitops.LegacyStackFile) && d != "" && path.Dir(d) == "." &&
+			!slices.Contains(dirs, d) {
+			dirs = append(dirs, d)
 		}
 	}
-	sort.Strings(files)
-	if len(files) == 0 {
-		r.fail("golden paths", fmt.Errorf("aucun <nom>/%s dans %s", gitops.TemplateFile, dir))
+	sort.Strings(dirs)
+	if len(dirs) == 0 {
+		r.fail("stacks", fmt.Errorf("aucun <nom>/%s dans %s", gitops.StackFile, dir))
 		return
 	}
-	for _, f := range files {
-		content, err := fs.ReadFile(root, f)
+	for _, d := range dirs {
+		file := gitops.StackFile
+		if !exists[path.Join(d, file)] {
+			file = gitops.LegacyStackFile
+		}
+		content, err := fs.ReadFile(root, path.Join(d, file))
 		if err != nil {
-			r.fail(f, err)
+			r.fail(path.Join(d, file), err)
 			continue
 		}
-		gp, err := gitops.CheckTemplate(path.Dir(f), string(content), exists, providers)
+		s, err := gitops.CheckStack(d, file, string(content), exists, providers)
 		if err != nil {
-			r.fail(filepath.Join(dir, f), err)
+			r.fail(filepath.Join(dir, d, file), err)
 			continue
 		}
-		r.ok("%s : %s", gp.ID, gp.Name)
+		r.ok("%s : %s%s", s.ID, s.Name, paramsSummary(s))
+		if s.Legacy {
+			r.warn("%s : ancien format (template.yaml, kind GoldenPath), renommer en stack.yaml avec kind Stack", filepath.Join(dir, d))
+		}
 	}
+}
+
+// paramsSummary : les paramètres d'une stack, pour le rapport
+func paramsSummary(s gitops.Stack) string {
+	if len(s.Parameters) == 0 {
+		return ""
+	}
+	names := make([]string, len(s.Parameters))
+	for i, p := range s.Parameters {
+		names[i] = p.Name
+	}
+	return " (paramètres : " + strings.Join(names, ", ") + ")"
 }
 
 // placeholderSecret : la valeur de toute référence secret:// pour validate

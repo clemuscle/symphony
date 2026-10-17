@@ -43,7 +43,7 @@ var (
 
 	reloads = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "symphony_reloads_total",
-		Help: "Rechargements depuis Git, par source (catalogue, templates, config) et résultat (ok, error, refused).",
+		Help: "Rechargements depuis Git, par source (catalogue, stacks, config) et résultat (ok, error, refused).",
 	}, []string{"source", "result"})
 
 	lastReload = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -51,14 +51,14 @@ var (
 		Help: "Horodatage du dernier rechargement réussi, par source.",
 	}, []string{"source"})
 
-	// Services du catalogue et golden paths chargés
+	// Services du catalogue et stacks chargées
 	CatalogueServices = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "symphony_catalogue_services",
 		Help: "Services chargés dans le catalogue.",
 	})
-	GoldenPaths = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "symphony_golden_paths",
-		Help: "Golden paths chargés (valides).",
+	Stacks = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "symphony_stacks",
+		Help: "Stacks chargées (valides), du repo et du catalogue officiel.",
 	})
 
 	tasksFinished = prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -85,7 +85,7 @@ func init() {
 		httpRequests, httpDuration,
 		providerCalls, providerDuration,
 		reloads, lastReload,
-		CatalogueServices, GoldenPaths,
+		CatalogueServices, Stacks,
 		tasksFinished, taskDuration, webhooks,
 	)
 }

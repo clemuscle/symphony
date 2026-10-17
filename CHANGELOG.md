@@ -3,6 +3,49 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
+## v0.12 — Stacks paramétrables
+
+### Ajouté
+- **Paramètres de stack** (`spec.parameters`) : `name`, `title`, `description`, `type`
+  (string, number, boolean, choice), `choices`, `default`, `required`, `when` (champ
+  conditionnel), `locked` (valeur fixée par l'équipe plateforme). Traduits en JSON Schema
+  (servi par l'API, champ `schema`), qui valide les valeurs à la création : erreurs en
+  français, paramètre inconnu refusé. Le Catalogue les rend en formulaire ; les valeurs
+  vont dans le squelette et la CI (`{{params.<nom>}}`) et restent avec le projet
+  (`stack_parameters`, affichés sur sa page).
+- **Fichiers sous condition** (`spec.files[].when`) : un fichier ou dossier du squelette
+  n'est créé que si les paramètres le demandent.
+- **Manifests Kubernetes fournis par la stack** (`spec.kubernetes` : `helm` ou
+  `kustomize`, repris dans la fiche du projet) : le runtime argocd déploie le chart Helm
+  (avec un `values.yaml` de Symphony : image, réplicas, variables, secrets, Ingress) ou la
+  base Kustomize (préfixe, image `app`, variables, Ingress) du repo du service, au lieu
+  de générer ses manifests. Arrêter et relancer passent par les mêmes fichiers ; les
+  fichiers d'un déploiement précédent qui ne servent plus sont retirés du repo de
+  déploiement. Contrat dans `documentation/reference/stack.yaml`.
+- **Catalogue officiel** (`stacks/`, embarqué dans le binaire) : `api-rest-go` (chart
+  Helm en option), `api-rest-python` (base Kustomize en option), `api-rest-node`,
+  `worker-python` (un vrai worker, intervalle en paramètre). Sans provider désigné, avec
+  une CI par forge (`spec.ci_templates`), ils suivent les providers par défaut, GitLab ou
+  GitHub. Exposés par `stacks.official` (`["*"]` ou une liste) ; une stack du repo du
+  même nom les remplace.
+- Un fichier du squelette en `.tmpl` est créé sans ce suffixe (`go.mod.tmpl` → `go.mod`).
+
+### Modifié
+- **« Golden path » devient « stack »**, dans l'interface, la doc, l'API et le format :
+  `stack.yaml` avec `kind: Stack`, section `stacks` de la configuration (défaut du dossier :
+  `stacks`), `GET /api/v1/stacks`, champs `stack` et `parameters` à la création, `stack`
+  sur un projet (colonne renommée par la migration 005), clé `stacks` de
+  `/api/v1/admin/status`, métrique `symphony_stacks`, `symphony validate -stacks`.
+  L'ancien format (`template.yaml`, `kind: GoldenPath`, section `templates`, défaut
+  `root/symphony-templates`) est encore lu jusqu'à la v1.0, et signalé dans
+  Administration (nouveaux avertissements : `warnings` de la configuration et des stacks).
+- Quickstart : les stacks officielles, sans rien pousser sur la forge
+  (`push-templates.sh` retiré) ; `STACKS_REPO` facultatif pour celles de l'entreprise.
+- Démo : `platform/symphony-stacks` ne garde que ses variantes (`api-rest-go-k8s` avec
+  son chart Helm verrouillé, `*-github`) ; le reste vient du catalogue officiel.
+- Runtime argocd : les journaux visent le Deployment de l'Application (le nom d'un chart
+  ou d'une base peut différer de celui du déploiement).
+
 ## v0.11 — L'admin y voit clair
 
 ### Ajouté

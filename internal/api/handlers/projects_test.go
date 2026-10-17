@@ -5,21 +5,22 @@ import (
 	"testing"
 
 	"github.com/clemuscle/symphony/internal/auth"
+	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/provider"
 	gitlabci "github.com/clemuscle/symphony/internal/provider/ci/gitlabci"
 )
 
 func TestCatalogueFile(t *testing.T) {
-	gp := &gitops.GoldenPath{ID: "api-rest-go", Language: "go", Type: "api"}
+	stack := &gitops.Stack{ID: "api-rest-go", Language: "go", Type: "api"}
 	repo := &provider.Repo{WebURL: "http://gitlab.local/apps/payment-api"}
 	ci := gitlabci.New("gitlab-ci", "http://gitlab.local", "")
 	p := createParams{CreateProjectRequest: CreateProjectRequest{
 		Name: "payment-api", Owner: "team-payments", Tier: "critical", Lifecycle: "production",
 	}}
 
-	// Sans fiche dans le golden path : fiche minimale et action par défaut
-	content, err := catalogueFile("", p, gp, repo, ci, "bob")
+	// Sans fiche dans la stack : fiche minimale et action par défaut
+	content, err := catalogueFile("", p, stack, repo, ci, "bob", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +29,7 @@ func TestCatalogueFile(t *testing.T) {
 		t.Fatalf("fiche illisible : %v\n%s", err, content)
 	}
 	m := svc.Metadata
-	if m.Owner != "team-payments" || m.Tier != "critical" || m.Lifecycle != "production" || m.Labels["golden_path"] != "api-rest-go" {
+	if m.Owner != "team-payments" || m.Tier != "critical" || m.Lifecycle != "production" || m.Labels["stack"] != "api-rest-go" {
 		t.Errorf("metadata : %+v", m)
 	}
 	if svc.Spec.Repo != repo.WebURL || len(svc.Spec.Links) != 2 {
@@ -37,17 +38,17 @@ func TestCatalogueFile(t *testing.T) {
 	if len(svc.Spec.Actions) != 1 || svc.Spec.Actions[0].CIProvider != "gitlab-ci" {
 		t.Errorf("actions : %+v", svc.Spec.Actions)
 	}
-	if strings.Contains(content, "slo:") || strings.Contains(content, "team:") {
+	if strings.Contains(content, "slo:") || strings.Contains(content, "team:") || strings.Contains(content, "kubernetes:") {
 		t.Errorf("champs vides écrits dans la fiche :\n%s", content)
 	}
 
-	// Fiche du golden path : ses liens et actions sont gardés, le formulaire
-	// l'emporte sur ses valeurs
+	// Fiche de la stack : ses liens et actions sont gardés, le formulaire
+	// l'emporte sur ses valeurs ; les manifests Kubernetes de la stack y sont
 	base := "kind: Service\nmetadata:\n  owner: team-x\n  tier: internal\nspec:\n" +
 		"  links:\n    - title: Runbook\n      url: http://wiki/runbook\n" +
 		"  actions:\n    - name: Scaler\n      inputs:\n        - id: REPLICAS\n          type: integer\n"
 	p.Owner = ""
-	content, err = catalogueFile(base, p, gp, repo, ci, "bob")
+	content, err = catalogueFile(base, p, stack, repo, ci, "bob", &catalogue.Kubernetes{Helm: "deploy/chart"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,9 +62,12 @@ func TestCatalogueFile(t *testing.T) {
 	if len(svc.Spec.Actions) != 1 || svc.Spec.Actions[0].Name != "Scaler" || svc.Spec.Actions[0].CIProvider != "gitlab-ci" {
 		t.Errorf("actions : %+v", svc.Spec.Actions)
 	}
+	if k := svc.Spec.Kubernetes; k == nil || k.Helm != "deploy/chart" {
+		t.Errorf("kubernetes : %+v", k)
+	}
 
-	if _, err := catalogueFile("kind: [", p, gp, repo, ci, "bob"); err == nil {
-		t.Error("fiche invalide du golden path acceptée")
+	if _, err := catalogueFile("kind: [", p, stack, repo, ci, "bob", nil); err == nil {
+		t.Error("fiche invalide de la stack acceptée")
 	}
 }
 

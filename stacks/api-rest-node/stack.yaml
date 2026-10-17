@@ -1,0 +1,27 @@
+apiVersion: symphony/v1
+kind: Stack
+metadata:
+  name: api-rest-node
+  title: API REST Node.js
+  description: API REST avec Express, Winston, Jest et métriques Prometheus
+  icon: node
+spec:
+  language: node
+  type: api
+  ci_templates:
+    gitlab: ci.gitlab-ci.yml
+    github: ci.github-actions.yml
+  parameters:
+    - name: node_version
+      title: Version de Node.js
+      description: Fixée par l'équipe plateforme (images de build validées)
+      type: choice
+      choices: ["20", "22"]
+      default: "20"
+      locked: true
+    - name: log_level
+      title: Niveau de journalisation
+      description: Par défaut ; la variable LOG_LEVEL le change au déploiement
+      type: choice
+      choices: [debug, info, warn, error]
+      default: info

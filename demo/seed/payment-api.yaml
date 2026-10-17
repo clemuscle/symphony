@@ -13,12 +13,15 @@ metadata:
   tier: critical
   lifecycle: production
   labels:
-    golden_path: api-rest-go-k8s
+    stack: api-rest-go-k8s
 spec:
   type: api
   language: go
   version: 2.1.0
   repo: __REPO_URL__
+  # Chart Helm du service (écrit par la stack) : déployé par Argo CD
+  kubernetes:
+    helm: deploy/chart
   links:
     - title: Repository
       url: __REPO_URL__

@@ -1,0 +1,60 @@
+# CI du service {{SERVICE_NAME}} : tests, puis image publiée sur GHCR
+# (ghcr.io/<owner>/<repo>:<sha court> et :latest), que Symphony déploie.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  # Lancement par Symphony (actions Day-2 de la fiche catalogue) : GitHub
+  # refuse une entrée non déclarée, d'où les SYMPHONY_* ici
+  workflow_dispatch:
+    inputs:
+      SYMPHONY_SERVICE:
+        description: Service visé (renseigné par Symphony)
+        required: false
+        type: string
+      SYMPHONY_ACTION:
+        description: Action Day-2 lancée depuis Symphony
+        required: false
+        type: string
+      SYMPHONY_PIPELINE:
+        description: Pipeline demandée par l'action
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "{{params.node_version}}"
+      - run: npm install --no-audit --no-fund
+      - run: npm run test:ci
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Action Symphony
+        if: inputs.SYMPHONY_ACTION != ''
+        # Entrées passées par l'environnement, jamais dans le script (injection)
+        env:
+          ACTION: ${{ inputs.SYMPHONY_ACTION }}
+          SERVICE: ${{ inputs.SYMPHONY_SERVICE }}
+        run: echo "Action « $ACTION » demandée par Symphony pour $SERVICE"
+      - name: Image sur GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build -t "$image:${GITHUB_SHA::8}" -t "$image:latest" .
+          docker push "$image:${GITHUB_SHA::8}"
+          docker push "$image:latest"

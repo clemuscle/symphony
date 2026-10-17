@@ -4,12 +4,16 @@ import "github.com/clemuscle/symphony/internal/environments"
 
 type Config struct {
 	// Bootstrap : si renseigné, la configuration (providers, catalogue,
-	// templates) est lue dans un repo Git et le reste du fichier local est ignoré
+	// stacks) est lue dans un repo Git et le reste du fichier local est ignoré
 	ConfigSource *ConfigSource `yaml:"config_source"`
 
 	Providers ProvidersConfig `yaml:"providers"`
 	Catalogue CatalogueConfig `yaml:"catalogue"`
-	Templates TemplatesConfig `yaml:"templates"`
+	// Stacks proposées à la création d'un projet : repo du client et
+	// catalogue officiel
+	Stacks *StacksConfig `yaml:"stacks"`
+	// Templates : ancien nom de Stacks (golden paths), lu jusqu'à la v1.0
+	Templates *TemplatesConfig `yaml:"templates"`
 
 	// Auth absent : authentification désactivée (tout le monde est admin)
 	Auth *AuthConfig `yaml:"auth"`
@@ -70,8 +74,17 @@ type CatalogueConfig struct {
 	File string `yaml:"file"`
 }
 
-// TemplatesConfig : repo Git des golden paths, un dossier par template
-// (<path>/<nom>/template.yaml), lu via le provider SCM par défaut
+// StacksConfig : repo Git des stacks du client, un dossier par stack
+// (<path>/<nom>/stack.yaml), lu via le provider SCM par défaut ; vide : pas
+// de repo. Official : stacks du catalogue officiel proposées ("*" : toutes).
+type StacksConfig struct {
+	Repo     string   `yaml:"repo"`
+	Branch   string   `yaml:"branch"`
+	Path     string   `yaml:"path"`
+	Official []string `yaml:"official"`
+}
+
+// TemplatesConfig : l'ancienne section templates (repo des golden paths)
 type TemplatesConfig struct {
 	Repo   string `yaml:"repo"`
 	Branch string `yaml:"branch"`

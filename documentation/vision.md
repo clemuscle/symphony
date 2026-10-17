@@ -108,8 +108,12 @@ ne sont pas prêtes avant).
 - **Le nom** : aucun outil DevOps ne s'appelle Symphony, mais le nom est pris par une
   entreprise connue de messagerie pour la finance (Symphony et sa Software Foundation),
   et il se prononce comme le framework PHP Symfony. À trancher avant d'ouvrir.
-- **Le vocabulaire** : « golden path » (aujourd'hui) ou « stack » (Cycloid) ? Il faut un
-  seul mot, dans l'interface, la doc et le format.
+
+**Tranché depuis**
+- **Le vocabulaire** (v0.12) : « stack », dans l'interface, la doc et le format
+  (`stack.yaml`, `kind: Stack`) ; « golden path » reste lu jusqu'à la v1.0.
+- **Le catalogue officiel** (v0.12) : `stacks/` du repo de Symphony, embarqué dans le
+  binaire, exposé au choix de l'admin (`stacks.official`).
 
 ## Proposition de versions
 

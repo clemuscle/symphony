@@ -18,5 +18,5 @@ TypeScript strict partout (`<script setup lang="ts">`).
 - `src/lib/` : logique pure (filtres, URL, libellés), testée.
 - `src/stores/` : session (rôle, équipes, droits) et tâches (flux Server-Sent Events).
 - `src/components/` : carte et panneau d'un projet, action Day-2, avancement d'une tâche.
-- `src/views/` : Projets, Catalogue (golden paths), Déploiements, Activité.
+- `src/views/` : Projets, Catalogue (stacks et leur formulaire), Déploiements, Activité.
 - `VITE_API_URL` (`.env.local`) vise une autre instance de Symphony.

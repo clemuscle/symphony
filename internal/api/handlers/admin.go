@@ -14,13 +14,13 @@ import (
 	"github.com/clemuscle/symphony/internal/provider/instrumented"
 )
 
-func ListGoldenPaths(templates *gitops.TemplateLoader) http.HandlerFunc {
+func ListStacks(stacks *gitops.StackLoader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gps := templates.GetGoldenPaths()
-		if gps == nil {
-			gps = []gitops.GoldenPath{}
+		list := stacks.GetStacks()
+		if list == nil {
+			list = []gitops.Stack{}
 		}
-		respond(w, http.StatusOK, gps)
+		respond(w, http.StatusOK, list)
 	}
 }
 
@@ -68,12 +68,12 @@ func ListIdentityGroups(providers *provider.Registry, security *auth.Holder) htt
 	}
 }
 
-// ForceSync recharge le catalogue et les golden paths depuis Git
-func ForceSync(syncer *gitops.Syncer, templates *gitops.TemplateLoader, db *database.DB) http.HandlerFunc {
+// ForceSync recharge le catalogue et les stacks depuis Git
+func ForceSync(syncer *gitops.Syncer, stacks *gitops.StackLoader, db *database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		audit(db, r, "force_sync", "catalogue+templates", nil)
+		audit(db, r, "force_sync", "catalogue+stacks", nil)
 		go syncer.ForceSync()
-		go templates.Reload()
+		go stacks.Reload()
 		respond(w, http.StatusOK, map[string]string{"status": "sync déclenché"})
 	}
 }
@@ -94,8 +94,8 @@ func ListAudit(db *database.DB) http.HandlerFunc {
 
 // AdminStatus : ce que l'admin plateforme doit savoir sans lire les logs :
 // configuration en place et dernier refus, providers et leur dernier appel,
-// golden paths chargés et refusés, fiches catalogue en erreur
-func AdminStatus(providers *provider.Registry, configStatus func() config.Status, templates *gitops.TemplateLoader, syncer *gitops.Syncer) http.HandlerFunc {
+// stacks chargées et refusées, fiches catalogue en erreur
+func AdminStatus(providers *provider.Registry, configStatus func() config.Status, stacks *gitops.StackLoader, syncer *gitops.Syncer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := configStatus()
 		entries := providers.Entries()
@@ -107,16 +107,15 @@ func AdminStatus(providers *provider.Registry, configStatus func() config.Status
 			}
 			list = append(list, ps)
 		}
-		gps := templates.GetGoldenPaths()
-		loaded := make([]string, len(gps))
-		for i, gp := range gps {
-			loaded[i] = gp.ID
+		loaded := []string{}
+		for _, s := range stacks.GetStacks() {
+			loaded = append(loaded, s.ID)
 		}
 		respond(w, http.StatusOK, map[string]any{
-			"config":       cfg,
-			"providers":    list,
-			"golden_paths": goldenPathsStatus{TemplateReport: templates.Report(), Loaded: loaded},
-			"catalogue":    syncer.Report(),
+			"config":    cfg,
+			"providers": list,
+			"stacks":    stacksStatus{StackReport: stacks.Report(), Loaded: loaded},
+			"catalogue": syncer.Report(),
 		})
 	}
 }
@@ -129,8 +128,8 @@ type providerStatus struct {
 	LastCall *instrumented.LastCall `json:"last_call"`
 }
 
-type goldenPathsStatus struct {
-	gitops.TemplateReport
+type stacksStatus struct {
+	gitops.StackReport
 	Loaded []string `json:"loaded"`
 }
 

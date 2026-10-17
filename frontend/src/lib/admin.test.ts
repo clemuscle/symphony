@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ago, problems, providerState, templateName } from './admin'
+import { ago, problems, providerState, stackName } from './admin'
 import type { AdminStatus, ProviderStatus } from '../types'
 
 const now = new Date('2026-10-17T10:00:00Z')
@@ -37,9 +37,9 @@ describe('providerState', () => {
 
 function status(): AdminStatus {
   return {
-    config: { source: 's', revision: 'a', applied_at: '', checked_at: '' },
+    config: { source: 's', revision: 'a', applied_at: '', checked_at: '', warnings: [] },
     providers: [gitlab],
-    golden_paths: { repo: 'r', branch: 'main', path: 'templates', loaded_at: '', loaded: ['api'], refused: [] },
+    stacks: { repo: 'r', branch: 'main', path: 'stacks', official: ['*'], loaded_at: '', loaded: ['api'], refused: [], warnings: [] },
     catalogue: { file: 'catalog-info.yaml', synced_at: '', errors: [], missing: [] },
   }
 }
@@ -51,21 +51,24 @@ describe('problems', () => {
   it('liste ce qui demande attention', () => {
     const s = status()
     s.config.refused = { revision: 'b12', at: '', error: 'clé inconnue' }
-    s.golden_paths.refused = [{ file: 'templates/x/template.yaml', error: 'e' }, { file: 'templates/y/template.yaml', error: 'e' }]
+    s.stacks.refused = [{ file: 'stacks/x/stack.yaml', error: 'e' }, { file: 'officiel:y', error: 'e' }]
+    s.stacks.warnings = ['stacks/z/template.yaml : ancien format']
     s.catalogue.errors = [{ project: 'p', error: 'e' }]
     const checks = [{ kind: 'scm' as const, id: 'gitlab', ok: false, error: 'jeton refusé', duration_ms: 3 }]
     expect(problems(s, checks)).toEqual([
       'Configuration b12 refusée : la précédente reste en place',
       '1 provider en erreur',
-      '2 golden paths refusés',
+      '2 stacks refusées',
       '1 fiche catalogue en erreur',
+      '1 point à corriger (ancien format…)',
     ])
   })
 })
 
-describe('templateName', () => {
-  it('le dossier du template', () => {
-    expect(templateName('templates/api-rest-go/template.yaml')).toBe('api-rest-go')
-    expect(templateName('template.yaml')).toBe('template.yaml')
+describe('stackName', () => {
+  it('le dossier de la stack, ou la stack officielle', () => {
+    expect(stackName('stacks/api-rest-go/stack.yaml')).toBe('api-rest-go')
+    expect(stackName('officiel:worker-python')).toBe('worker-python')
+    expect(stackName('stack.yaml')).toBe('stack.yaml')
   })
 })

@@ -147,6 +147,16 @@ type DeployRequest struct {
 	HealthCheck   string               `json:"health_check"`
 	RestartPolicy string               `json:"restart_policy"`
 	RegistryAuth  *RegistryAuth        `json:"-"` // renseigné par l'API, jamais lu du body
+	// Manifests : chart Helm ou base Kustomize fournis par la stack du projet,
+	// lus dans son repo ; nil : le runtime génère les siens. Un runtime qui
+	// n'en a pas l'usage (docker) les ignore.
+	Manifests *Manifests `json:"-"`
+}
+
+// Manifests : les fichiers d'un chart Helm ou d'une base Kustomize
+type Manifests struct {
+	Kind  string            // "helm" ou "kustomize"
+	Files map[string]string // chemin relatif au chart ou à la base → contenu
 }
 
 type Deployment struct {

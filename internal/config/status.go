@@ -25,6 +25,9 @@ type Status struct {
 	// Refused : la version présente dans la source a été refusée, celle en
 	// place reste appliquée
 	Refused *Refusal `json:"refused,omitempty"`
+	// Warnings : la configuration en place est appliquée, mais à corriger
+	// (ancien nom de section…)
+	Warnings []string `json:"warnings"`
 	// Types : type de chaque provider en place, par <section>/<id>
 	Types map[string]string `json:"-"`
 }

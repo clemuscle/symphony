@@ -1,0 +1,32 @@
+apiVersion: symphony/v1
+kind: Stack
+metadata:
+  name: worker-python
+  title: Worker Python
+  description: Worker Python qui répète une tâche en arrière-plan, avec healthcheck, métriques et logs structurés
+  icon: python
+spec:
+  language: python
+  type: worker
+  ci_templates:
+    gitlab: ci.gitlab-ci.yml
+    github: ci.github-actions.yml
+  parameters:
+    - name: python_version
+      title: Version de Python
+      description: Fixée par l'équipe plateforme (images de build validées)
+      type: choice
+      choices: ["3.12", "3.13"]
+      default: "3.12"
+      locked: true
+    - name: interval
+      title: Intervalle entre deux passages (secondes)
+      description: Par défaut ; la variable WORKER_INTERVAL le change au déploiement
+      type: number
+      default: 30
+      required: true
+    - name: log_level
+      title: Niveau de journalisation
+      type: choice
+      choices: [debug, info, warning, error]
+      default: info

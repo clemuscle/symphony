@@ -35,6 +35,16 @@ type ServiceSpec struct {
 	Dependencies []Dependency  `yaml:"dependencies,omitempty" json:"dependencies"`
 	SLO          SLO           `yaml:"slo,omitempty"          json:"slo"`
 	Environments []Environment `yaml:"environments,omitempty" json:"environments"`
+	// Kubernetes : chart Helm ou base Kustomize du service dans son repo
+	// (écrit à la création par sa stack) ; le runtime argocd les déploie à la
+	// place des manifests qu'il génère
+	Kubernetes *Kubernetes `yaml:"kubernetes,omitempty" json:"kubernetes,omitempty"`
+}
+
+// Kubernetes : un dossier du repo du service, chart Helm ou base Kustomize
+type Kubernetes struct {
+	Helm      string `yaml:"helm,omitempty"      json:"helm,omitempty"`
+	Kustomize string `yaml:"kustomize,omitempty" json:"kustomize,omitempty"`
 }
 
 type Link struct {

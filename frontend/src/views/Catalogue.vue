@@ -4,36 +4,38 @@
       <div>
         <h2>Catalogue</h2>
         <p class="subtitle">
-          Golden paths approuvés par l'équipe plateforme : chacun crée un projet complet
-          (repo, CI, image, fiche catalogue, déploiement)
+          Stacks approuvées par l'équipe plateforme : chacune crée un projet complet
+          (repo, CI, image, fiche catalogue, déploiement), réglé par son formulaire
         </p>
       </div>
-      <button class="btn-ghost" v-if="can('admin')" :disabled="syncing" @click="syncGoldenPaths">
+      <button class="btn-ghost" v-if="can('admin')" :disabled="syncing" @click="syncStacks">
         {{ syncing ? 'Rechargement...' : '↻ Recharger depuis Git' }}
       </button>
     </div>
 
-    <div v-if="loading" class="state">Chargement des golden paths...</div>
+    <div v-if="loading" class="state">Chargement des stacks...</div>
     <div class="gp-grid" v-else>
-      <div v-for="gp in goldenPaths" :key="gp.id"
-        class="gp-card" :class="{ selected: selected?.id === gp.id }"
-        @click="select(gp)">
-        <div class="gp-icon">{{ langIcon(gp.language) }}</div>
-        <div class="gp-name">{{ gp.name }}</div>
-        <div class="gp-desc">{{ gp.description }}</div>
+      <div v-for="st in stacks" :key="st.id"
+        class="gp-card" :class="{ selected: selected?.id === st.id }"
+        @click="select(st)">
+        <div class="gp-icon">{{ langIcon(st.language) }}</div>
+        <div class="gp-name">{{ st.name }}</div>
+        <div class="gp-desc">{{ st.description }}</div>
         <div class="gp-tags">
-          <span class="gp-tag">{{ gp.language }}</span>
-          <span class="gp-tag">{{ gp.type }}</span>
-          <span class="gp-tag runtime">{{ runtimeLabel(gp.runtime_provider) }}</span>
+          <span class="gp-tag" v-if="st.language">{{ st.language }}</span>
+          <span class="gp-tag" v-if="st.type">{{ st.type }}</span>
+          <span class="gp-tag runtime">{{ runtimeLabel(st.runtime_provider) }}</span>
+          <span class="gp-tag official" v-if="st.official" title="Catalogue officiel de Symphony">officielle</span>
+          <span class="gp-tag" v-if="st.parameters.length">{{ st.parameters.length }} paramètre{{ st.parameters.length > 1 ? 's' : '' }}</span>
         </div>
-        <button class="btn-primary gp-cta" v-if="can('developer')" @click.stop="select(gp)">Créer un projet</button>
+        <button class="btn-primary gp-cta" v-if="can('developer')" @click.stop="select(st)">Créer un projet</button>
       </div>
-      <div class="empty" v-if="!goldenPaths.length">
-        Aucun golden path dans <code>symphony-templates</code>
+      <div class="empty" v-if="!stacks.length">
+        Aucune stack proposée : voir la section <code>stacks</code> de la configuration
       </div>
     </div>
 
-    <!-- Création d'un projet depuis le golden path choisi -->
+    <!-- Création d'un projet depuis la stack choisie -->
     <Transition name="fade">
       <div class="form-card" v-if="selected" ref="formCard">
         <div class="form-head">
@@ -62,6 +64,28 @@
               <input v-model.number="form.port" type="number" placeholder="8080" />
             </div>
           </div>
+
+          <template v-if="shownParams.length">
+            <div class="section-label">Paramètres de la stack</div>
+            <div class="form-grid">
+              <div class="field" v-for="p in shownParams" :key="p.name" :class="{ check: p.type === 'boolean' }">
+                <label :for="'param-' + p.name">
+                  {{ p.title }}<span v-if="p.required"> *</span>
+                  <span class="lock" v-if="p.locked" title="Fixé par l'équipe plateforme">🔒</span>
+                </label>
+                <select v-if="p.type === 'choice'" :id="'param-' + p.name" v-model="params[p.name]" :disabled="p.locked">
+                  <option v-for="c in p.choices" :key="c" :value="c">{{ c }}</option>
+                </select>
+                <input v-else-if="p.type === 'boolean'" :id="'param-' + p.name" type="checkbox"
+                  v-model="params[p.name]" :disabled="p.locked" />
+                <input v-else-if="p.type === 'number'" :id="'param-' + p.name" type="number"
+                  v-model.number="params[p.name]" :disabled="p.locked" />
+                <input v-else :id="'param-' + p.name" v-model="params[p.name]" :disabled="p.locked" />
+                <span class="field-help" v-if="p.description">{{ p.description }}</span>
+                <span class="field-hint" v-if="paramErrs[p.name]">{{ paramErrs[p.name] }}</span>
+              </div>
+            </div>
+          </template>
 
           <div class="section-label">Fiche catalogue</div>
           <div class="form-grid three">
@@ -104,11 +128,12 @@
               <div class="summary-item">✅ Webhook de pipeline (suivi en direct)</div>
               <div class="summary-item">✅ Première pipeline : tests et image dans le registry</div>
               <div class="summary-item">✅ Runtime de déploiement : <code>{{ runtimeLabel(selected.runtime_provider) }}</code></div>
+              <div class="summary-item" v-if="kubeManifests">✅ Manifests Kubernetes dans le repo : <code>{{ kubeManifests }}</code></div>
             </div>
           </div>
 
           <div class="form-footer">
-            <button class="btn-primary" :disabled="creating || !form.name || !!nameError" @click="createProject">
+            <button class="btn-primary" :disabled="creating || !form.name || !!nameError || hasParamErrors" @click="createProject">
               {{ creating ? '⏳ Envoi...' : '🚀 Créer le projet' }}
             </button>
           </div>
@@ -131,18 +156,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { api, errorMessage } from '../api'
 import { langIcon, lifecycleLabels } from '../lib/projects'
+import { paramErrors, visible, fillDefaults, type ParamValues } from '../lib/parameters'
 import { can, myTeams } from '../stores/session'
 import TaskProgress from '../components/TaskProgress.vue'
 import { taskStore, trackTask } from '../stores/tasks'
-import type { CreateProjectRequest, GoldenPath, Group } from '../types'
+import type { CreateProjectRequest, Group, Stack } from '../types'
 
-const goldenPaths = ref<GoldenPath[]>([])
+const stacks = ref<Stack[]>([])
 const loading = ref(true)
 const syncing = ref(false)
-const selected = ref<GoldenPath | null>(null)
+const selected = ref<Stack | null>(null)
 const formCard = ref<HTMLElement | null>(null)
 const creating = ref(false)
 const createTaskId = ref<number | null>(null)
@@ -150,12 +176,27 @@ const createTask = computed(() => (createTaskId.value ? taskStore.byId[createTas
 const createError = ref<string | null>(null)
 const nameError = ref('')
 
-type ProjectForm = Omit<CreateProjectRequest, 'golden_path_id' | 'scm_provider' | 'runtime_provider'>
+type ProjectForm = Omit<CreateProjectRequest, 'stack' | 'parameters' | 'scm_provider' | 'runtime_provider'>
 const emptyForm = (): ProjectForm => ({
   name: '', description: '', namespace: '', port: 8080,
   owner: myTeams()[0] || '', tier: 'standard', lifecycle: 'staging',
 })
 const form = ref(emptyForm())
+
+// Paramètres de la stack : défauts et conditions recalculés à chaque saisie
+const params = ref<ParamValues>({})
+watch(params, (v) => {
+  const next = fillDefaults(selected.value?.parameters || [], v)
+  if (JSON.stringify(next) !== JSON.stringify(v)) params.value = next
+}, { deep: true })
+const shownParams = computed(() => (selected.value?.parameters || []).filter(p => visible(p, params.value)))
+const paramErrs = computed(() => paramErrors(selected.value?.parameters || [], params.value))
+const hasParamErrors = computed(() => Object.keys(paramErrs.value).length > 0)
+const kubeManifests = computed(() => {
+  const k = selected.value?.kubernetes
+  if (!k) return ''
+  return k.helm ? `chart Helm ${k.helm}` : `base Kustomize ${k.kustomize}`
+})
 
 const runtimeLabels: Record<string, string> = { 'docker-local': '🐳 Docker', 'argocd-k3s': '☸️ Kubernetes (Argo CD)' }
 const runtimeLabel = (rt: string) => runtimeLabels[rt] || rt || 'runtime par défaut'
@@ -170,12 +211,13 @@ async function loadGroups() {
   } catch { groups.value = [] }
 }
 
-onMounted(() => { loadGoldenPaths(); loadGroups() })
+onMounted(() => { loadStacks(); loadGroups() })
 
-async function select(gp: GoldenPath) {
-  if (selected.value?.id !== gp.id) {
-    selected.value = gp
+async function select(st: Stack) {
+  if (selected.value?.id !== st.id) {
+    selected.value = st
     form.value = emptyForm()
+    params.value = fillDefaults(st.parameters, {})
     createTaskId.value = null
     createError.value = null
     nameError.value = ''
@@ -189,23 +231,23 @@ function validateName() {
   nameError.value = val && !/^[a-z0-9-]+$/.test(val) ? 'Uniquement lettres minuscules, chiffres et tirets' : ''
 }
 
-async function loadGoldenPaths() {
+async function loadStacks() {
   loading.value = true
   try {
-    const { data } = await api.getGoldenPaths()
-    goldenPaths.value = data || []
-  } catch { goldenPaths.value = [] }
+    const { data } = await api.getStacks()
+    stacks.value = data || []
+  } catch { stacks.value = [] }
   finally { loading.value = false }
 }
 
-// Les golden paths sont rechargés depuis Git toutes les 15 s ; ce bouton
-// force le rechargement (asynchrone côté serveur) puis relit la liste
-async function syncGoldenPaths() {
+// Les stacks sont rechargées depuis Git toutes les 15 s ; ce bouton force le
+// rechargement (asynchrone côté serveur) puis relit la liste
+async function syncStacks() {
   syncing.value = true
   try {
     await api.sync()
     await new Promise(r => setTimeout(r, 1500))
-    await loadGoldenPaths()
+    await loadStacks()
   } finally { syncing.value = false }
 }
 
@@ -215,14 +257,15 @@ async function createProject() {
   creating.value = true
   createTaskId.value = null
   createError.value = null
-  const gp = selected.value
-  if (!gp) return
+  const st = selected.value
+  if (!st) return
   try {
     const { data } = await api.createProject({
       ...form.value,
-      golden_path_id: gp.id,
-      scm_provider: gp.scm_provider,
-      runtime_provider: gp.runtime_provider,
+      stack: st.id,
+      parameters: fillDefaults(st.parameters, params.value),
+      scm_provider: st.scm_provider,
+      runtime_provider: st.runtime_provider,
     })
     createTaskId.value = trackTask(data)
   } catch (e) {
@@ -252,6 +295,7 @@ h2 { font-size: 22px; font-weight: 700; }
 .gp-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
 .gp-tag { font-size: 11px; background: #eef2ff; color: #667eea; padding: 2px 8px; border-radius: 20px; }
 .gp-tag.runtime { background: #f0fff4; color: #276749; }
+.gp-tag.official { background: #fffaf0; color: #9c4221; }
 .gp-cta { width: 100%; padding: 8px; font-size: 13px; }
 .form-card { background: white; border: 1px solid #e2e2e2; border-radius: 14px; padding: 24px; scroll-margin-top: 72px; }
 .form-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
@@ -266,6 +310,13 @@ h3 { font-size: 17px; font-weight: 700; }
 .field input, .field select { padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; background: white; }
 .field input:focus, .field select:focus { outline: none; border-color: #667eea; }
 .field-hint { font-size: 12px; color: #e53e3e; }
+.field-help { font-size: 12px; color: #888; }
+.field.check { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
+.field.check label { order: 2; }
+.field.check input { order: 1; width: 18px; height: 18px; }
+.field.check .field-help, .field.check .field-hint { order: 3; flex-basis: 100%; }
+.field input:disabled, .field select:disabled { background: #f5f5f5; color: #888; }
+.lock { margin-left: 4px; font-size: 12px; }
 .summary { background: #f8f9fb; border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
 .summary-title { font-size: 13px; font-weight: 600; color: #555; margin-bottom: 10px; }
 .summary-items { display: flex; flex-direction: column; gap: 6px; }

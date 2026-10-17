@@ -45,7 +45,7 @@ await page.click(`.card:has-text("${deployed}")`)
 await page.waitForSelector('.panel .slo-grid')
 await shot(3500, 'projet-detail')
 
-// 3. Catalogue : les golden paths, puis création d'un projet (l'équipe est
+// 3. Catalogue : les stacks, puis création d'un projet (l'équipe est
 // celle de l'utilisateur, team-payments pour bob)
 await page.click('nav >> text=Catalogue')
 await page.waitForSelector('.gp-card')

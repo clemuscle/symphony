@@ -6,7 +6,7 @@
         <p class="subtitle">Ce que Symphony a chargé depuis Git, ce qu'il a refusé et pourquoi</p>
       </div>
       <div class="actions">
-        <button class="btn" @click="sync" :disabled="syncing" title="Relire les golden paths et les fiches sans attendre">
+        <button class="btn" @click="sync" :disabled="syncing" title="Relire les stacks et les fiches sans attendre">
           {{ syncing ? 'Synchronisation…' : '⟳ Relire Git' }}
         </button>
         <button class="btn" @click="load">↻ Rafraîchir</button>
@@ -50,6 +50,10 @@
           <div class="alert-title">Secrets illisibles : la configuration en place est conservée</div>
           <pre>{{ status.config.secrets_error }}</pre>
         </div>
+        <div class="alert warn" v-for="w in status.config.warnings || []" :key="w">
+          <div class="alert-title">Appliquée, mais à corriger</div>
+          <pre>{{ w }}</pre>
+        </div>
       </section>
 
       <!-- Providers -->
@@ -86,27 +90,38 @@
         </table>
       </section>
 
-      <!-- Golden paths -->
+      <!-- Stacks -->
       <section class="card">
-        <h3>🧭 Golden paths</h3>
+        <h3>🧭 Stacks</h3>
         <dl class="facts">
           <dt>Repo</dt>
-          <dd><code>{{ status.golden_paths.repo }}</code>, branche <code>{{ status.golden_paths.branch }}</code>,
-            dossier <code>{{ status.golden_paths.path || '.' }}</code></dd>
-          <dt>Relu</dt><dd>{{ ago(status.golden_paths.loaded_at) }}</dd>
-          <dt>Chargés</dt>
+          <dd v-if="status.stacks.repo"><code>{{ status.stacks.repo }}</code>, branche <code>{{ status.stacks.branch }}</code>,
+            dossier <code>{{ status.stacks.path || '.' }}</code></dd>
+          <dd class="muted" v-else>aucun (section stacks sans repo)</dd>
+          <dt>Officielles</dt>
           <dd>
-            <span class="chip" v-for="id in status.golden_paths.loaded" :key="id">{{ id }}</span>
-            <span class="muted" v-if="!status.golden_paths.loaded.length">aucun</span>
+            <template v-if="status.stacks.official.includes('*')">toutes</template>
+            <span class="chip" v-else v-for="id in status.stacks.official" :key="id">{{ id }}</span>
+            <span class="muted" v-if="!status.stacks.official.length">aucune (stacks.official)</span>
+          </dd>
+          <dt>Relues</dt><dd>{{ ago(status.stacks.loaded_at) }}</dd>
+          <dt>Chargées</dt>
+          <dd>
+            <span class="chip" v-for="id in status.stacks.loaded" :key="id">{{ id }}</span>
+            <span class="muted" v-if="!status.stacks.loaded.length">aucune</span>
           </dd>
         </dl>
-        <div class="alert warn" v-if="status.golden_paths.error">
+        <div class="alert warn" v-if="status.stacks.error">
           <div class="alert-title">Dernière relecture en échec : la liste précédente reste proposée</div>
-          <pre>{{ status.golden_paths.error }}</pre>
+          <pre>{{ status.stacks.error }}</pre>
         </div>
-        <div class="alert error" v-for="r in status.golden_paths.refused" :key="r.file">
-          <div class="alert-title"><strong>{{ templateName(r.file) }}</strong> refusé <span class="muted">({{ r.file }})</span></div>
+        <div class="alert error" v-for="r in status.stacks.refused" :key="r.file">
+          <div class="alert-title"><strong>{{ stackName(r.file) }}</strong> refusée <span class="muted">({{ r.file }})</span></div>
           <pre>{{ r.error }}</pre>
+        </div>
+        <div class="alert warn" v-for="w in status.stacks.warnings" :key="w">
+          <div class="alert-title">À corriger</div>
+          <pre>{{ w }}</pre>
         </div>
       </section>
 
@@ -153,7 +168,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { api, errorMessage } from '../api'
-import { ago, kindLabels, problems, providerState, templateName } from '../lib/admin'
+import { ago, kindLabels, problems, providerState, stackName } from '../lib/admin'
 import type { AdminStatus, AuditEntry, ProviderCheck, ProviderStatus } from '../types'
 
 const status = ref<AdminStatus | null>(null)
@@ -194,7 +209,7 @@ async function runChecks() {
   }
 }
 
-// Relit les golden paths et les fiches, puis l'état une fois la relecture faite
+// Relit les stacks et les fiches, puis l'état une fois la relecture faite
 async function sync() {
   syncing.value = true
   try {

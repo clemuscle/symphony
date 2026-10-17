@@ -38,10 +38,10 @@ func (v vault) Get(path, key string) (string, error) {
 	return "", provider.ErrNotFound
 }
 
-// golden path minimal, poussé dans le repo de templates de la forge
-var templateFiles = map[string]string{
-	"templates/api-go/template.yaml": `apiVersion: symphony/v1
-kind: GoldenPath
+// stack minimale avec des paramètres, poussée dans le repo de stacks de la forge
+var stackFiles = map[string]string{
+	"stacks/api-go/stack.yaml": `apiVersion: symphony/v1
+kind: Stack
 metadata:
   name: api-go
   title: API Go
@@ -51,9 +51,16 @@ spec:
   providers: {scm: gitlab, ci: gitlab-ci, registry: registry, runtime: docker-local}
   skeleton: skeleton
   ci_template: ci.yml
+  parameters:
+    - {name: log_level, type: choice, choices: [info, debug], default: info}
+    - {name: metrics, type: boolean, default: true}
+    - {name: metrics_path, type: string, default: /metrics, when: {metrics: true}}
+  files:
+    - {path: metrics.go, when: {metrics: true}}
 `,
-	"templates/api-go/ci.yml":           "build: {script: [make]}\n",
-	"templates/api-go/skeleton/main.go": "package main // {{SERVICE_NAME}}\n",
+	"stacks/api-go/ci.yml":                   "build: {script: [make]}\n",
+	"stacks/api-go/skeleton/main.go.tmpl":    "package main // {{SERVICE_NAME}} {{params.log_level}}\n",
+	"stacks/api-go/skeleton/metrics.go.tmpl": "package main // {{params.metrics_path}}\n",
 }
 
 // TestIntegration : le parcours complet par l'API, avec les tâches, sur une
@@ -75,16 +82,16 @@ func TestIntegration(t *testing.T) {
 	providers.RegisterRuntime(docker, true)
 	providers.RegisterRuntime(k8s, false)
 
-	if _, err := forge.SCM().CreateRepo(provider.CreateRepoRequest{Name: "symphony-templates", Namespace: "platform"}); err != nil {
+	if _, err := forge.SCM().CreateRepo(provider.CreateRepoRequest{Name: "symphony-stacks", Namespace: "platform"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := forge.SCM().PushFiles("platform/symphony-templates", "main", templateFiles, "templates [skip ci]"); err != nil {
+	if err := forge.SCM().PushFiles("platform/symphony-stacks", "main", stackFiles, "stacks [skip ci]"); err != nil {
 		t.Fatal(err)
 	}
-	templates := gitops.NewTemplateLoader(providers, "platform/symphony-templates", "main", "templates")
-	templates.Reload()
-	if len(templates.GetGoldenPaths()) != 1 {
-		t.Fatalf("golden paths : %+v", templates.GetGoldenPaths())
+	stacks := gitops.NewStackLoader(providers, nil, gitops.StackSource{Repo: "platform/symphony-stacks", Branch: "main", Path: "stacks"})
+	stacks.Reload()
+	if len(stacks.GetStacks()) != 1 {
+		t.Fatalf("stacks : %+v, %+v", stacks.GetStacks(), stacks.Report())
 	}
 
 	name := fmt.Sprintf("it-%d", time.Now().UnixNano()%1e9)
@@ -107,13 +114,13 @@ func TestIntegration(t *testing.T) {
 	runner.PollInterval = 100 * time.Millisecond
 	hooks := webhook.NewHolder(nil)
 	handlers.RegisterTasks(runner, handlers.TaskDeps{
-		Providers: providers, DB: db, Templates: templates, Syncer: syncer, Webhooks: hooks, Store: store, Envs: envs,
+		Providers: providers, DB: db, Stacks: stacks, Syncer: syncer, Webhooks: hooks, Store: store, Envs: envs,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	runner.Start(ctx, 2)
 
-	srv := httptest.NewServer(NewServer(providers, store, db, syncer, templates,
+	srv := httptest.NewServer(NewServer(providers, store, db, syncer, stacks,
 		auth.NewHolder(&auth.Policy{}), runner, hooks, envs, func() config.Status { return config.Status{} }))
 	defer srv.Close()
 
@@ -159,15 +166,29 @@ func TestIntegration(t *testing.T) {
 		t.Fatalf("%s : tâche toujours en cours", step)
 	}
 
-	// 1. Création : repo, squelette, fiche et CI en un commit, première pipeline
-	code, task := call("POST", "/api/v1/projects", map[string]any{"name": name, "golden_path_id": "api-go", "owner": "team-it"})
+	// 1. Création : repo, squelette, fiche et CI en un commit, première
+	// pipeline ; les paramètres sont validés avant (JSON Schema de la stack)
+	if code, body := call("POST", "/api/v1/projects", map[string]any{"name": name, "stack": "api-go", "owner": "team-it",
+		"parameters": map[string]any{"log_level": "trace"}}); code != http.StatusBadRequest ||
+		!strings.Contains(fmt.Sprint(body["error"]), "log_level") {
+		t.Errorf("paramètre invalide : %d %v", code, body)
+	}
+	code, task := call("POST", "/api/v1/projects", map[string]any{"name": name, "stack": "api-go", "owner": "team-it",
+		"parameters": map[string]any{"log_level": "debug", "metrics": false}})
 	wait("création", code, task)
 	repo := "apps/" + name
 	if _, ok := forge.File(repo, "catalog-info.yaml"); !ok {
 		t.Fatalf("fiche absente du repo %s", repo)
 	}
-	if c, _ := forge.File(repo, "main.go"); !strings.Contains(c, name) {
-		t.Errorf("placeholders non remplacés : %q", c)
+	if c, _ := forge.File(repo, "main.go"); !strings.Contains(c, name+" debug") {
+		t.Errorf("variables non remplacées : %q", c)
+	}
+	if _, ok := forge.File(repo, "metrics.go"); ok {
+		t.Error("metrics.go créé alors que metrics vaut false")
+	}
+	if p, err := db.GetProjectByName(name); err != nil || p.Stack != "api-go" || p.StackParameters["log_level"] != "debug" ||
+		p.StackParameters["metrics"] != false {
+		t.Errorf("projet : %+v, %v", p, err)
 	}
 
 	// 2. La fiche déclare les variables par environnement, dont un secret
@@ -314,10 +335,10 @@ spec:
 		t.Error("projet toujours en base")
 	}
 
-	// Page Administration : l'audit a tout vu, les golden paths sont chargés
+	// Page Administration : l'audit a tout vu, les stacks sont chargées
 	code, status := call("GET", "/api/v1/admin/status", nil)
-	gps, _ := status["golden_paths"].(map[string]any)
-	if code != http.StatusOK || gps == nil || len(gps["loaded"].([]any)) == 0 || len(status["providers"].([]any)) == 0 {
+	loaded, _ := status["stacks"].(map[string]any)
+	if code != http.StatusOK || loaded == nil || len(loaded["loaded"].([]any)) == 0 || len(status["providers"].([]any)) == 0 {
 		t.Errorf("admin/status : %d %v", code, status)
 	}
 }
