@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/clemuscle/symphony/internal/auth"
@@ -20,8 +21,9 @@ import (
 // configSource lit la configuration : dans le repo Git désigné par le
 // config_source du bootstrap local, sinon dans le fichier local lui-même
 type configSource struct {
-	desc []any // attributs de log
-	read func() ([]byte, error)
+	desc  []any  // attributs de log
+	label string // pour la page Administration
+	read  func() ([]byte, error)
 }
 
 // newConfigSource lit le bootstrap local. S'il contient config_source, la
@@ -35,8 +37,9 @@ func newConfigSource(path string) (*configSource, error) {
 	src := local.ConfigSource
 	if src == nil {
 		return &configSource{
-			desc: []any{"source", path},
-			read: func() ([]byte, error) { return os.ReadFile(path) },
+			desc:  []any{"source", path},
+			label: path,
+			read:  func() ([]byte, error) { return os.ReadFile(path) },
 		}, nil
 	}
 
@@ -68,7 +71,8 @@ func newConfigSource(path string) (*configSource, error) {
 	scm = instrumented.SCM(scm)
 	repo, branch, file := src.Repo, orDefault(src.Branch, "main"), orDefault(src.Path, "symphony.yaml")
 	return &configSource{
-		desc: []any{"bootstrap", path, "repo", repo, "branch", branch, "path", file},
+		desc:  []any{"bootstrap", path, "repo", repo, "branch", branch, "path", file},
+		label: fmt.Sprintf("%s:%s (branche %s)", repo, file, branch),
 		read: func() ([]byte, error) {
 			content, err := scm.GetFileContent(repo, branch, file)
 			if err != nil {
@@ -165,6 +169,34 @@ type configWatcher struct {
 	// resubscribe : appelé (en arrière-plan) quand l'URL ou le secret des
 	// webhooks change, pour réabonner les repos des projets
 	resubscribe func(*webhook.Settings)
+
+	statusMu sync.Mutex
+	status   config.Status
+}
+
+// Status : la configuration en place et ses derniers rechargements
+func (w *configWatcher) Status() config.Status {
+	w.statusMu.Lock()
+	defer w.statusMu.Unlock()
+	return w.status
+}
+
+func (w *configWatcher) updateStatus(f func(*config.Status)) {
+	w.statusMu.Lock()
+	defer w.statusMu.Unlock()
+	f(&w.status)
+}
+
+// applied note la configuration raw comme en place
+func (w *configWatcher) applied(raw []byte, cfg *config.Config) {
+	w.updateStatus(func(s *config.Status) {
+		s.Source = w.source.label
+		s.Revision = config.Revision(raw)
+		s.AppliedAt = time.Now()
+		s.CheckedAt = s.AppliedAt
+		s.Refused = nil
+		s.Types = cfg.ProviderTypes()
+	})
 }
 
 func (w *configWatcher) Start() {
@@ -176,6 +208,13 @@ func (w *configWatcher) Start() {
 
 func (w *configWatcher) check() {
 	cfg, raw, err := w.source.load()
+	w.updateStatus(func(s *config.Status) {
+		s.CheckedAt = time.Now()
+		s.ReadError = ""
+		if raw == nil {
+			s.ReadError = err.Error()
+		}
+	})
 	if raw == nil {
 		// Lecture impossible (GitLab injoignable…) : on réessaiera
 		metrics.Reload("config", "error")
@@ -195,6 +234,9 @@ func (w *configWatcher) check() {
 		w.refused = err != nil
 		if err != nil {
 			slog.Error("configuration refusée, configuration en place conservée", "error", err)
+			w.refuse(raw, err)
+		} else {
+			w.applied(raw, cfg)
 		}
 	} else if err == nil && !w.refused && bytes.Contains(raw, []byte(provider.SecretScheme)) {
 		w.checkSecrets(cfg)
@@ -213,6 +255,12 @@ func (w *configWatcher) check() {
 // Les providers de secrets en place servent à la relecture.
 func (w *configWatcher) checkSecrets(cfg *config.Config) {
 	resolved, err := resolveConfig(cfg, w.providers.Secrets)
+	w.updateStatus(func(s *config.Status) {
+		s.SecretsError = ""
+		if err != nil {
+			s.SecretsError = err.Error()
+		}
+	})
 	if err != nil {
 		if err.Error() != w.secretErr {
 			w.secretErr = err.Error()
@@ -227,7 +275,19 @@ func (w *configWatcher) checkSecrets(cfg *config.Config) {
 	slog.Info("secret modifié dans son provider : configuration réappliquée")
 	if err := w.apply(cfg); err != nil {
 		slog.Error("configuration refusée après changement d'un secret, configuration en place conservée", "error", err)
+		w.updateStatus(func(s *config.Status) {
+			s.SecretsError = "secret modifié, configuration refusée : " + err.Error()
+		})
+		return
 	}
+	w.applied(w.last, cfg)
+}
+
+// refuse note la version raw comme refusée
+func (w *configWatcher) refuse(raw []byte, err error) {
+	w.updateStatus(func(s *config.Status) {
+		s.Refused = &config.Refusal{Revision: config.Revision(raw), At: time.Now(), Error: err.Error()}
+	})
 }
 
 // apply construit les nouveaux providers puis les met en place d'un bloc ;

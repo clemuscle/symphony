@@ -205,3 +205,55 @@ export interface AuditEntry {
   ip_address: string
   created_at: string
 }
+
+// Page Administration (GET /api/v1/admin/status)
+export type ProviderKind = 'scm' | 'ci' | 'registry' | 'runtime' | 'secrets' | 'identity'
+
+export interface ConfigStatus {
+  source: string
+  revision: string
+  applied_at: string
+  checked_at: string
+  read_error?: string
+  secrets_error?: string
+  refused?: { revision: string; at: string; error: string }
+}
+
+export interface ProviderStatus {
+  kind: ProviderKind
+  id: string
+  type: string
+  default: boolean
+  last_call: { method: string; at: string; error?: string } | null
+}
+
+export interface AdminStatus {
+  config: ConfigStatus
+  providers: ProviderStatus[]
+  golden_paths: {
+    repo: string
+    branch: string
+    path: string
+    loaded_at: string
+    error?: string
+    loaded: string[]
+    refused: { file: string; error: string }[]
+  }
+  catalogue: {
+    file: string
+    synced_at: string
+    error?: string
+    errors: { project: string; error: string }[]
+    missing: string[]
+  }
+}
+
+// Vérification d'un provider (GET /api/v1/admin/providers/check)
+export interface ProviderCheck {
+  kind: ProviderKind
+  id: string
+  ok: boolean
+  detail?: string
+  error?: string
+  duration_ms: number
+}

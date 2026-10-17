@@ -3,10 +3,10 @@
 Symphony est une Internal Developer Platform (backend Go, SPA Vue 3) au-dessus d'outils
 existants, chacun derrière une interface de provider : SCM (GitLab, GitHub), CI (GitLab CI,
 GitHub Actions), registry d'images (GitLab, GHCR), runtime (Docker, Argo CD), secrets
-(Vault, env), identité (Keycloak, OIDC). Projet de **portfolio** pour recruteurs tech et
-leads DevOps : la vitrine (README, démo, qualité du code) compte autant que les
-fonctionnalités.
+(Vault, env), identité (Keycloak, OIDC). Né comme projet de **portfolio**, il vise
+désormais une v1.0 adoptable par de vraies équipes : le produit passe avant la vitrine.
 
+- Cap et décisions produit : [documentation/vision.md](documentation/vision.md)
 - Architecture et décisions : [documentation/architecture.md](documentation/architecture.md)
 - Où on en est, ce qui vient : [ROADMAP.md](ROADMAP.md)
 
@@ -16,12 +16,14 @@ fonctionnalités.
 go build ./... && go vet ./... && go test -race ./...   # aucun test ne demande GitLab ni Docker
 SYMPHONY_TEST_DB=1 DB_PORT=55432 go test -race ./...   # + tests sur PostgreSQL (dbtest), dont l'intégration
 go run ./cmd/symphony             # depuis la racine ; lit symphony.yaml (bootstrap) et .env
+go run ./cmd/symphony validate -config <fichier> -templates <dossier>   # hors ligne, code 1 si erreur
 cd frontend && npm run dev        # front en dev, relaie /api et /auth vers :8080
 cd frontend && npm run typecheck && npm run lint && npm test   # vue-tsc, ESLint, Vitest
 cd frontend && npm run build      # front compilé dans internal/web/dist, embarqué au go build
 docker build -t symphony .        # image complète (~15 Mo)
 helm lint deploy/helm/symphony    # chart ; la CI l'installe sur kind (deploy/helm/e2e)
 ./demo/up.sh / ./demo/down.sh     # démo complète ; --no-k8s, --no-seed ; down.sh --purge
+cd quickstart && docker compose up -d   # Symphony + PostgreSQL sur une forge existante (.env)
 ```
 
 ## Lancer le serveur
@@ -39,16 +41,20 @@ helm lint deploy/helm/symphony    # chart ; la CI l'installe sur kind (deploy/he
 
 ## Repères dans le code
 
-- `cmd/symphony` : `config.go` (bootstrap, `configWatcher` : rechargement à chaud et relecture
-  des secrets), `secrets.go` (références `secret://` résolues dans une copie), `providers.go`
-  (`buildProviders` : secrets d'abord, puis un `case` par type), `main.go`.
-- `internal/provider` : interfaces (`interfaces.go`), `Registry`, `secretref.go`, une
-  implémentation par dossier (`scm/`, `ci/`, `registry/`, `runtime/`, `secrets/`,
-  `identity/`), et `instrumented/` qui les enveloppe pour `/metrics`.
+- `cmd/symphony` : `config.go` (bootstrap, `configWatcher` : rechargement à chaud, relecture
+  des secrets, `Status` pour la page Administration), `secrets.go` (références `secret://`
+  résolues dans une copie), `providers.go` (`buildProviders` : secrets d'abord, puis un
+  `case` par type), `validate.go` (`symphony validate` : la même construction, secrets
+  remplacés par des substituts), `main.go`.
+- `internal/provider` : interfaces (`interfaces.go`), `Registry`, `secretref.go`, `check.go`
+  (aides des méthodes `Check`), une implémentation par dossier (`scm/`, `ci/`, `registry/`,
+  `runtime/`, `secrets/`, `identity/`), et `instrumented/` qui les enveloppe pour
+  `/metrics` et retient leur dernier appel.
 - `internal/api` : toutes les routes dans `server.go`, un fichier de handlers par domaine.
   Les types de tâches : `handlers/tasks.go` (`RegisterTasks`, `submit`, routes des tâches),
   leurs étapes dans `task_create.go`, `task_deploy.go`, `task_delete.go`, `task_action.go` ;
-  un handler valide puis `submit` (202).
+  un handler valide puis `submit` (202). Page Administration : `handlers/admin.go`
+  (`AdminStatus`, `CheckProviders`).
 - `internal/tasks` (moteur de tâches, attente de pipelines, `Hub` SSE), `internal/auth` (OIDC
   en Backend-for-Frontend, rôles, CSRF), `internal/gitops` (`Syncer` des fiches
   `catalog-info.yaml`, `TemplateLoader` des golden paths), `internal/webhook`,
@@ -56,6 +62,10 @@ helm lint deploy/helm/symphony    # chart ; la CI l'installe sur kind (deploy/he
 - `frontend/src/visit/` : mode visite (GitHub Pages, `npm run build:visit`) : l'API servie
   par `fixtures.json`, capturé sur une démo (`demo/visit/capture-fixtures.sh`), lecture
   seule. À recapturer quand l'API change.
+- `documentation/reference/` : configuration de référence (`symphony.yaml`, chaque clé),
+  bootstrap et golden path de référence, vérifiés par les tests.
+- `quickstart/` : Compose (Symphony, PostgreSQL, proxy Docker) branché sur une forge
+  existante, configs GitLab et GitHub, `push-templates.sh` (golden paths d'exemple).
 - `demo/` : `up.sh` (rejouable), `seed.sh` (projets de démo par l'API), `gitlab/` (contenu
   poussé dans le groupe `platform` de la GitLab de démo : config, golden paths, repo de
   déploiement ; à tenir à jour avec les golden paths), `keycloak/`, `k3s/`, `capture/`
@@ -77,16 +87,19 @@ helm lint deploy/helm/symphony    # chart ; la CI l'installe sur kind (deploy/he
   config résolue. Une référence introuvable fait refuser **toute** la configuration.
 - Configuration stricte : `symphony.yaml` est décodé avec `KnownFields`, et chaque type de
   provider déclare ses clés dans `cmd/symphony/schema.go`. Nouveau type ou nouvelle clé :
-  l'y déclarer. Pas de repli silencieux (jeton par défaut, provider ignoré) : une erreur
-  de construction fait refuser la configuration. `TestRepoConfigsValid` valide les configs
-  livrées.
+  l'y déclarer, et la documenter dans `documentation/reference/symphony.yaml`
+  (`TestReferenceCoversSchema` échoue sinon ; de même pour un champ de golden path et
+  `reference/template.yaml`). Pas de repli silencieux (jeton par défaut, provider
+  ignoré) : une erreur de construction fait refuser la configuration.
+  `TestRepoConfigsValid` et `TestValidateRepo` valident les configs livrées.
 - `resolveInputs` refuse les entrées d'action non déclarées (injection de variables CI) :
   ne pas assouplir.
 
 **Providers**
 - Le contenu de `provider.Registry` est remplacé d'un bloc au rechargement : ne jamais
   garder un provider dans une struct longue durée, le résoudre à chaque appel.
-- Une méthode ajoutée à une interface l'est aussi dans `instrumented`.
+- Une méthode ajoutée à une interface l'est aussi dans `instrumented`. Chaque provider a
+  un `Check()` en lecture seule (page Administration) : un nouveau provider en a un.
 - Deux « registry » : `provider.Registry` (tous les providers) et `RegistryProvider` (images).
 - Supprimer un projet passe par **chaque** runtime (`Remove`) puis le repo et les images
   (`DeleteImages`) : rien ne doit rester. GitLab ne fait que programmer la suppression d'un
@@ -118,6 +131,9 @@ helm lint deploy/helm/symphony    # chart ; la CI l'installe sur kind (deploy/he
   de `db.go`.
 
 **Démo**
+- La CI GitLab des golden paths construit avec le socket du runner (démo) ou, sur
+  gitlab.com ou avec `DOCKER_DIND=true`, un service `docker:dind` (jobs `build` /
+  `build-dind`) : garder les deux chemins.
 - Sans `GITHUB_TOKEN`, `up.sh` ne pousse pas les blocs `# github:début … fin` de la config
   ni le golden path GitHub ; avec `--no-k8s`, de même pour `# k8s:début … fin` et
   `api-rest-go-k8s`. Vault est en mode dev (en mémoire) : `up.sh` le remplit à chaque fois.

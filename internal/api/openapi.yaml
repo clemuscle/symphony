@@ -455,6 +455,32 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AuditEntry" } } } } }
 
+  /api/v1/admin/status:
+    get:
+      tags: [Plateforme]
+      summary: État de la plateforme (configuration, providers, golden paths, catalogue)
+      description: >
+        Ce que l'admin doit savoir sans lire les logs : configuration en place et dernier
+        refus, providers et leur dernier appel, golden paths chargés et refusés avec la
+        raison, fiches catalogue illisibles.
+      operationId: getAdminStatus
+      x-symphony-role: admin
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AdminStatus" } } } }
+  /api/v1/admin/providers/check:
+    get:
+      tags: [Plateforme]
+      summary: Vérifie chaque provider (il répond, ses identifiants sont acceptés)
+      description: Appels en lecture seule, en parallèle, 20 s au plus par provider.
+      operationId: checkProviders
+      x-symphony-role: admin
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ProviderCheck" } } } } }
+
 components:
   securitySchemes:
     session:
@@ -640,6 +666,79 @@ components:
         provider: { type: string }
         supported: { type: boolean }
         groups: { type: array, items: { type: object, properties: { name: { type: string }, path: { type: string } } } }
+    AdminStatus:
+      type: object
+      properties:
+        config:
+          type: object
+          properties:
+            source: { type: string, description: "Fichier local, ou repo:chemin (branche)" }
+            revision: { type: string, description: Empreinte du contenu en place (SHA-256 tronqué) }
+            applied_at: { type: string, format: date-time }
+            checked_at: { type: string, format: date-time }
+            read_error: { type: string, description: Source illisible }
+            secrets_error: { type: string, description: Relecture des secrets en échec }
+            refused:
+              type: object
+              description: Version présente dans la source et refusée ; celle en place reste appliquée
+              properties:
+                revision: { type: string }
+                at: { type: string, format: date-time }
+                error: { type: string }
+        providers:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: { type: string, enum: [scm, ci, registry, runtime, secrets, identity] }
+              id: { type: string }
+              type: { type: string }
+              default: { type: boolean }
+              last_call:
+                type: [object, "null"]
+                properties:
+                  method: { type: string }
+                  at: { type: string, format: date-time }
+                  error: { type: string, description: "Absent si l'appel a réussi" }
+        golden_paths:
+          type: object
+          properties:
+            repo: { type: string }
+            branch: { type: string }
+            path: { type: string }
+            loaded_at: { type: string, format: date-time }
+            error: { type: string, description: Dernier rechargement en échec (liste précédente en place) }
+            loaded: { type: array, items: { type: string } }
+            refused:
+              type: array
+              items:
+                type: object
+                properties:
+                  file: { type: string }
+                  error: { type: string }
+        catalogue:
+          type: object
+          properties:
+            file: { type: string }
+            synced_at: { type: string, format: date-time }
+            error: { type: string }
+            errors:
+              type: array
+              items:
+                type: object
+                properties:
+                  project: { type: string }
+                  error: { type: string }
+            missing: { type: array, items: { type: string }, description: Projets sans fiche }
+    ProviderCheck:
+      type: object
+      properties:
+        kind: { type: string }
+        id: { type: string }
+        ok: { type: boolean }
+        detail: { type: string, description: "Ex. « connecté en tant que root sur http://gitlab »" }
+        error: { type: string }
+        duration_ms: { type: integer }
     AuditEntry:
       type: object
       properties:

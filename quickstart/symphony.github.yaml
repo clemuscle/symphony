@@ -1,0 +1,40 @@
+# Configuration du quickstart, GitHub (repos, GitHub Actions, images sur
+# ghcr.io). Toutes les clés : documentation/reference/symphony.yaml. Relue
+# toutes les 15 s : une modification est appliquée à chaud, une erreur est
+# refusée et expliquée dans la page Administration.
+#
+# Les ids des providers sont ceux que désignent les golden paths d'exemple
+# (demo/gitlab/symphony-templates, dossiers *-github).
+
+providers:
+  scm:
+    - id: github
+      type: github
+      config:
+        token: secret://env/FORGE_TOKEN
+        org: ${FORGE_GROUP}
+  ci:
+    - id: github-actions
+      type: github_actions
+      config:
+        scm_ref: github
+  registry:
+    - id: ghcr
+      type: ghcr
+      config:
+        owner: ${FORGE_GROUP}
+        scm_ref: github
+  runtime:
+    - id: docker-local
+      type: docker
+      config:
+        socket: tcp://docker-proxy:2375
+
+templates:
+  repo: ${TEMPLATES_REPO}
+  branch: main
+  path: templates
+
+# Pas de section auth : authentification désactivée, tout le monde est admin.
+# Pas de section webhooks : GitHub ne peut pas joindre ce poste, Symphony
+# suit les workflows par sondage (15 s).

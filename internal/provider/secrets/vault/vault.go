@@ -233,3 +233,33 @@ func vaultErrors(body []byte) string {
 	}
 	return strings.TrimSpace(string(body))
 }
+
+// Check : le jeton (fourni ou obtenu par AppRole) est valide
+// (GET /v1/auth/token/lookup-self, permis par la policy default)
+func (p *Provider) Check() (string, error) {
+	token, err := p.currentToken(false)
+	if err != nil {
+		return "", err
+	}
+	body, status, err := p.do("GET", "/v1/auth/token/lookup-self", token, nil)
+	if err == nil && status == http.StatusForbidden && p.cfg.Token == "" {
+		// Jeton AppRole révoqué entre-temps : nouvelle connexion
+		if token, err = p.currentToken(true); err != nil {
+			return "", err
+		}
+		body, status, err = p.do("GET", "/v1/auth/token/lookup-self", token, nil)
+	}
+	if err != nil {
+		return "", err
+	}
+	if status != http.StatusOK {
+		return "", fmt.Errorf("vault %s : status %d — %s", p.cfg.URL, status, vaultErrors(body))
+	}
+	var resp struct {
+		Data struct {
+			DisplayName string `json:"display_name"`
+		} `json:"data"`
+	}
+	json.Unmarshal(body, &resp)
+	return fmt.Sprintf("connecté en tant que %s sur %s", resp.Data.DisplayName, p.cfg.URL), nil
+}

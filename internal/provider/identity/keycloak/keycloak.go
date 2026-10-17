@@ -190,3 +190,23 @@ func (p *Provider) get(token, path string, v any) error {
 	}
 	return json.Unmarshal(body, v)
 }
+
+// Check : la découverte OIDC du realm, et l'annuaire s'il est configuré
+// (jeton du client de service, lecture des groupes)
+func (p *Provider) Check() (string, error) {
+	detail, err := provider.CheckOIDC(p.client, p.settings)
+	if err != nil || p.cfg.DirectoryClientID == "" {
+		return detail, err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	token, err := p.adminToken()
+	if err != nil {
+		return "", fmt.Errorf("annuaire : %w", err)
+	}
+	var groups []kcGroup
+	if err := p.get(token, "/groups?briefRepresentation=true&max=1", &groups); err != nil {
+		return "", fmt.Errorf("annuaire : %w", err)
+	}
+	return detail + ", annuaire lisible", nil
+}

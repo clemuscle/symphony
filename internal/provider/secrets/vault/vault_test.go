@@ -38,6 +38,8 @@ func fakeVault(t *testing.T) (*httptest.Server, *int, map[string]bool) {
 			return
 		}
 		switch r.URL.Path {
+		case "/v1/auth/token/lookup-self":
+			w.Write([]byte(`{"data":{"display_name":"approle"}}`))
 		case "/v1/secret/data/symphony/gitlab":
 			w.Write([]byte(`{"data":{"data":{"token":"glpat-123","user":"root"},"metadata":{"version":2}}}`))
 		case "/v1/secret/data/symphony/argocd":
@@ -120,5 +122,20 @@ func TestNewValidation(t *testing.T) {
 	}
 	if _, err := New("vault", Config{URL: "http://v", Token: "x", KVVersion: 3}); err == nil {
 		t.Error("kv_version 3 acceptée")
+	}
+}
+
+func TestCheck(t *testing.T) {
+	srv, _, _ := fakeVault(t)
+	p, err := New("vault", Config{URL: srv.URL, RoleID: "role", SecretID: "sid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail, err := p.Check(); err != nil || !strings.Contains(detail, "approle") {
+		t.Errorf("Check = %q, %v", detail, err)
+	}
+	p, _ = New("vault", Config{URL: srv.URL, Token: "révoqué"})
+	if _, err := p.Check(); err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Errorf("jeton refusé attendu, obtenu %v", err)
 	}
 }

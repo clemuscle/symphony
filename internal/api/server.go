@@ -8,6 +8,7 @@ import (
 	"github.com/clemuscle/symphony/internal/api/handlers"
 	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/catalogue"
+	"github.com/clemuscle/symphony/internal/config"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/environments"
 	"github.com/clemuscle/symphony/internal/gitops"
@@ -38,6 +39,7 @@ func NewServer(
 	runner *tasks.Runner,
 	hooks *webhook.Holder,
 	envs *environments.Holder,
+	configStatus func() config.Status,
 ) http.Handler {
 	s := &Server{
 		providers: providers,
@@ -119,6 +121,8 @@ func NewServer(
 		r.With(viewer).Get("/identity/groups", handlers.ListIdentityGroups(providers, security))
 		r.With(admin).Post("/sync", handlers.ForceSync(syncer, templates, db))
 		r.With(admin).Get("/audit", handlers.ListAudit(db))
+		r.With(admin).Get("/admin/status", handlers.AdminStatus(providers, configStatus, templates, syncer))
+		r.With(admin).Get("/admin/providers/check", handlers.CheckProviders(providers))
 	})
 
 	// Front Vue embarqué : tout ce qui n'est pas une route de l'API

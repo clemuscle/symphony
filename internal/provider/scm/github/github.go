@@ -417,3 +417,19 @@ func (p *Provider) DeleteRepo(repoPath string) error {
 		return fmt.Errorf("github deleteRepo %s: status %d — %s", repoPath, status, string(data))
 	}
 }
+
+// Check : l'utilisateur du jeton (GET /user)
+func (p *Provider) Check() (string, error) {
+	data, status, err := p.api("GET", "/user", nil)
+	if err != nil {
+		return "", err
+	}
+	if err := provider.CheckStatus("github", status, data); err != nil {
+		return "", err
+	}
+	var u struct {
+		Login string `json:"login"`
+	}
+	json.Unmarshal(data, &u)
+	return "connecté en tant que " + u.Login, nil
+}

@@ -29,7 +29,12 @@ func Load(path string) (*Config, error) {
 // d'environnement. Une clé inconnue est une erreur : une faute de frappe ne
 // doit pas laisser un réglage de côté sans rien dire.
 func Parse(data []byte) (*Config, error) {
-	expanded := os.ExpandEnv(string(data))
+	return ParseWith(data, os.Getenv)
+}
+
+// ParseWith : Parse, avec les variables lues par getenv
+func ParseWith(data []byte, getenv func(string) string) (*Config, error) {
+	expanded := os.Expand(string(data), getenv)
 
 	var cfg Config
 	dec := yaml.NewDecoder(strings.NewReader(expanded))

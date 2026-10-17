@@ -86,6 +86,10 @@ func (a *fakeArgo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer a.mu.Unlock()
 	name := strings.TrimPrefix(r.URL.Path, "/api/v1/applications/")
 	switch {
+	case r.URL.Path == "/api/v1/session/userinfo":
+		io.WriteString(w, `{"loggedIn":true,"username":"symphony"}`)
+	case r.URL.Path == "/api/version":
+		io.WriteString(w, `{"Version":"v3.1.0"}`)
 	case r.Method == "POST" && r.URL.Path == "/api/v1/applications" && r.URL.Query().Get("upsert") == "true":
 		var app application
 		json.NewDecoder(r.Body).Decode(&app)
@@ -447,5 +451,16 @@ func TestDeploySecretRefs(t *testing.T) {
 	refs["X"] = provider.SecretRef{Provider: "autre", Path: "apps/api/x"}
 	if _, err := p.Deploy(provider.DeployRequest{Name: "api", Image: "nginx:1.27", SecretEnv: refs}); err == nil {
 		t.Error("secret d'un autre provider accepté")
+	}
+}
+
+func TestCheck(t *testing.T) {
+	p, _, _ := newTest(t)
+	if detail, err := p.Check(); err != nil || detail != "Argo CD v3.1.0, connecté en tant que symphony" {
+		t.Errorf("Check = %q, %v", detail, err)
+	}
+	p.cfg.Token = "mauvais"
+	if _, err := p.Check(); err == nil || !strings.Contains(err.Error(), "jeton refusé") {
+		t.Errorf("jeton refusé attendu, obtenu %v", err)
 	}
 }

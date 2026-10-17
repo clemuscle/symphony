@@ -28,3 +28,6 @@ func (p *Provider) Get(path, key string) (string, error) {
 	}
 	return v, nil
 }
+
+// Check : rien à joindre, les variables d'environnement du processus
+func (p *Provider) Check() (string, error) { return "variables d'environnement", nil }

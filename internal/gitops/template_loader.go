@@ -195,6 +195,46 @@ type TemplateLoader struct {
 	source      templateSource
 	goldenPaths []GoldenPath
 	lastReport  string // pour ne journaliser que les changements
+	report      TemplateReport
+}
+
+// TemplateReport : le dernier rechargement des golden paths, pour la page
+// Administration
+type TemplateReport struct {
+	Repo   string `json:"repo"`
+	Branch string `json:"branch"`
+	Path   string `json:"path"`
+	// LoadedAt : dernier rechargement réussi (repo lu, même si des golden
+	// paths y sont refusés)
+	LoadedAt time.Time `json:"loaded_at"`
+	// Error : le dernier rechargement a échoué (repo illisible…) ; la liste
+	// précédente reste en place
+	Error   string            `json:"error,omitempty"`
+	Refused []RefusedTemplate `json:"refused"`
+}
+
+// RefusedTemplate : un golden path du repo refusé, et pourquoi
+type RefusedTemplate struct {
+	File  string `json:"file"` // <dir>/<nom>/template.yaml
+	Error string `json:"error"`
+}
+
+// Report : le dernier rechargement
+func (l *TemplateLoader) Report() TemplateReport {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	r := l.report
+	r.Repo, r.Branch, r.Path = l.source.repo, l.source.branch, l.source.dir
+	r.Refused = append([]RefusedTemplate{}, r.Refused...)
+	return r
+}
+
+// failed note l'échec d'un rechargement
+func (l *TemplateLoader) failed(err error) {
+	l.mu.Lock()
+	l.report.Error = err.Error()
+	l.mu.Unlock()
+	metrics.Reload("templates", "error")
 }
 
 type templateSource struct {
@@ -244,13 +284,13 @@ func (l *TemplateLoader) Reload() {
 	scm, err := l.providers.SCM("")
 	if err != nil {
 		slog.Warn("templates: provider SCM, liste précédente conservée", "error", err)
-		metrics.Reload("templates", "error")
+		l.failed(err)
 		return
 	}
 	files, err := scm.ListFiles(src.repo, src.branch, src.dir)
 	if err != nil {
 		slog.Warn("templates: liste fichiers, liste précédente conservée", "repo", src.repo, "error", err)
-		metrics.Reload("templates", "error")
+		l.failed(fmt.Errorf("lecture de %s (branche %s, dossier %s) : %w", src.repo, src.branch, src.dirOrDot(), err))
 		return
 	}
 
@@ -262,6 +302,7 @@ func (l *TemplateLoader) Reload() {
 	var (
 		goldenPaths []GoldenPath
 		invalid     []string
+		refused     []RefusedTemplate
 	)
 	for _, filePath := range files {
 		// Seulement <dir>/<nom>/template.yaml : pas ceux d'un skeleton
@@ -274,19 +315,14 @@ func (l *TemplateLoader) Reload() {
 		content, err := scm.GetFileContent(src.repo, src.branch, filePath)
 		if err != nil {
 			slog.Warn("templates: lecture, liste précédente conservée", "path", filePath, "error", err)
-			metrics.Reload("templates", "error")
+			l.failed(fmt.Errorf("lecture de %s : %w", filePath, err))
 			return
 		}
-		gp, err := parseTemplate(dir, content)
+		gp, err := CheckTemplate(dir, content, exists, l.providers)
 		gp.Repo, gp.Branch = src.repo, src.branch
-		if err == nil {
-			err = checkFiles(gp, exists)
-		}
-		if err == nil {
-			err = checkProviders(gp, l.providers)
-		}
 		if err != nil {
 			invalid = append(invalid, fmt.Sprintf("%s: %v", filePath, err))
+			refused = append(refused, RefusedTemplate{File: filePath, Error: err.Error()})
 			continue
 		}
 		goldenPaths = append(goldenPaths, gp)
@@ -301,6 +337,7 @@ func (l *TemplateLoader) Reload() {
 
 	l.mu.Lock()
 	l.goldenPaths = goldenPaths
+	l.report = TemplateReport{LoadedAt: time.Now(), Refused: refused}
 	changed := report != l.lastReport
 	l.lastReport = report
 	l.mu.Unlock()
@@ -314,6 +351,21 @@ func (l *TemplateLoader) Reload() {
 		}
 		slog.Info("golden paths chargés", "count", len(goldenPaths), "ids", ids)
 	}
+}
+
+// CheckTemplate lit et vérifie le golden path du dossier dir (chemin dans le
+// repo) : format de template.yaml, fichiers présents dans exists, et
+// providers existants et compatibles si providers n'est pas nil (symphony
+// validate sans configuration)
+func CheckTemplate(dir, content string, exists map[string]bool, providers *provider.Registry) (GoldenPath, error) {
+	gp, err := parseTemplate(dir, content)
+	if err == nil {
+		err = checkFiles(gp, exists)
+	}
+	if err == nil && providers != nil {
+		err = checkProviders(gp, providers)
+	}
+	return gp, err
 }
 
 // checkFiles vérifie que le skeleton (non vide) et le template CI existent

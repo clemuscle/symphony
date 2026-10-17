@@ -29,6 +29,8 @@ type SCMProvider interface {
 	// (vérifié à la réception) ; si url y est déjà abonnée, son secret est mis
 	// à jour (rotation). ErrUnsupported si le provider ne sait pas le faire.
 	EnsureWebhook(repoPath, url, secret string) error
+	// Check : le provider répond et accepte ses identifiants (check.go)
+	Check() (string, error)
 }
 
 type CreateRepoRequest struct {
@@ -58,6 +60,8 @@ type CIProvider interface {
 	TriggerPipeline(repoPath, ref string, vars map[string]string) (*Pipeline, error)
 	GetPipeline(repoPath, pipelineID string) (*Pipeline, error)
 	ListPipelines(repoPath string, limit int) ([]Pipeline, error)
+	// Check : le provider répond et accepte ses identifiants (check.go)
+	Check() (string, error)
 }
 
 type Pipeline struct {
@@ -89,6 +93,8 @@ type RegistryProvider interface {
 	// DeleteImages supprime les images du projet, quand la suppression du
 	// repo ne s'en charge pas (GHCR). Sans effet s'il n'y en a pas.
 	DeleteImages(repoPath string) error
+	// Check : le provider répond et accepte ses identifiants (check.go)
+	Check() (string, error)
 }
 
 // RegistryAuth : identifiants transmis au runtime pour puller une image
@@ -120,6 +126,8 @@ type RuntimeProvider interface {
 	// peut finir après le retour : List ne les montre plus quand elle est
 	// terminée.
 	Remove(project string) error
+	// Check : le provider répond et accepte ses identifiants (check.go)
+	Check() (string, error)
 }
 
 type DeployRequest struct {
@@ -177,6 +185,8 @@ type SecretsProvider interface {
 	// Get renvoie la valeur key du secret path ; ErrNotFound si l'un ou
 	// l'autre est absent. Pour env, path est le nom de la variable.
 	Get(path, key string) (string, error)
+	// Check : le provider répond et accepte ses identifiants (check.go)
+	Check() (string, error)
 }
 
 // ─── IDENTITY ─────────────────────────────────────────────────────────────────
@@ -190,6 +200,8 @@ type IdentityProvider interface {
 	// ListGroups : groupes de l'annuaire (équipes), triés par nom.
 	// ErrUnsupported si le provider n'a pas d'annuaire.
 	ListGroups() ([]Group, error)
+	// Check : le provider répond et accepte ses identifiants (check.go)
+	Check() (string, error)
 }
 
 // OIDCSettings : ce dont la connexion OIDC a besoin

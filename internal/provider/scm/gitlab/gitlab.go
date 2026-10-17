@@ -529,3 +529,19 @@ func (p *Provider) DeleteRepo(repoPath string) error {
 		}
 	}
 }
+
+// Check : l'utilisateur du jeton (GET /user)
+func (p *Provider) Check() (string, error) {
+	data, status, err := p.api("GET", "/user", nil)
+	if err != nil {
+		return "", err
+	}
+	if err := provider.CheckStatus("gitlab "+p.baseURL, status, data); err != nil {
+		return "", err
+	}
+	var u struct {
+		Username string `json:"username"`
+	}
+	json.Unmarshal(data, &u)
+	return fmt.Sprintf("connecté en tant que %s sur %s", u.Username, p.baseURL), nil
+}

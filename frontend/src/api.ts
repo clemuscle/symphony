@@ -1,7 +1,7 @@
 import axios, { AxiosError } from 'axios'
 import type {
-  AuditEntry, CreateProjectRequest, Deployment, DeployRequest, GoldenPath, IdentityGroups,
-  Me, Pipeline, Project, ProjectImage, Task,
+  AdminStatus, AuditEntry, CreateProjectRequest, Deployment, DeployRequest, GoldenPath, IdentityGroups,
+  Me, Pipeline, Project, ProjectImage, ProviderCheck, Task,
 } from './types'
 import { visitAdapter } from './visit/adapter'
 
@@ -95,4 +95,8 @@ export const api = {
 
   // Audit
   listAudit: () => http.get<AuditEntry[]>('/api/v1/audit'),
+
+  // Administration : ce que Symphony a chargé ou refusé, et l'état des providers
+  adminStatus: () => http.get<AdminStatus>('/api/v1/admin/status'),
+  checkProviders: () => http.get<ProviderCheck[]>('/api/v1/admin/providers/check'),
 }

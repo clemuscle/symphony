@@ -36,8 +36,40 @@ type Syncer struct {
 
 	syncMu sync.Mutex // une synchronisation à la fois, sinon une ancienne pourrait écraser une récente
 
-	mu   sync.RWMutex
-	file string
+	mu     sync.RWMutex
+	file   string
+	report CatalogueReport
+}
+
+// CatalogueReport : la dernière lecture des fiches, pour la page
+// Administration
+type CatalogueReport struct {
+	File     string    `json:"file"`
+	SyncedAt time.Time `json:"synced_at"`
+	// Error : la liste des projets est illisible (base de données)
+	Error string `json:"error,omitempty"`
+	// Errors : fiches illisibles ou invalides ; la version connue reste au
+	// catalogue
+	Errors []FicheError `json:"errors"`
+	// Missing : projets sans fiche dans leur repo
+	Missing []string `json:"missing"`
+}
+
+// FicheError : la fiche d'un projet n'a pas pu être lue
+type FicheError struct {
+	Project string `json:"project"`
+	Error   string `json:"error"`
+}
+
+// Report : la dernière lecture des fiches
+func (s *Syncer) Report() CatalogueReport {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	r := s.report
+	r.File = s.file
+	r.Errors = append([]FicheError{}, r.Errors...)
+	r.Missing = append([]string{}, r.Missing...)
+	return r
 }
 
 func NewSyncer(providers *provider.Registry, store *catalogue.Store, projects func() ([]ProjectRef, error), file string) *Syncer {
@@ -97,22 +129,28 @@ func (s *Syncer) sync() {
 	if err != nil {
 		slog.Warn("catalogue : liste des projets", "error", err)
 		metrics.Reload("catalogue", "error")
+		s.mu.Lock()
+		s.report.Error = err.Error()
+		s.mu.Unlock()
 		return
 	}
 	file := s.File()
 
 	failed := false
+	report := CatalogueReport{SyncedAt: time.Now()}
 	services := make([]catalogue.Service, 0, len(refs))
 	for _, ref := range refs {
 		svc, err := s.read(ref, file)
 		switch {
 		case errors.Is(err, provider.ErrNotFound):
 			// Pas de fiche : le projet reste visible, sans métadonnées
+			report.Missing = append(report.Missing, ref.Name)
 			continue
 		case err != nil:
 			// Erreur passagère (SCM injoignable…) : la fiche connue est gardée
 			slog.Warn("catalogue : lecture de la fiche", "project", ref.Name, "error", err)
 			failed = true
+			report.Errors = append(report.Errors, FicheError{Project: ref.Name, Error: err.Error()})
 			if old, ok := s.store.Get(ref.Name); ok {
 				services = append(services, old)
 			}
@@ -123,6 +161,9 @@ func (s *Syncer) sync() {
 
 	before := s.store.Count()
 	s.store.Replace(services)
+	s.mu.Lock()
+	s.report = report
+	s.mu.Unlock()
 	if failed {
 		metrics.Reload("catalogue", "error")
 	} else {

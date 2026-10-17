@@ -99,3 +99,26 @@ func (p *Provider) ListTags(repoPath string) ([]string, error) {
 // DeleteImages : sans effet, GitLab purge le registry d'un projet avec lui
 // (DeleteRepo attend la fin de cette purge)
 func (p *Provider) DeleteImages(repoPath string) error { return nil }
+
+// Check : l'utilisateur du jeton (GET /user), qui sert aussi aux pulls
+func (p *Provider) Check() (string, error) {
+	req, err := http.NewRequest("GET", p.baseURL+"/api/v4/user", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("PRIVATE-TOKEN", p.token)
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("gitlab %s : %w", p.baseURL, err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err := provider.CheckStatus("gitlab "+p.baseURL, resp.StatusCode, data); err != nil {
+		return "", err
+	}
+	var u struct {
+		Username string `json:"username"`
+	}
+	json.Unmarshal(data, &u)
+	return fmt.Sprintf("connecté en tant que %s, images sur %s", u.Username, p.registryHost), nil
+}

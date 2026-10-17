@@ -1,6 +1,10 @@
 package main
 
 import (
+	"os"
+	"reflect"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -99,6 +103,43 @@ func TestRepoConfigsValid(t *testing.T) {
 			if err := validateDef("scm", cfg.ConfigSource.SCM); err != nil {
 				t.Errorf("%s : config_source.scm : %v", f, err)
 			}
+		}
+	}
+}
+
+// TestReferenceCoversSchema : la configuration de référence documente chaque
+// type de provider et chacune de ses clés, et chaque section de la
+// configuration ; une clé ajoutée à schemas sans être documentée échoue ici
+func TestReferenceCoversSchema(t *testing.T) {
+	const file = "../../documentation/reference/symphony.yaml"
+	cfg, err := config.Load(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sections := map[string][]config.ProviderDef{
+		"scm": cfg.Providers.SCM, "ci": cfg.Providers.CI, "registry": cfg.Providers.Registry,
+		"runtime": cfg.Providers.Runtime, "secrets": cfg.Providers.Secrets, "identity": cfg.Providers.Identity,
+	}
+	for kind, types := range schemas {
+		for typ, schema := range types {
+			i := slices.IndexFunc(sections[kind], func(d config.ProviderDef) bool { return d.Type == typ })
+			if i < 0 {
+				t.Errorf("providers.%s : type %s absent de %s", kind, typ, file)
+				continue
+			}
+			for _, key := range slices.Concat(schema.required, schema.optional, schema.oneOf) {
+				if _, ok := sections[kind][i].Config[key]; !ok {
+					t.Errorf("providers.%s %s : clé %s absente de %s", kind, typ, key, file)
+				}
+			}
+		}
+	}
+	raw, _ := os.ReadFile(file)
+	fields := reflect.TypeOf(config.Config{})
+	for i := 0; i < fields.NumField(); i++ {
+		key := strings.Split(fields.Field(i).Tag.Get("yaml"), ",")[0]
+		if key != "config_source" && !regexp.MustCompile(`(?m)^`+key+`:`).Match(raw) {
+			t.Errorf("section %s absente de %s", key, file)
 		}
 	}
 }

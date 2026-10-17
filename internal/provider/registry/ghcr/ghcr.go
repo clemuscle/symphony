@@ -212,3 +212,18 @@ func (p *Provider) api(method, path string, v any) (int, error) {
 	}
 	return resp.StatusCode, nil
 }
+
+// Check : l'utilisateur du jeton (GET /user)
+func (p *Provider) Check() (string, error) {
+	var u struct {
+		Login string `json:"login"`
+	}
+	status, err := p.api("GET", "/user", &u)
+	if err != nil {
+		return "", err
+	}
+	if status == http.StatusNotFound || u.Login == "" {
+		return "", fmt.Errorf("ghcr: utilisateur du jeton illisible (status %d)", status)
+	}
+	return "connecté en tant que " + u.Login, nil
+}

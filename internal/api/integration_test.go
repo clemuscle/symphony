@@ -14,6 +14,7 @@ import (
 	"github.com/clemuscle/symphony/internal/api/handlers"
 	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/catalogue"
+	"github.com/clemuscle/symphony/internal/config"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/database/dbtest"
 	"github.com/clemuscle/symphony/internal/environments"
@@ -27,8 +28,9 @@ import (
 // vault : coffre de secrets en mémoire, au format des références secret://
 type vault map[string]string
 
-func (v vault) ID() string   { return "vault" }
-func (v vault) Type() string { return "fake" }
+func (v vault) ID() string             { return "vault" }
+func (v vault) Type() string           { return "fake" }
+func (v vault) Check() (string, error) { return "", nil }
 func (v vault) Get(path, key string) (string, error) {
 	if s, ok := v[path+"#"+key]; ok {
 		return s, nil
@@ -112,7 +114,7 @@ func TestIntegration(t *testing.T) {
 	runner.Start(ctx, 2)
 
 	srv := httptest.NewServer(NewServer(providers, store, db, syncer, templates,
-		auth.NewHolder(&auth.Policy{}), runner, hooks, envs))
+		auth.NewHolder(&auth.Policy{}), runner, hooks, envs, func() config.Status { return config.Status{} }))
 	defer srv.Close()
 
 	call := func(method, path string, body any) (int, map[string]any) {
@@ -310,6 +312,13 @@ spec:
 	}
 	if _, err := db.GetProjectByName(name); err == nil {
 		t.Error("projet toujours en base")
+	}
+
+	// Page Administration : l'audit a tout vu, les golden paths sont chargés
+	code, status := call("GET", "/api/v1/admin/status", nil)
+	gps, _ := status["golden_paths"].(map[string]any)
+	if code != http.StatusOK || gps == nil || len(gps["loaded"].([]any)) == 0 || len(status["providers"].([]any)) == 0 {
+		t.Errorf("admin/status : %d %v", code, status)
 	}
 }
 

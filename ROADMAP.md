@@ -220,17 +220,17 @@ Objectif : un admin plateforme sait, sans lire les logs, ce que Symphony a charg
 qu'il a refusé et pourquoi ; il vérifie sa configuration et ses golden paths avant de
 les pousser.
 
-- [ ] Licence Apache 2.0
-- [ ] Page Administration (admin) : configuration en place (source, révision, dernier
+- [x] Licence Apache 2.0
+- [x] Page Administration (admin) : configuration en place (source, révision, dernier
       refus et sa raison), providers et leur état (vérification à la demande, dernier
       appel), golden paths chargés et refusés avec la raison, fiches catalogue en
       erreur, journal d'audit
-- [ ] `symphony validate` : configuration et golden paths vérifiés hors ligne, en local
+- [x] `symphony validate` : configuration et golden paths vérifiés hors ligne, en local
       ou dans la CI des repos de configuration (code de sortie, toutes les erreurs
       d'un coup)
-- [ ] Configuration de référence commentée (chaque clé, chaque type de provider),
+- [x] Configuration de référence commentée (chaque clé, chaque type de provider),
       vérifiée par la CI
-- [ ] Quickstart léger : Symphony et PostgreSQL en Docker Compose, branchés sur une
+- [x] Quickstart léger : Symphony et PostgreSQL en Docker Compose, branchés sur une
       forge existante (gitlab.com, GitLab auto-hébergée ou GitHub)
 
 Fini quand : une faute dans un golden path poussé dans Git se lit dans l'interface avec

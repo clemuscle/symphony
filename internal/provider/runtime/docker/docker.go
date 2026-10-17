@@ -585,3 +585,20 @@ func orName(v, fallback string) string {
 	}
 	return fallback
 }
+
+// Check : version du démon Docker (GET /version, permis par les proxys de
+// socket)
+func (p *Provider) Check() (string, error) {
+	data, status, err := p.docker("GET", "/version", nil)
+	if err != nil {
+		return "", err
+	}
+	if err := provider.CheckStatus("docker", status, data); err != nil {
+		return "", err
+	}
+	var v struct {
+		Version string `json:"Version"`
+	}
+	json.Unmarshal(data, &v)
+	return "Docker " + v.Version, nil
+}

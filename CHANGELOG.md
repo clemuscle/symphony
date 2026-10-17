@@ -3,6 +3,38 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
+## v0.11 — L'admin y voit clair
+
+### Ajouté
+- **Page Administration** (admin) : configuration en place (source, empreinte, dernière
+  version refusée et sa raison, source ou secrets illisibles), providers et leur état,
+  golden paths chargés et refusés avec la raison, fiches catalogue illisibles et projets
+  sans fiche, journal d'audit. Un résumé dit ce qui demande attention.
+- **Vérification des providers** : chaque provider a une méthode `Check` en lecture seule
+  (utilisateur du jeton GitLab ou GitHub, version de Docker et d'Argo CD, jeton Vault,
+  découverte OIDC et annuaire Keycloak), lancée en parallèle à l'ouverture de la page ;
+  le dernier appel de chaque provider est aussi retenu.
+- API : `GET /api/v1/admin/status` et `GET /api/v1/admin/providers/check` (admin).
+- **`symphony validate -config … -templates …`** : configuration et golden paths vérifiés
+  hors ligne, comme au chargement (schéma, références de secrets, construction des
+  providers, environnements, auth, webhooks, golden paths contre ces providers), sans
+  lire aucun secret ; toutes les erreurs d'un coup, code de sortie 1.
+- **Configuration de référence** commentée (`documentation/reference/`) : chaque clé de
+  chaque type de provider, le bootstrap et un golden path ; les tests échouent si une clé
+  du schéma n'y est pas.
+- **Quickstart** (`quickstart/`) : Symphony, PostgreSQL et un proxy de socket Docker en
+  Compose, branchés sur gitlab.com, une GitLab auto-hébergée ou GitHub ;
+  `push-templates.sh` pousse les golden paths d'exemple qui conviennent (`--dry-run`).
+- **Licence Apache 2.0.**
+
+### Modifié
+- CI GitLab des golden paths d'exemple : sur gitlab.com, ou avec `DOCKER_DIND=true` dans
+  les variables du groupe, l'image se construit avec un service `docker:dind` (job
+  `build-dind`) ; ailleurs, avec le socket du runner comme avant. `docker login` lit le
+  mot de passe sur l'entrée standard.
+- Roadmap réécrite d'après [documentation/vision.md](documentation/vision.md) (v0.11 à
+  v0.17, puis v1.0).
+
 ## v0.10 — Finitions
 
 ### Modifié
