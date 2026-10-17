@@ -28,7 +28,8 @@ pour Symphony et GitLab.
 ## 1. Les projets (1 min)
 
 La page **Projets** liste trois services créés par `up.sh` avec les stacks de la démo,
-comme un développeur l'aurait fait : `auth-service` (Python, Docker), `payment-api`
+comme un développeur l'aurait fait : `auth-service` (Python, Kubernetes, avec sa base
+PostgreSQL), `payment-api`
 (Go, Kubernetes, déployé par son chart Helm) et `notification-service` (Node, Kubernetes).
 Ce sont de vrais projets :
 
@@ -130,6 +131,26 @@ kubectl -n symphony-apps get externalsecret,secret payment-api-production-env
 Une fiche qui viserait `secret://vault/symphony/gitlab#token` (le jeton de Symphony) ou les
 secrets d'un autre projet ferait échouer le déploiement : un projet ne lit que
 `apps/<projet>/`.
+
+## 3 ter. Une base par environnement, avec le service (2 min)
+
+`auth-service` vient de la stack **API REST Python (Kubernetes)**, créée avec l'option
+**Base PostgreSQL** : sa fiche déclare son infra (`spec.infra`, un `Cluster`
+CloudNativePG dans `deploy/infra/` de son repo). Dans **Projets**, l'environnement staging
+montre, sous le déploiement, `Cluster auth-service-staging-db` et sa santé (Healthy une
+fois la base prête). http://auth-service-staging.localhost:8081/db répond avec la
+version de PostgreSQL : l'appli lit `DATABASE_URL` dans le secret que l'opérateur a créé,
+sans que le mot de passe passe par Symphony ni par Git.
+
+```bash
+export KUBECONFIG=demo/k3s/kubeconfig.yaml
+kubectl -n symphony-apps get clusters.postgresql.cnpg.io   # auth-service-staging-db
+```
+
+La promouvoir en production créerait une autre base, `auth-service-production-db`.
+Supprimer le projet (étape 5) supprime ses bases et leurs volumes. Dans le Catalogue,
+cocher **Base PostgreSQL** sur la stack officielle **API REST Python** est refusé : son
+staging tourne sur Docker, et l'infra demande Kubernetes.
 
 ## 4. Côté plateforme : tout se pilote par Git (2 min)
 

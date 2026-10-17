@@ -59,3 +59,13 @@ export function filterProjects(projects: Project[], f: ProjectFilter): Project[]
       && (!f.lifecycle || lifecycle(p) === f.lifecycle)
   })
 }
+
+// healthDot : la santé Argo CD d'un objet en classe de pastille (.dot)
+export function healthDot(health: string): string {
+  switch (health) {
+    case 'Healthy': return 'running'
+    case 'Progressing': case 'Suspended': return 'deploying'
+    case 'Degraded': case 'Missing': return 'error'
+  }
+  return ''
+}

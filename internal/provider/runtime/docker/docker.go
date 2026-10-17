@@ -126,6 +126,9 @@ func (p *Provider) pull(repo, tag string, auth *provider.RegistryAuth) error {
 }
 
 func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, error) {
+	if req.Infra != nil {
+		return nil, fmt.Errorf("l'infra de cette stack (manifests d'opérateurs) demande un runtime Kubernetes (argocd), pas docker")
+	}
 	repo, tag := provider.SplitImage(req.Image, req.Tag)
 	image := repo + ":" + tag
 

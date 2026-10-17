@@ -1,0 +1,9 @@
+# Base Kustomize du service. Symphony la déploie sur Kubernetes (runtime
+# argocd) : il préfixe les noms par celui du déploiement, fixe l'image (app),
+# les réplicas, les variables (envFrom du premier conteneur) et l'Ingress.
+# À compléter par l'équipe (probes, ressources, HPA…) par un commit.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml

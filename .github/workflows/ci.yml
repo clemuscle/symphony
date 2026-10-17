@@ -92,6 +92,30 @@ jobs:
         if: failure()
         run: kubectl -n symphony describe pods; kubectl -n symphony logs deploy/symphony --all-containers || true
 
+  infra:
+    name: Infra des stacks (CloudNativePG sur kind)
+    needs: [go]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: azure/setup-helm@v5.0.1
+      - uses: helm/kind-action@v1.15.0
+      - name: Opérateur CloudNativePG (même version que la démo)
+        run: |
+          helm install cnpg cloudnative-pg --repo https://cloudnative-pg.github.io/charts \
+            --version "$(sed -n 's/^CNPG_CHART_VERSION=//p' demo/up.sh)" \
+            -n cnpg-system --create-namespace --wait --timeout 5m
+      - name: Base créée par l'infra d'une stack, jointe, puis supprimée
+        run: go test -run TestCNPGOnCluster -v ./internal/provider/runtime/argocd/
+        env:
+          SYMPHONY_TEST_K8S: "1"
+      - name: État en cas d'échec
+        if: failure()
+        run: kubectl get all,clusters.postgresql.cnpg.io,pvc -A; kubectl -n cnpg-system logs deploy/cnpg-cloudnative-pg || true
+
   image:
     name: Image Docker
     needs: [go, front]

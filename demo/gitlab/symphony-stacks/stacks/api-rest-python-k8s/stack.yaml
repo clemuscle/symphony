@@ -1,0 +1,61 @@
+apiVersion: symphony/v1
+kind: Stack
+metadata:
+  name: api-rest-python-k8s
+  title: API REST Python (Kubernetes)
+  description: L'API FastAPI sur Kubernetes dès staging, avec sa base PostgreSQL (CloudNativePG) en GitOps
+  icon: python
+spec:
+  language: python
+  type: api
+  providers:
+    scm: gitlab-local
+    ci: gitlab-ci
+    registry: gitlab-registry
+    runtime: argocd-k3s
+  ci_template: ci.gitlab-ci.yml
+  # Kubernetes dès staging (la configuration met staging sur Docker) : la
+  # base de l'infra y est aussi
+  environments:
+    staging: argocd-k3s
+  parameters:
+    - name: python_version
+      title: Version de Python
+      description: Fixée par l'équipe plateforme (images de build validées)
+      type: choice
+      choices: ["3.12", "3.13"]
+      default: "3.12"
+      locked: true
+    - name: log_level
+      title: Niveau de journalisation
+      description: Par défaut ; la variable LOG_LEVEL le change au déploiement
+      type: choice
+      choices: [debug, info, warning, error]
+      default: info
+    - name: kustomize
+      title: Base Kustomize dans le repo
+      description: Déployée sur Kubernetes (runtime argocd), et modifiable par l'équipe ; sinon Symphony génère les manifests
+      type: boolean
+      default: false
+    - name: postgres
+      title: Base PostgreSQL
+      description: Une base par environnement (CloudNativePG), créée et supprimée avec le service
+      type: boolean
+      default: true
+    - name: db_size
+      title: Taille de la base
+      type: choice
+      choices: [1Gi, 5Gi, 20Gi]
+      default: 1Gi
+      when: { postgres: true }
+  files:
+    - path: deploy/kustomize
+      when: { kustomize: true }
+    - path: deploy/infra
+      when: { postgres: true }
+  kubernetes:
+    kustomize: deploy/kustomize
+  infra:
+    kubernetes: deploy/infra
+    env:
+      DATABASE_URL: { secret: db-app, key: uri }

@@ -13,12 +13,20 @@ metadata:
   tier: critical
   lifecycle: production
   labels:
-    stack: api-rest-python
+    stack: api-rest-python-k8s
 spec:
   type: api
   language: python
   version: 1.4.0
   repo: __REPO_URL__
+  # k8s:début
+  # Base PostgreSQL du service (écrite par la stack) : une par environnement,
+  # appliquée par Argo CD avec lui ; l'appli lit son URI dans DATABASE_URL
+  infra:
+    kubernetes: deploy/infra
+    env:
+      DATABASE_URL: { secret: db-app, key: uri }
+  # k8s:fin
   links:
     - title: Repository
       url: __REPO_URL__

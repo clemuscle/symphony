@@ -89,9 +89,9 @@ spec:
     - path: cmd/metrics.go
       when: { metrics: true }
 
-  # Manifests Kubernetes du service, dans le repo créé : un chart Helm (son
-  # dossier, avec Chart.yaml) ou une base Kustomize, l'un ou l'autre :
-  # kustomize: deploy/kustomize
+  # Manifests Kubernetes du service, dans le repo créé : une base Kustomize
+  # (son dossier, avec kustomization.yaml) ou un chart Helm, l'un ou l'autre :
+  # helm: deploy/chart
   # Le runtime argocd les déploie (lus sur main au déploiement) à la place
   # des manifests qu'il génère. Contrat d'un chart, valeurs écrites par
   # Symphony : fullnameOverride, replicaCount, image.repository, image.tag,
@@ -102,4 +102,22 @@ spec:
   # préfixe les noms et fixe image, réplicas, variables (envFrom du premier
   # conteneur) et Ingress. Absent du repo (paramètre) : manifests générés.
   kubernetes:
-    helm: deploy/chart
+    kustomize: deploy/kustomize
+
+  # ─── Infra : ce dont le service a besoin pour tourner (base de données…) ────
+  # Des manifests d'opérateurs Kubernetes (un Cluster CloudNativePG, par
+  # exemple), dans un dossier du repo créé : chaque environnement a la sienne,
+  # appliquée en GitOps par Argo CD avec le service, et supprimée avec le
+  # projet. Ses objets sont nommés <déploiement>-<nom> (Cluster « db » →
+  # payment-api-staging-db) ; Argo CD ne les élague jamais (un objet retiré de
+  # Git reste dans le cluster, une base n'est pas perdue par erreur). Demande
+  # le runtime argocd dans tous les environnements du projet (sinon la création
+  # est refusée) ; avec un chart Helm, l'infra est dans le chart. Absent du
+  # repo (paramètre, spec.files) : pas d'infra.
+  infra:
+    kubernetes: deploy/infra # dossier ; avec un kustomization.yaml, c'est une base
+    # Variables de l'appli lues dans les secrets que l'infra crée (nom sans le
+    # préfixe du déploiement : db-app → <déploiement>-db-app, le secret de
+    # l'utilisateur de la base pour CloudNativePG)
+    env:
+      DATABASE_URL: { secret: db-app, key: uri }

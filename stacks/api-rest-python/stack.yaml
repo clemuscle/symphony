@@ -3,7 +3,7 @@ kind: Stack
 metadata:
   name: api-rest-python
   title: API REST Python
-  description: API REST avec FastAPI, pytest, logs structurés, métriques Prometheus et base Kustomize en option
+  description: API REST avec FastAPI, pytest, logs structurés, métriques Prometheus ; base PostgreSQL et base Kustomize en option
   icon: python
 spec:
   language: python
@@ -30,8 +30,25 @@ spec:
       description: Déployée sur Kubernetes (runtime argocd), et modifiable par l'équipe ; sinon Symphony génère les manifests
       type: boolean
       default: false
+    - name: postgres
+      title: Base PostgreSQL
+      description: Une base par environnement (CloudNativePG), créée et supprimée avec le service ; demande Kubernetes (runtime argocd) dans tous les environnements
+      type: boolean
+      default: false
+    - name: db_size
+      title: Taille de la base
+      type: choice
+      choices: [1Gi, 5Gi, 20Gi]
+      default: 1Gi
+      when: { postgres: true }
   files:
     - path: deploy/kustomize
       when: { kustomize: true }
+    - path: deploy/infra
+      when: { postgres: true }
   kubernetes:
     kustomize: deploy/kustomize
+  infra:
+    kubernetes: deploy/infra
+    env:
+      DATABASE_URL: { secret: db-app, key: uri }

@@ -76,7 +76,8 @@ func (d TaskDeps) createRepo(_ context.Context, x *tasks.Exec) error {
 
 	// La fiche catalogue vit dans le repo : elle dépend de son URL
 	file := d.Syncer.File()
-	fiche, err := catalogueFile(files[file], p, stack, &repo, ci, x.Task().CreatedBy, stackKubernetes(stack, files))
+	fiche, err := catalogueFile(files[file], p, stack, &repo, ci, x.Task().CreatedBy,
+		stackKubernetes(stack, files), stack.InfraKept(p.Parameters))
 	if err != nil {
 		return err
 	}

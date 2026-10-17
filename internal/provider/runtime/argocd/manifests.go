@@ -51,6 +51,10 @@ type service struct {
 	// références vont dans Git
 	Secrets     []secretVar
 	SecretStore string
+	// InfraEnv : variables lues dans les secrets créés par l'infra ;
+	// HasInfra : le dossier infra/ est une ressource du service
+	InfraEnv []infraVar
+	HasInfra bool
 }
 
 type envVar struct{ Name, Value string }
@@ -77,8 +81,8 @@ type kustomization struct {
 	Resources          []string           `yaml:"resources"`
 	Labels             []kustomizeLabels  `yaml:"labels,omitempty"`
 	CommonAnnotations  map[string]string  `yaml:"commonAnnotations,omitempty"`
-	Images             []kustomizeImage   `yaml:"images"`
-	Replicas           []kustomizeCount   `yaml:"replicas"`
+	Images             []kustomizeImage   `yaml:"images,omitempty"`
+	Replicas           []kustomizeCount   `yaml:"replicas,omitempty"`
 	ConfigMapGenerator []kustomizeConfMap `yaml:"configMapGenerator,omitempty"`
 	Patches            []kustomizePatch   `yaml:"patches,omitempty"`
 }
@@ -143,6 +147,9 @@ func parseKustomization(content string) (kustomization, error) {
 func (s service) files() (map[string]string, error) {
 	files := make(map[string]string, 4)
 	resources := []string{deploymentFile, serviceFile}
+	if s.HasInfra {
+		resources = append(resources, infraDir)
+	}
 	for file, tmpl := range map[string]*template.Template{deploymentFile: deploymentTmpl, serviceFile: serviceTmpl} {
 		var b strings.Builder
 		if err := tmpl.Execute(&b, s); err != nil {
@@ -214,7 +221,7 @@ spec:
           ports:
             - name: http
               containerPort: {{.Port}}
-{{- if or .Env .Secrets}}
+{{- if or .Env .Secrets .InfraEnv}}
           env:
 {{- range .Env}}
             - name: {{q .Name}}
@@ -226,6 +233,13 @@ spec:
                 secretKeyRef:
                   name: {{$.Name}}-env
                   key: {{q .Name}}
+{{- end}}
+{{- range .InfraEnv}}
+            - name: {{q .Name}}
+              valueFrom:
+                secretKeyRef:
+                  name: {{q .Secret}}
+                  key: {{q .Key}}
 {{- end}}
 {{- end}}
           readinessProbe:

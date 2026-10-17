@@ -123,6 +123,13 @@ func (a *fakeArgo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			items = append(items, app)
 		}
 		json.NewEncoder(w).Encode(map[string]any{"items": items})
+	case r.Method == "GET" && strings.HasSuffix(name, "/resource-tree"):
+		app := a.apps[strings.TrimSuffix(name, "/resource-tree")]
+		nodes := []appResource{}
+		if app.Status != nil {
+			nodes = app.Status.Resources
+		}
+		json.NewEncoder(w).Encode(map[string]any{"nodes": nodes})
 	case r.Method == "GET" && strings.HasSuffix(name, "/logs"):
 		a.lastLogs = r.URL.RawQuery
 		io.WriteString(w, `{"result":{"content":"démarrage","podName":"p"}}`+"\n"+

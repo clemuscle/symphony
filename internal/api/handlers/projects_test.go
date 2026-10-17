@@ -6,9 +6,12 @@ import (
 
 	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/catalogue"
+	"github.com/clemuscle/symphony/internal/environments"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/provider"
 	gitlabci "github.com/clemuscle/symphony/internal/provider/ci/gitlabci"
+	argocdrt "github.com/clemuscle/symphony/internal/provider/runtime/argocd"
+	dockerrt "github.com/clemuscle/symphony/internal/provider/runtime/docker"
 )
 
 func TestCatalogueFile(t *testing.T) {
@@ -20,7 +23,7 @@ func TestCatalogueFile(t *testing.T) {
 	}}
 
 	// Sans fiche dans la stack : fiche minimale et action par défaut
-	content, err := catalogueFile("", p, stack, repo, ci, "bob", nil)
+	content, err := catalogueFile("", p, stack, repo, ci, "bob", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +51,8 @@ func TestCatalogueFile(t *testing.T) {
 		"  links:\n    - title: Runbook\n      url: http://wiki/runbook\n" +
 		"  actions:\n    - name: Scaler\n      inputs:\n        - id: REPLICAS\n          type: integer\n"
 	p.Owner = ""
-	content, err = catalogueFile(base, p, stack, repo, ci, "bob", &catalogue.Kubernetes{Helm: "deploy/chart"})
+	content, err = catalogueFile(base, p, stack, repo, ci, "bob", &catalogue.Kubernetes{Helm: "deploy/chart"},
+		&catalogue.Infra{Kubernetes: "deploy/infra", Env: map[string]catalogue.InfraSecretRef{"DATABASE_URL": {Secret: "db-app", Key: "uri"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,8 +69,11 @@ func TestCatalogueFile(t *testing.T) {
 	if k := svc.Spec.Kubernetes; k == nil || k.Helm != "deploy/chart" {
 		t.Errorf("kubernetes : %+v", k)
 	}
+	if in := svc.Spec.Infra; in == nil || in.Env["DATABASE_URL"].Secret != "db-app" {
+		t.Errorf("infra : %+v", in)
+	}
 
-	if _, err := catalogueFile("kind: [", p, stack, repo, ci, "bob", nil); err == nil {
+	if _, err := catalogueFile("kind: [", p, stack, repo, ci, "bob", nil, nil); err == nil {
 		t.Error("fiche invalide de la stack acceptée")
 	}
 }
@@ -99,5 +106,40 @@ func TestProjectTeam(t *testing.T) {
 		case c.wantErr == "" && (err != nil || got != c.want):
 			t.Errorf("cas %d : %q, %v ; attendu %q", i, got, err, c.want)
 		}
+	}
+}
+
+// Une stack avec infra n'est acceptée que si tous les environnements du
+// projet tournent sur Kubernetes
+func TestCheckInfraRuntimes(t *testing.T) {
+	providers := provider.NewRegistry()
+	providers.RegisterRuntime(dockerrt.New("docker", "/var/run/docker.sock"), true)
+	argo, err := argocdrt.New("k8s", nil, argocdrt.Config{URL: "http://argocd", Repo: "p/d", RepoURL: "http://g/p/d.git"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	providers.RegisterRuntime(argo, false)
+	stack := &gitops.Stack{ID: "db", RTProvider: "docker",
+		Infra: &catalogue.Infra{Kubernetes: "deploy/infra"},
+		Files: []gitops.FileRule{{Path: "deploy/infra", When: gitops.When{"postgres": true}}}}
+	envs := environments.NewHolder([]environments.Environment{{Name: "staging", Runtime: "docker"}, {Name: "production", Runtime: "k8s"}})
+	req := CreateProjectRequest{Parameters: map[string]any{"postgres": true}}
+	if err := checkInfraRuntimes(providers, envs, stack, req); err == nil || !strings.Contains(err.Error(), "staging tourne sur docker") {
+		t.Errorf("staging sur Docker : %v", err)
+	}
+	stack.Environments = map[string]string{"staging": "k8s"}
+	if err := checkInfraRuntimes(providers, envs, stack, req); err != nil {
+		t.Errorf("tout sur Kubernetes : %v", err)
+	}
+	// Sans l'option, pas d'infra : Docker convient
+	stack.Environments = nil
+	req.Parameters["postgres"] = false
+	if err := checkInfraRuntimes(providers, envs, stack, req); err != nil {
+		t.Errorf("sans infra : %v", err)
+	}
+	// Sans environnements : le runtime du projet
+	req.Parameters["postgres"] = true
+	if err := checkInfraRuntimes(providers, environments.NewHolder(nil), stack, req); err == nil {
+		t.Error("runtime docker sans environnements accepté")
 	}
 }

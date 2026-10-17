@@ -54,6 +54,8 @@ const (
 	projectLabel   = "symphony/project"                       // projet déployé
 	envLabel       = "symphony/environment"                   // environnement (vide : sans)
 	resourcesFinal = "resources-finalizer.argocd.argoproj.io" // supprimer l'Application supprime ses ressources
+	// imageAnnotation : l'image du service (image:tag), déployée par Symphony
+	imageAnnotation = "symphony/image"
 )
 
 type Provider struct {
@@ -151,7 +153,8 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 		svc.Secrets = secrets
 		svc.SecretStore = p.cfg.SecretStore
 	}
-	files, err := svc.stackFiles(req.Manifests)
+	svc.InfraEnv = infraEnv(req.Name, req.Infra)
+	files, err := svc.stackFiles(req.Manifests, req.Infra)
 	if err != nil {
 		return nil, err
 	}
@@ -163,11 +166,12 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 	if err := p.prune(req.Name, files); err != nil {
 		return nil, err
 	}
-	owner := appOwner{project: req.Project, environment: req.Environment}
-	if owner.project == "" {
-		owner.project = req.Name
+	meta := appMeta{project: req.Project, environment: req.Environment, image: image + ":" + tag,
+		helm: req.Manifests != nil && req.Manifests.Kind == "helm", infra: infraKinds(req.Infra)}
+	if meta.project == "" {
+		meta.project = req.Name
 	}
-	if err := p.upsertApplication(req.Name, false, owner, req.Manifests != nil && req.Manifests.Kind == "helm"); err != nil {
+	if err := p.upsertApplication(req.Name, false, meta); err != nil {
 		return nil, err
 	}
 	p.refresh(req.Name)
@@ -203,12 +207,17 @@ func (p *Provider) update(id string, stopped bool, replicas int, annotations map
 	if err := p.commit(id, map[string]string{file: rendered}, fmt.Sprintf("%s: %s [symphony]", verb, id)); err != nil {
 		return err
 	}
-	// Projet et environnement : ceux de l'Application en place
-	owner := appOwner{project: id}
-	if d, err := p.Status(id); err == nil {
-		owner = appOwner{project: d.Project, environment: d.Environment}
+	// Projet, environnement et infra : ceux de l'Application en place
+	meta := appMeta{project: id, helm: helm}
+	if app, err := p.getApp(id); err == nil {
+		meta.environment = app.Metadata.Labels[envLabel]
+		meta.infra = app.Metadata.Annotations[infraAnnotation]
+		meta.image = app.Metadata.Annotations[imageAnnotation]
+		if project := app.Metadata.Labels[projectLabel]; project != "" {
+			meta.project = project
+		}
 	}
-	if err := p.upsertApplication(id, stopped, owner, helm); err != nil {
+	if err := p.upsertApplication(id, stopped, meta); err != nil {
 		return err
 	}
 	p.refresh(id)
@@ -258,8 +267,15 @@ func (p *Provider) updated(id string, replicas int, annotations map[string]strin
 	return kustomizationFile, rendered, false, err
 }
 
-// appOwner : projet et environnement d'une Application, portés par ses labels
-type appOwner struct{ project, environment string }
+// appMeta : ce que porte une Application en plus de son état voulu : projet
+// et environnement (labels), source Helm, types des objets de l'infra
+// (annotation)
+type appMeta struct {
+	project, environment string
+	helm                 bool
+	infra                string
+	image                string // image:tag du service
+}
 
 func (p *Provider) servicePath(name, file string) string {
 	return path.Join(p.cfg.Path, name, file)
@@ -311,6 +327,7 @@ type application struct {
 	Metadata struct {
 		Name              string            `json:"name"`
 		Labels            map[string]string `json:"labels,omitempty"`
+		Annotations       map[string]string `json:"annotations,omitempty"`
 		Finalizers        []string          `json:"finalizers,omitempty"`
 		CreationTimestamp time.Time         `json:"creationTimestamp,omitempty"`
 	} `json:"metadata"`
@@ -351,16 +368,22 @@ type appStatus struct {
 		Images []string `json:"images"`
 	} `json:"summary"`
 	// Resources : objets de l'Application (pour trouver son Deployment)
-	Resources []struct {
-		Kind string `json:"kind"`
-		Name string `json:"name"`
-	} `json:"resources"`
+	Resources []appResource `json:"resources"`
 }
 
 // upsertApplication crée l'Application du service, ou la met à jour si sa
 // définition a changé (configuration du runtime, arrêt). Synchronisation
 // automatique : Argo CD applique chaque commit et corrige toute dérive.
-func (p *Provider) upsertApplication(name string, stopped bool, owner appOwner, helm bool) error {
+// appResource : un objet de l'Application et sa santé
+type appResource struct {
+	Kind   string `json:"kind"`
+	Name   string `json:"name"`
+	Health struct {
+		Status string `json:"status"`
+	} `json:"health"`
+}
+
+func (p *Provider) upsertApplication(name string, stopped bool, owner appMeta) error {
 	var app application
 	app.Metadata.Name = name
 	// Toujours écrits, même vides : l'upsert d'Argo CD fusionne les labels,
@@ -371,11 +394,13 @@ func (p *Provider) upsertApplication(name string, stopped bool, owner appOwner, 
 		projectLabel: owner.project,
 		envLabel:     owner.environment,
 	}
+	// Toujours écrite, même vide (fusion des annotations, comme les labels)
+	app.Metadata.Annotations = map[string]string{infraAnnotation: owner.infra, imageAnnotation: owner.image}
 	app.Metadata.Finalizers = []string{resourcesFinal}
 	app.Spec.Project = p.cfg.Project
 	app.Spec.Source.RepoURL = p.cfg.RepoURL
 	app.Spec.Source.Path = path.Join(p.cfg.Path, name)
-	if helm {
+	if owner.helm {
 		app.Spec.Source.Path = path.Join(p.cfg.Path, name, helmDir)
 		app.Spec.Source.Helm = &struct {
 			ValueFiles []string `json:"valueFiles"`
@@ -497,12 +522,8 @@ func (p *Provider) Logs(id string, lines int) (string, error) {
 // deploymentName : le Deployment de l'Application id (le nom d'un chart ou
 // d'une base Kustomize de stack peut différer de celui du déploiement)
 func (p *Provider) deploymentName(id string) string {
-	data, status, err := p.argo("GET", "/api/v1/applications/"+url.PathEscape(id), nil)
-	if err != nil || status != http.StatusOK {
-		return id
-	}
-	var app application
-	if json.Unmarshal(data, &app) != nil || app.Status == nil {
+	app, err := p.getApp(id)
+	if err != nil || app.Status == nil {
 		return id
 	}
 	for _, r := range app.Status.Resources {
@@ -511,6 +532,22 @@ func (p *Provider) deploymentName(id string) string {
 		}
 	}
 	return id
+}
+
+// getApp lit une Application
+func (p *Provider) getApp(id string) (application, error) {
+	var app application
+	data, status, err := p.argo("GET", "/api/v1/applications/"+url.PathEscape(id), nil)
+	if err != nil {
+		return app, err
+	}
+	if status != http.StatusOK {
+		return app, apiError("état de l'Application", status, data)
+	}
+	if err := json.Unmarshal(data, &app); err != nil {
+		return app, fmt.Errorf("argocd: réponse illisible: %w", err)
+	}
+	return app, nil
 }
 
 // deployment traduit l'état d'une Application
@@ -532,8 +569,11 @@ func (p *Provider) deployment(app application) provider.Deployment {
 		CreatedAt:   app.Metadata.CreationTimestamp,
 		Sync:        st.Sync.Status,
 		Health:      st.Health.Status,
+		Infra:       p.infraStatus(app),
 	}
-	if len(st.Summary.Images) > 0 {
+	// L'image du service : celle que Symphony a déployée ; le résumé d'Argo CD
+	// liste aussi celles de l'infra (opérateur, base), dans le désordre
+	if d.Image = app.Metadata.Annotations[imageAnnotation]; d.Image == "" && len(st.Summary.Images) > 0 {
 		d.Image = st.Summary.Images[0]
 	}
 	if p.cfg.IngressDomain != "" {

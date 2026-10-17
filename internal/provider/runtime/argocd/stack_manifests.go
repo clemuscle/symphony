@@ -141,11 +141,15 @@ func (s service) kustomizeFiles(base map[string]string) (map[string]string, erro
 	if err := copyInto(kustomizeBase, base, files); err != nil {
 		return nil, err
 	}
+	resources := []string{kustomizeBase}
+	if s.HasInfra {
+		resources = append(resources, infraDir)
+	}
 	k := kustomization{
 		APIVersion: "kustomize.config.k8s.io/v1beta1",
 		Kind:       "Kustomization",
 		NamePrefix: s.Name + "-",
-		Resources:  []string{kustomizeBase},
+		Resources:  resources,
 		// Deux environnements dans le même namespace : sélecteurs distincts
 		Labels: []kustomizeLabels{{
 			Pairs:            map[string]string{"app.kubernetes.io/instance": s.Name, "app.kubernetes.io/managed-by": "symphony"},
@@ -182,10 +186,21 @@ func (s service) kustomizeFiles(base map[string]string) (map[string]string, erro
 		k.Resources = append(k.Resources, secretFile)
 		envFrom = append(envFrom, map[string]any{"secretRef": map[string]string{"name": s.Name + "-env"}})
 	}
+	var ops []map[string]any
 	if len(envFrom) > 0 {
-		patch, err := yaml.Marshal([]map[string]any{{
-			"op": "add", "path": "/spec/template/spec/containers/0/envFrom", "value": envFrom,
-		}})
+		ops = append(ops, map[string]any{"op": "add", "path": "/spec/template/spec/containers/0/envFrom", "value": envFrom})
+	}
+	// Variables de l'infra : elles remplacent l'env du premier conteneur
+	if len(s.InfraEnv) > 0 {
+		env := make([]map[string]any, len(s.InfraEnv))
+		for i, v := range s.InfraEnv {
+			env[i] = map[string]any{"name": v.Name, "valueFrom": map[string]any{
+				"secretKeyRef": map[string]string{"name": v.Secret, "key": v.Key}}}
+		}
+		ops = append(ops, map[string]any{"op": "add", "path": "/spec/template/spec/containers/0/env", "value": env})
+	}
+	if len(ops) > 0 {
+		patch, err := yaml.Marshal(ops)
 		if err != nil {
 			return nil, err
 		}
@@ -209,17 +224,36 @@ func (s service) renderSecret() (string, error) {
 	return b.String(), nil
 }
 
-// stackFiles : les manifests du service selon ce que fournit la stack
-func (s service) stackFiles(m *provider.Manifests) (map[string]string, error) {
+// stackFiles : les manifests du service selon ce que fournit la stack, et
+// son infra
+func (s service) stackFiles(m *provider.Manifests, in *provider.Infra) (map[string]string, error) {
+	s.HasInfra = in != nil
+	var files map[string]string
+	var err error
 	switch {
 	case m == nil:
-		return s.files()
+		files, err = s.files()
+	case m.Kind == "helm" && in != nil:
+		return nil, fmt.Errorf("infra de la stack : avec un chart Helm, l'infra est dans le chart")
 	case m.Kind == "helm":
 		return s.helmFiles(m.Files)
 	case m.Kind == "kustomize":
-		return s.kustomizeFiles(m.Files)
+		files, err = s.kustomizeFiles(m.Files)
+	default:
+		return nil, fmt.Errorf("manifests de la stack : type %q inconnu (helm, kustomize)", m.Kind)
 	}
-	return nil, fmt.Errorf("manifests de la stack : type %q inconnu (helm, kustomize)", m.Kind)
+	if err != nil || in == nil {
+		return files, err
+	}
+	// Base Kustomize de stack : son préfixe vaut aussi pour l'infra
+	infra, err := infraFiles(s.Name, in, m == nil)
+	if err != nil {
+		return nil, err
+	}
+	for f, c := range infra {
+		files[f] = c
+	}
+	return files, nil
 }
 
 // sortedKeys : clés triées (fichiers à supprimer, dans un ordre stable)

@@ -2,12 +2,13 @@
   {
     "name": "auth-service",
     "description": "Authentification des utilisateurs et émission des jetons",
-    "stack": "api-rest-python",
+    "stack": "api-rest-python-k8s",
     "owner": "team-identity",
     "tier": "critical",
     "lifecycle": "production",
     "parameters": {
-      "log_level": "debug"
+      "log_level": "debug",
+      "postgres": true
     }
   },
   {

@@ -88,7 +88,7 @@ func NewServer(
 
 		// Projets
 		r.With(viewer).Get("/projects", handlers.ListProjects(db, store, stacks, envs))
-		r.With(developer).Post("/projects", handlers.CreateProject(providers, db, stacks, runner))
+		r.With(developer).Post("/projects", handlers.CreateProject(providers, db, stacks, envs, runner))
 		r.With(admin).Delete("/projects/{name}", handlers.DeleteProject(db, runner))
 		r.With(viewer).Get("/projects/{name}/image", handlers.GetProjectImage(providers, db))
 		r.With(developer).Post("/projects/{name}/promote", handlers.Promote(providers, db, stacks, envs, runner))

@@ -58,9 +58,28 @@ spec:
   files:
     - {path: metrics.go, when: {metrics: true}}
 `,
-	"stacks/api-go/ci.yml":                   "build: {script: [make]}\n",
-	"stacks/api-go/skeleton/main.go.tmpl":    "package main // {{SERVICE_NAME}} {{params.log_level}}\n",
-	"stacks/api-go/skeleton/metrics.go.tmpl": "package main // {{params.metrics_path}}\n",
+	"stacks/api-db/stack.yaml": `apiVersion: symphony/v1
+kind: Stack
+metadata:
+  name: api-db
+spec:
+  providers: {scm: gitlab, ci: gitlab-ci, registry: registry, runtime: argocd-k3s}
+  ci_template: ci.yml
+  environments: {staging: argocd-k3s}
+  parameters:
+    - {name: postgres, type: boolean, default: true}
+  files:
+    - {path: deploy/infra, when: {postgres: true}}
+  infra:
+    kubernetes: deploy/infra
+    env: {DATABASE_URL: {secret: db-app, key: uri}}
+`,
+	"stacks/api-db/ci.yml":                        "build: {script: [make]}\n",
+	"stacks/api-db/skeleton/main.go":              "package main\n",
+	"stacks/api-db/skeleton/deploy/infra/db.yaml": "apiVersion: postgresql.cnpg.io/v1\nkind: Cluster\nmetadata: {name: db}\n",
+	"stacks/api-go/ci.yml":                        "build: {script: [make]}\n",
+	"stacks/api-go/skeleton/main.go.tmpl":         "package main // {{SERVICE_NAME}} {{params.log_level}}\n",
+	"stacks/api-go/skeleton/metrics.go.tmpl":      "package main // {{params.metrics_path}}\n",
 }
 
 // TestIntegration : le parcours complet par l'API, avec les tâches, sur une
@@ -75,6 +94,7 @@ func TestIntegration(t *testing.T) {
 	forge := fake.NewForge(registry)
 	docker := fake.NewRuntime("docker-local", false)
 	k8s := fake.NewRuntime("argocd-k3s", true)
+	k8s.Kind = "argocd"
 	providers := provider.NewRegistry()
 	providers.RegisterSCM(forge.SCM(), true)
 	providers.RegisterCI(forge.CI(), true)
@@ -90,7 +110,7 @@ func TestIntegration(t *testing.T) {
 	}
 	stacks := gitops.NewStackLoader(providers, nil, gitops.StackSource{Repo: "platform/symphony-stacks", Branch: "main", Path: "stacks"})
 	stacks.Reload()
-	if len(stacks.GetStacks()) != 1 {
+	if len(stacks.GetStacks()) != 2 {
 		t.Fatalf("stacks : %+v, %+v", stacks.GetStacks(), stacks.Report())
 	}
 
@@ -334,6 +354,30 @@ spec:
 	if _, err := db.GetProjectByName(name); err == nil {
 		t.Error("projet toujours en base")
 	}
+
+	// 8. Une stack avec son infra : appliquée avec le service, ses variables
+	// lues dans les secrets qu'elle crée (le refus sur Docker est dans
+	// handlers.TestCheckInfraRuntimes)
+	withDB := name + "-db"
+	code, task = call("POST", "/api/v1/projects", map[string]any{"name": withDB, "stack": "api-db", "owner": "team-it"})
+	wait("création avec infra", code, task)
+	if f, _ := forge.File("apps/"+withDB, "catalog-info.yaml"); !strings.Contains(f, "kubernetes: deploy/infra") {
+		t.Errorf("infra absente de la fiche :\n%s", f)
+	}
+	syncer.ForceSync()
+	code, img = call("GET", "/api/v1/projects/"+withDB+"/image", nil)
+	tags, _ = img["tags"].([]any)
+	if code != http.StatusOK || len(tags) == 0 {
+		t.Fatalf("image : %d %v", code, img)
+	}
+	code, task = call("POST", "/api/v1/deployments", map[string]any{"project_name": withDB, "environment": "staging",
+		"image": img["image"], "tag": tags[0]})
+	wait("staging avec infra", code, task)
+	if in := k8s.LastInfra[withDB+"-staging"]; in == nil || in.Files["db.yaml"] == "" || in.Env["DATABASE_URL"].Secret != "db-app" {
+		t.Errorf("infra transmise au runtime : %+v", in)
+	}
+	code, task = call("DELETE", "/api/v1/projects/"+withDB, nil)
+	wait("suppression avec infra", code, task)
 
 	// Page Administration : l'audit a tout vu, les stacks sont chargées
 	code, status := call("GET", "/api/v1/admin/status", nil)

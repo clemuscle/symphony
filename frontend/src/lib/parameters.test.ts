@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatValue, paramErrors, visible, fillDefaults } from './parameters'
+import { formatValue, keepFile, paramErrors, visible, fillDefaults } from './parameters'
 import type { StackParameter } from '../types'
 
 const params: StackParameter[] = [
@@ -46,5 +46,16 @@ describe('formatValue', () => {
     expect(formatValue(false)).toBe('non')
     expect(formatValue(3)).toBe('3')
     expect(formatValue(undefined)).toBe('')
+  })
+})
+
+describe('keepFile', () => {
+  it('suit spec.files', () => {
+    const st = { files: [{ path: 'deploy/infra/', when: { postgres: true } }] }
+    expect(keepFile(st, 'deploy/infra', { postgres: true })).toBe(true)
+    expect(keepFile(st, 'deploy/infra', { postgres: false })).toBe(false)
+    expect(keepFile(st, 'deploy/infra/db.yaml', {})).toBe(false)
+    expect(keepFile(st, 'main.py', {})).toBe(true)
+    expect(keepFile({}, 'deploy/infra', {})).toBe(true)
   })
 })

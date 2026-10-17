@@ -17,6 +17,8 @@ providers.
 
 - `api-rest-go-k8s` : sur Kubernetes (Argo CD) dès staging, avec son chart Helm
   (paramètre `helm_chart` verrouillé par la plateforme) ;
+- `api-rest-python-k8s` : sur Kubernetes dès staging, avec sa base PostgreSQL
+  (CloudNativePG) dans chaque environnement (`spec.infra`) ;
 - `api-rest-go-github`, `api-rest-python-github` : sur GitHub (Actions, GHCR),
   poussées seulement si la démo a un `GITHUB_TOKEN`.
 
@@ -52,7 +54,12 @@ spec:
     - path: cmd/metrics.go
       when: { metrics: true }
   kubernetes:
-    helm: deploy/chart       # ou kustomize: <dossier> ; sinon, manifests générés
+    kustomize: deploy/kustomize  # ou helm: <dossier> ; sinon, manifests générés
+  infra:                     # manifests d'opérateurs, une infra par environnement
+                             # (avec un chart Helm, l'infra est dans le chart)
+    kubernetes: deploy/infra
+    env:
+      DATABASE_URL: { secret: db-app, key: uri }
 ```
 
 Dans le squelette et la CI, ces variables sont remplacées à la création :

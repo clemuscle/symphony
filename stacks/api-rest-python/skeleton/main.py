@@ -4,7 +4,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
 # Logger structuré ; LOG_LEVEL : debug, info, warning ou error
@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 SERVICE_NAME = "{{SERVICE_NAME}}"
 VERSION = os.getenv("VERSION", "dev")
+# Base PostgreSQL de l'infra de la stack, si elle en a une
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 
 @asynccontextmanager
@@ -58,3 +60,15 @@ async def root():
     logger.info("root endpoint called")
     return {"service": SERVICE_NAME, "status": "running", "version": VERSION}
 
+
+
+@app.get("/db")
+def database():
+    """Base PostgreSQL : la version du serveur, ou 404 sans base"""
+    if not DATABASE_URL:
+        return JSONResponse({"database": "aucune"}, status_code=404)
+    import psycopg
+
+    with psycopg.connect(DATABASE_URL, connect_timeout=3) as conn:
+        version = conn.execute("select version()").fetchone()[0]
+    return {"database": "postgres", "version": version}

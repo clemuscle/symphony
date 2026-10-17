@@ -24,6 +24,7 @@ docker build -t symphony .        # image complète (~15 Mo)
 helm lint deploy/helm/symphony    # chart ; la CI l'installe sur kind (deploy/helm/e2e)
 ./demo/up.sh / ./demo/down.sh     # démo complète ; --no-k8s, --no-seed ; down.sh --purge
 cd quickstart && docker compose up -d   # Symphony + PostgreSQL sur une forge existante (.env)
+SYMPHONY_TEST_K8S=1 go test -run TestCNPGOnCluster ./internal/provider/runtime/argocd/   # infra sur un cluster avec CloudNativePG (CI : kind)
 ```
 
 ## Lancer le serveur
@@ -116,6 +117,12 @@ cd quickstart && docker compose up -d   # Symphony + PostgreSQL sur une forge ex
   déploiement) est copié dans le dossier du service, avec `values.yaml` ou
   `kustomization.yaml` de Symphony (contrat dans `reference/stack.yaml`) ; `prune` retire
   les fichiers d'un déploiement précédent.
+- Infra d'une stack (`spec.infra`, repris dans la fiche) : manifests d'opérateurs
+  (CloudNativePG…) copiés dans `infra/` du dossier du service, nommés
+  `<déploiement>-<nom>`, protégés de l'élagage (`Prune=false`), appliqués par la même
+  Application : supprimer le projet les emporte. Runtime `argocd` seulement : la
+  création est refusée si un environnement du projet tourne ailleurs
+  (`checkInfraRuntimes`), et `docker` refuse un déploiement avec infra.
 - GitHub : un workflow lancé par `workflow_dispatch` déclare toutes les entrées envoyées
   (`SYMPHONY_*` compris), sinon 422. Webhooks : `/webhooks/<plateforme>` ; une forge qui
   ne peut pas joindre Symphony (GitHub et une démo locale) laisse le sondage travailler.
@@ -146,7 +153,9 @@ cd quickstart && docker compose up -d   # Symphony + PostgreSQL sur une forge ex
   `build-dind`) : garder les deux chemins.
 - Sans `GITHUB_TOKEN`, `up.sh` ne pousse pas les blocs `# github:début … fin` de la config
   ni les stacks `*-github` ; avec `--no-k8s`, de même pour `# k8s:début … fin` et
-  `api-rest-go-k8s`. Vault est en mode dev (en mémoire) : `up.sh` le remplit à chaque fois.
+  les stacks `*-k8s` (et les blocs `# k8s:début … fin` des fiches de `seed/`). Vault est en
+  mode dev (en mémoire) : `up.sh` le remplit à chaque fois. k3s a Argo CD, External
+  Secrets et CloudNativePG (base d'`auth-service`, stack `api-rest-python-k8s`).
 
 ## Conventions
 

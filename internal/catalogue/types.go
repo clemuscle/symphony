@@ -39,6 +39,25 @@ type ServiceSpec struct {
 	// (écrit à la création par sa stack) ; le runtime argocd les déploie à la
 	// place des manifests qu'il génère
 	Kubernetes *Kubernetes `yaml:"kubernetes,omitempty" json:"kubernetes,omitempty"`
+	// Infra : l'infra du service (écrite à la création par sa stack), appliquée
+	// avec lui dans chaque environnement
+	Infra *Infra `yaml:"infra,omitempty" json:"infra,omitempty"`
+}
+
+// Infra : manifests d'opérateurs (PostgreSQL par CloudNativePG…), appliqués en
+// GitOps avec le service, et variables lues dans les secrets qu'ils créent
+type Infra struct {
+	// Kubernetes : dossier du repo du service ; ses objets sont nommés
+	// <déploiement>-<nom> dans chaque environnement
+	Kubernetes string `yaml:"kubernetes" json:"kubernetes"`
+	// Env : variable de l'appli → clé d'un secret créé par l'infra (nom sans
+	// le préfixe du déploiement)
+	Env map[string]InfraSecretRef `yaml:"env,omitempty" json:"env,omitempty"`
+}
+
+type InfraSecretRef struct {
+	Secret string `yaml:"secret" json:"secret"`
+	Key    string `yaml:"key"    json:"key"`
 }
 
 // Kubernetes : un dossier du repo du service, chart Helm ou base Kustomize

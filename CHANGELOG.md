@@ -3,6 +3,34 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
+## v0.13 — L'infra avec l'appli
+
+### Ajouté
+- **Infra d'une stack** (`spec.infra`) : un dossier de manifests d'opérateurs Kubernetes
+  et les variables que l'appli lit dans les secrets qu'ils créent (`env`). Reprise dans la
+  fiche du projet ; le runtime argocd l'applique en GitOps avec le service, une par
+  environnement (objets nommés `<déploiement>-<nom>`, jamais élagués par Argo CD), et
+  elle part avec le projet. Création refusée si un environnement du projet n'est pas
+  sur Kubernetes ; le runtime docker refuse un déploiement avec infra.
+- **Santé de l'infra** : chaque déploiement porte ses objets d'infra et leur état Argo CD
+  (`infra` dans l'API), affichés par environnement sur la page du projet.
+- **Option PostgreSQL** de la stack officielle `api-rest-python` (CloudNativePG, taille en
+  paramètre) : `DATABASE_URL` lue dans le secret de la base, route `/db`.
+- Démo : opérateur CloudNativePG dans k3s, stack `api-rest-python-k8s` ; `auth-service`
+  est créé avec sa base.
+- CI : `TestCNPGOnCluster` sur kind avec l'opérateur (base créée, jointe avec l'URI de
+  son secret, supprimée avec ses volumes).
+- L'API expose les fichiers sous condition d'une stack (`files`), pour que le formulaire
+  dise si l'infra sera créée.
+
+### Corrigé
+- Runtime argocd : l'image d'un déploiement est celle que Symphony a déployée
+  (annotation `symphony/image` de l'Application), et non la première du résumé d'Argo
+  CD, qui liste aussi celles de l'infra : une promotion pouvait déployer l'image de
+  l'opérateur de la base.
+- Catalogue : le résumé n'annonce plus le chart Helm ou la base Kustomize d'une stack
+  quand l'option qui les crée est décochée.
+
 ## v0.12 — Stacks paramétrables
 
 ### Ajouté

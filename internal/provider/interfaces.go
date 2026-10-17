@@ -151,6 +151,26 @@ type DeployRequest struct {
 	// lus dans son repo ; nil : le runtime génère les siens. Un runtime qui
 	// n'en a pas l'usage (docker) les ignore.
 	Manifests *Manifests `json:"-"`
+	// Infra : manifests d'opérateurs de la stack (base de données…), appliqués
+	// avec le service ; un runtime qui ne sait pas le faire (docker) refuse
+	Infra *Infra `json:"-"`
+}
+
+// Infra : les fichiers de l'infra d'un service et les variables de l'appli
+// lues dans les secrets qu'elle crée
+type Infra struct {
+	Files map[string]string // chemin relatif au dossier de l'infra → contenu
+	// Env : variable → secret (nom sans le préfixe du déploiement) et clé
+	Env map[string]InfraSecretRef
+}
+
+type InfraSecretRef struct{ Secret, Key string }
+
+// InfraResource : un objet de l'infra d'un déploiement et son état
+type InfraResource struct {
+	Kind   string `json:"kind"`
+	Name   string `json:"name"`
+	Health string `json:"health"` // Healthy, Progressing, Degraded…
 }
 
 // Manifests : les fichiers d'un chart Helm ou d'une base Kustomize
@@ -174,6 +194,8 @@ type Deployment struct {
 	// État GitOps (runtime argocd) : synchronisation avec Git et santé
 	Sync   string `json:"sync,omitempty"`   // Synced, OutOfSync
 	Health string `json:"health,omitempty"` // Healthy, Progressing, Degraded…
+	// Infra : objets de l'infra de la stack (runtime argocd)
+	Infra []InfraResource `json:"infra,omitempty"`
 }
 
 // DeploymentName : nom du déploiement d'un projet dans un environnement

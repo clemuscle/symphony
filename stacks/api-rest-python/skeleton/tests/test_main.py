@@ -31,3 +31,10 @@ def test_metrics():
     assert response.status_code == 200
     assert "http_requests_total" in response.text
 
+
+
+def test_database_absent():
+    """Sans base (paramètre postgres), /db répond 404"""
+    response = client.get("/db")
+    assert response.status_code == 404
+    assert response.json()["database"] == "aucune"

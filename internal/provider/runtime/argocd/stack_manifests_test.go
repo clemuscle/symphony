@@ -196,10 +196,7 @@ func TestLogsStackDeployment(t *testing.T) {
 	}
 	app := argo.apps["mon-api-staging"]
 	app.Status = &appStatus{}
-	app.Status.Resources = append(app.Status.Resources, struct {
-		Kind string `json:"kind"`
-		Name string `json:"name"`
-	}{"Deployment", "mon-api-staging-app"})
+	app.Status.Resources = append(app.Status.Resources, appResource{Kind: "Deployment", Name: "mon-api-staging-app"})
 	argo.apps["mon-api-staging"] = app
 	if _, err := p.Logs("mon-api-staging", 10); err != nil {
 		t.Fatal(err)
