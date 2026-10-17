@@ -16,7 +16,7 @@ désormais une v1.0 adoptable par de vraies équipes : le produit passe avant la
 go build ./... && go vet ./... && go test -race ./...   # aucun test ne demande GitLab ni Docker
 SYMPHONY_TEST_DB=1 DB_PORT=55432 go test -race ./...   # + tests sur PostgreSQL (dbtest), dont l'intégration
 go run ./cmd/symphony             # depuis la racine ; lit symphony.yaml (bootstrap) et .env
-go run ./cmd/symphony validate -config <fichier> -templates <dossier>   # hors ligne, code 1 si erreur
+go run ./cmd/symphony validate -config <fichier> -stacks <dossier>   # hors ligne, code 1 si erreur
 cd frontend && npm run dev        # front en dev, relaie /api et /auth vers :8080
 cd frontend && npm run typecheck && npm run lint && npm test   # vue-tsc, ESLint, Vitest
 cd frontend && npm run build      # front compilé dans internal/web/dist, embarqué au go build
@@ -57,18 +57,23 @@ cd quickstart && docker compose up -d   # Symphony + PostgreSQL sur une forge ex
   (`AdminStatus`, `CheckProviders`).
 - `internal/tasks` (moteur de tâches, attente de pipelines, `Hub` SSE), `internal/auth` (OIDC
   en Backend-for-Frontend, rôles, CSRF), `internal/gitops` (`Syncer` des fiches
-  `catalog-info.yaml`, `TemplateLoader` des golden paths), `internal/webhook`,
+  `catalog-info.yaml`, `StackLoader` des stacks : repo du client et catalogue officiel,
+  `stack.go` le format, `parameters.go` les paramètres et leur JSON Schema), `internal/webhook`,
   `internal/metrics`, `internal/database` (migrations embarquées).
 - `frontend/src/visit/` : mode visite (GitHub Pages, `npm run build:visit`) : l'API servie
   par `fixtures.json`, capturé sur une démo (`demo/visit/capture-fixtures.sh`), lecture
   seule. À recapturer quand l'API change.
+- `stacks/` : catalogue officiel, embarqué dans le binaire (`go:embed`) ; une stack par
+  dossier, sans provider désigné, une CI par forge (`ci_templates`). Fichiers du
+  squelette en `.tmpl` (créés sans ce suffixe) pour que le module Go ne les compile pas.
 - `documentation/reference/` : configuration de référence (`symphony.yaml`, chaque clé),
-  bootstrap et golden path de référence, vérifiés par les tests.
+  bootstrap et stack de référence (`stack.yaml`), vérifiés par les tests.
 - `quickstart/` : Compose (Symphony, PostgreSQL, proxy Docker) branché sur une forge
-  existante, configs GitLab et GitHub, `push-templates.sh` (golden paths d'exemple).
+  existante, configs GitLab et GitHub, avec les stacks officielles.
 - `demo/` : `up.sh` (rejouable), `seed.sh` (projets de démo par l'API), `gitlab/` (contenu
-  poussé dans le groupe `platform` de la GitLab de démo : config, golden paths, repo de
-  déploiement ; à tenir à jour avec les golden paths), `keycloak/`, `k3s/`, `capture/`
+  poussé dans le groupe `platform` de la GitLab de démo : config, stacks propres à la
+  démo, copies des officielles avec leurs providers, repo de déploiement ; à tenir à jour
+  avec `stacks/`), `keycloak/`, `k3s/`, `capture/`
   (GIF du README), `SCENARIO.md`.
 
 ## Règles qui évitent les régressions
@@ -88,12 +93,13 @@ cd quickstart && docker compose up -d   # Symphony + PostgreSQL sur une forge ex
 - Configuration stricte : `symphony.yaml` est décodé avec `KnownFields`, et chaque type de
   provider déclare ses clés dans `cmd/symphony/schema.go`. Nouveau type ou nouvelle clé :
   l'y déclarer, et la documenter dans `documentation/reference/symphony.yaml`
-  (`TestReferenceCoversSchema` échoue sinon ; de même pour un champ de golden path et
-  `reference/template.yaml`). Pas de repli silencieux (jeton par défaut, provider
+  (`TestReferenceCoversSchema` échoue sinon ; de même pour un champ de stack et
+  `reference/stack.yaml`). Pas de repli silencieux (jeton par défaut, provider
   ignoré) : une erreur de construction fait refuser la configuration.
   `TestRepoConfigsValid` et `TestValidateRepo` valident les configs livrées.
 - `resolveInputs` refuse les entrées d'action non déclarées (injection de variables CI) :
-  ne pas assouplir.
+  ne pas assouplir. De même, les paramètres d'une stack passent par `Stack.Resolve`
+  (JSON Schema, `additionalProperties: false`) avant d'être écrits dans le squelette.
 
 **Providers**
 - Le contenu de `provider.Registry` est remplacé d'un bloc au rechargement : ne jamais
@@ -105,7 +111,11 @@ cd quickstart && docker compose up -d   # Symphony + PostgreSQL sur une forge ex
   (`DeleteImages`) : rien ne doit rester. GitLab ne fait que programmer la suppression d'un
   repo : `DeleteRepo` la force (`permanently_remove`).
 - Runtime `argocd` : jamais d'appel à l'API Kubernetes, tout passe par Git ; `repo_url` est
-  l'URL vue par Argo CD ; Argo CD répond 403 pour une Application absente.
+  l'URL vue par Argo CD ; Argo CD répond 403 pour une Application absente. Le chart Helm
+  ou la base Kustomize d'une stack (`spec.kubernetes` de la fiche, lu sur main au
+  déploiement) est copié dans le dossier du service, avec `values.yaml` ou
+  `kustomization.yaml` de Symphony (contrat dans `reference/stack.yaml`) ; `prune` retire
+  les fichiers d'un déploiement précédent.
 - GitHub : un workflow lancé par `workflow_dispatch` déclare toutes les entrées envoyées
   (`SYMPHONY_*` compris), sinon 422. Webhooks : `/webhooks/<plateforme>` ; une forge qui
   ne peut pas joindre Symphony (GitHub et une démo locale) laisse le sondage travailler.
@@ -131,11 +141,11 @@ cd quickstart && docker compose up -d   # Symphony + PostgreSQL sur une forge ex
   de `db.go`.
 
 **Démo**
-- La CI GitLab des golden paths construit avec le socket du runner (démo) ou, sur
+- La CI GitLab des stacks construit avec le socket du runner (démo) ou, sur
   gitlab.com ou avec `DOCKER_DIND=true`, un service `docker:dind` (jobs `build` /
   `build-dind`) : garder les deux chemins.
 - Sans `GITHUB_TOKEN`, `up.sh` ne pousse pas les blocs `# github:début … fin` de la config
-  ni le golden path GitHub ; avec `--no-k8s`, de même pour `# k8s:début … fin` et
+  ni les stacks `*-github` ; avec `--no-k8s`, de même pour `# k8s:début … fin` et
   `api-rest-go-k8s`. Vault est en mode dev (en mémoire) : `up.sh` le remplit à chaque fois.
 
 ## Conventions
@@ -147,10 +157,10 @@ cd quickstart && docker compose up -d   # Symphony + PostgreSQL sur une forge ex
 
 ## Règles de travail
 
-- **Demander avant d'écrire dans la GitLab de l'utilisateur** (config, templates, repos de
+- **Demander avant d'écrire dans la GitLab de l'utilisateur** (config, stacks, repos de
   services), avec un dry-run de ce qui sera poussé.
 - Tester de bout en bout quand un changement touche les providers, la config, les
-  templates ou la démo, en plus des tests unitaires.
+  stacks ou la démo, en plus des tests unitaires.
 - Tout se fait sur `main` ; pousser seulement quand c'est demandé. Ne pas toucher à la
   branche `legacy` (archive).
 - Une version = cases de la roadmap cochées, `CHANGELOG.md`, tag annoté `vX.Y` poussé (la CI
@@ -168,7 +178,7 @@ cd quickstart && docker compose up -d   # Symphony + PostgreSQL sur une forge ex
 
 - Serveur de test : binaire du scratchpad sur `PORT=18080` (le 8080 peut être pris).
 - Projets temporaires `symphony-*-e2e`, supprimés après (`DELETE /api/v1/projects/{nom}`).
-- Modification temporaire d'un repo de config ou de templates : restaurer l'original et
+- Modification temporaire d'un repo de config ou de stacks : restaurer l'original et
   vérifier qu'il est identique.
 - Démo sur ports décalés : `GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224
   SYMPHONY_PORT=18090 KEYCLOAK_PORT=18180 VAULT_PORT=18200 K8S_HTTP_PORT=18081

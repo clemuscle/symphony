@@ -33,7 +33,7 @@ const (
 type TaskDeps struct {
 	Providers *provider.Registry
 	DB        *database.DB
-	Templates *gitops.TemplateLoader
+	Stacks    *gitops.StackLoader
 	Syncer    *gitops.Syncer
 	Webhooks  *webhook.Holder
 	Store     *catalogue.Store // fiches : variables des applications

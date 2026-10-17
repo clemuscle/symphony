@@ -25,12 +25,12 @@ func ListEnvironments(envs *environments.Holder) http.HandlerFunc {
 }
 
 // projectEnvironments : les environnements avec le runtime du projet dans
-// chacun (celui de son golden path s'il en change, sinon celui de la
+// chacun (celui de sa stack si elle en change, sinon celui de la
 // configuration)
-func projectEnvironments(envs *environments.Holder, templates *gitops.TemplateLoader, p *database.Project) []environments.Environment {
+func projectEnvironments(envs *environments.Holder, stacks *gitops.StackLoader, p *database.Project) []environments.Environment {
 	list := envs.List()
 	out := make([]environments.Environment, len(list))
-	gp, gpErr := templates.GetGoldenPath(p.GoldenPath)
+	gp, gpErr := stacks.GetStack(p.Stack)
 	for i, e := range list {
 		if gpErr == nil {
 			e.Runtime = gp.RuntimeFor(e.Name, e.Runtime)
@@ -41,8 +41,8 @@ func projectEnvironments(envs *environments.Holder, templates *gitops.TemplateLo
 }
 
 // environmentRuntime : le runtime du projet dans l'environnement env
-func environmentRuntime(envs *environments.Holder, templates *gitops.TemplateLoader, p *database.Project, env string) (string, bool) {
-	for _, e := range projectEnvironments(envs, templates, p) {
+func environmentRuntime(envs *environments.Holder, stacks *gitops.StackLoader, p *database.Project, env string) (string, bool) {
+	for _, e := range projectEnvironments(envs, stacks, p) {
 		if e.Name == env {
 			return e.Runtime, true
 		}
@@ -96,7 +96,7 @@ func checkAppSecret(project string, ref provider.SecretRef) error {
 
 // Promote déploie dans l'environnement to l'image qui tourne, saine, dans
 // l'environnement précédent : seul moyen d'atteindre un environnement protégé
-func Promote(providers *provider.Registry, db *database.DB, templates *gitops.TemplateLoader,
+func Promote(providers *provider.Registry, db *database.DB, stacks *gitops.StackLoader,
 	envs *environments.Holder, runner *tasks.Runner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := chi.URLParam(r, "name")
@@ -127,7 +127,7 @@ func Promote(providers *provider.Registry, db *database.DB, templates *gitops.Te
 		}
 
 		// L'image qui tourne dans l'environnement précédent, saine
-		fromRT, _ := environmentRuntime(envs, templates, proj, from.Name)
+		fromRT, _ := environmentRuntime(envs, stacks, proj, from.Name)
 		rt, err := providers.Runtime(fromRT)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "runtime de "+from.Name+" : "+err.Error())
@@ -154,7 +154,7 @@ func Promote(providers *provider.Registry, db *database.DB, templates *gitops.Te
 				from.Name, current.Image, from.Name))
 			return
 		}
-		toRT, _ := environmentRuntime(envs, templates, proj, to.Name)
+		toRT, _ := environmentRuntime(envs, stacks, proj, to.Name)
 		if busy(w, r, runner, proj.Name) {
 			return
 		}

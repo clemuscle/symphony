@@ -1,0 +1,16 @@
+package main
+
+import "net/http"
+
+// Métriques Prometheus (format texte simple), créé par le paramètre metrics
+// de la stack
+func init() {
+	routes = append(routes, func(mux *http.ServeMux) {
+		mux.HandleFunc("{{params.metrics_path}}", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			w.Write([]byte("# HELP http_requests_total Total HTTP requests\n"))
+			w.Write([]byte("# TYPE http_requests_total counter\n"))
+			w.Write([]byte("http_requests_total 0\n"))
+		})
+	})
+}

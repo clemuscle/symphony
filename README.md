@@ -4,19 +4,22 @@
 [![Release](https://img.shields.io/github/v/release/clemuscle/symphony)](https://github.com/clemuscle/symphony/releases)
 
 **Une Internal Developer Platform en Go** : un développeur crée un service prêt pour la
-production en un clic, à partir d'un *golden path* validé par l'équipe plateforme. Repo,
+production en un clic, à partir d'une *stack* validée par l'équipe plateforme. Repo,
 code, CI, image, déploiement et fiche de catalogue : Symphony s'appuie sur les outils
 existants (GitLab ou GitHub, leur CI, un registry, Docker, Argo CD, Vault, Keycloak) au lieu
 de les remplacer.
 
-![Démo : du golden path au service déployé](documentation/demo.gif)
+![Démo : de la stack au service déployé](documentation/demo.gif)
 
 ## Ce que fait Symphony
 
-- **Golden paths** : un template (squelette de code, Dockerfile, tests, pipeline CI) devient
-  un repo GitLab ou GitHub qui se construit tout seul (GitLab CI ou GitHub Actions, image
-  dans le registry GitLab ou sur GHCR). Ajouter un golden path, c'est pousser un
-  dossier dans un repo Git : il est disponible en moins de 15 s, sans redémarrage.
+- **Stacks** : un modèle de projet (squelette de code, Dockerfile, tests, pipeline CI,
+  chart Helm ou base Kustomize) et son **formulaire borné** (choix, valeurs verrouillées
+  par l'équipe plateforme, champs conditionnels, validés en JSON Schema) devient un repo
+  GitLab ou GitHub qui se construit tout seul (GitLab CI ou GitHub Actions, image dans le
+  registry GitLab ou sur GHCR). Un **catalogue officiel** est embarqué (Go, Python,
+  Node.js, worker) ; ajouter une stack à soi, c'est pousser un dossier dans un repo Git :
+  elle est disponible en moins de 15 s, sans redémarrage.
 - **Projets et leur fiche** : équipe, criticité, SLO, dépendances, liens et actions Day-2
   de chaque service, dans un `catalog-info.yaml` à la racine de son propre repo, que son
   équipe tient à jour comme le reste du code. La page Projets les réunit avec le repo, les
@@ -37,7 +40,7 @@ de les remplacer.
 - **Plateforme pilotée par Git** : la configuration elle-même (providers, repos) est lue
   dans Git et appliquée à chaud ; une version invalide est refusée et l'ancienne reste en
   place. La page **Administration** dit ce qui est chargé, ce qui est refusé et pourquoi,
-  et vérifie chaque provider ; `symphony validate` contrôle configuration et golden paths
+  et vérifie chaque provider ; `symphony validate` contrôle configuration et stacks
   avant le push, en local ou en CI.
 - **Sécurisé** : connexion OIDC (Keycloak en démo, tout fournisseur OIDC), rôles
   `viewer` / `developer` / `admin` déduits des groupes de l'annuaire, **droits par équipe**
@@ -59,7 +62,8 @@ la vraie interface sur des données capturées en démo, en lecture seule.
 
 **Sur ta forge**, en trois commandes : le [quickstart](quickstart/README.md) lance
 Symphony et PostgreSQL en Docker Compose, branchés sur gitlab.com, une GitLab
-auto-hébergée ou GitHub ; les projets créés tournent en conteneurs sur la machine.
+auto-hébergée ou GitHub, avec les stacks officielles ; les projets créés tournent en
+conteneurs sur la machine.
 
 **La démo complète**, sur ta machine. Prérequis : Docker avec Compose v2, `curl`, `jq`, ~6 Go de RAM libres (GitLab, Keycloak,
 Vault, k3s et Argo CD ; `--no-k8s` en économise 1,5 Go).
@@ -72,12 +76,12 @@ git clone https://github.com/clemuscle/symphony.git && cd symphony
 Le script affiche les URL et identifiants. Comptes de démo, pour Symphony comme pour
 GitLab (bouton « Keycloak ») et mot de passe = identifiant : `alice` (admin), `bob`
 (developer), `carol` (viewer), `dave` (sans rôle). Trois projets de trois équipes sont
-déjà créés depuis les golden paths, déployés en staging et, pour deux d'entre eux, promus
+déjà créés depuis les stacks, déployés en staging et, pour deux d'entre eux, promus
 en production sur Kubernetes, avec leur repo, leurs pipelines et leur URL (`--no-seed`
 pour partir de zéro). Suivre ensuite le [scénario de démo](demo/SCENARIO.md)
 (15 min). Ports déjà pris ? `up.sh` dit lequel, et comment le changer
 (`K8S_API_PORT=16443 ./demo/up.sh`, par exemple).
-Avec `GITHUB_TOKEN=<jeton> ./demo/up.sh`, la démo ajoute GitHub et les golden paths
+Avec `GITHUB_TOKEN=<jeton> ./demo/up.sh`, la démo ajoute GitHub et les stacks
 `api-rest-go-github` et `api-rest-python-github` (repo dans ton compte, GitHub Actions, image sur GHCR) ; jeton
 classique avec les droits `repo`, `workflow`, `delete_repo` et `read/write/delete:packages`.
 Arrêt : `./demo/down.sh` (`--purge` pour tout effacer).
@@ -107,7 +111,7 @@ flowchart LR
     API[API chi] --> REG[Registry de providers]
     W[configWatcher] -->|remplace d'un bloc| REG
     S[Syncer des fiches]
-    T[TemplateLoader]
+    T[StackLoader]
   end
   REG --> SCM[GitLab / GitHub]
   REG --> CI[GitLab CI / Actions]
@@ -118,7 +122,8 @@ flowchart LR
   REG --> IDP
   W -. 15 s .-> CFG[(symphony-config<br/>symphony.yaml)]
   S -. 15 s .-> SVC[(repo de chaque projet<br/>catalog-info.yaml)]
-  T -. 15 s .-> TPL[(symphony-templates<br/>templates/)]
+  T -. 15 s .-> TPL[(symphony-stacks<br/>stacks/)]
+  T --> OFF[[catalogue officiel<br/>embarqué]]
   API --> DB[(PostgreSQL)]
 ```
 
@@ -137,13 +142,13 @@ implémenter une interface. Détails, flux et décisions :
 | Sujet | Choix |
 |---|---|
 | Configuration à chaud | Un nouveau jeu de providers est construit à côté puis substitué d'un bloc ; les requêtes en cours finissent avec l'ancien. Les composants de longue durée résolvent leur provider à chaque appel. |
-| Templates invalides | Validés au chargement (schéma strict, chemins confinés au dossier du template, fichiers présents, CI compatible avec le SCM) ; un template cassé est ignoré, pas fatal. |
+| Stacks invalides | Validées au chargement (schéma strict, chemins confinés au dossier de la stack, fichiers présents, CI compatible avec le SCM, paramètres traduits en JSON Schema) ; une stack cassée est refusée seule, raison affichée dans Administration. |
 | Bascule de conteneur | Pull **avant** d'arrêter l'ancien ; le nouveau démarre à côté et ne remplace l'ancien qu'une fois `healthy` (`HEALTHCHECK` de l'image ; sans healthcheck, s'il tourne encore après 3 s). |
 | Configuration stricte | `symphony.yaml` décodé sans tolérance : chaque type de provider déclare ses clés, une faute de frappe ou une clé requise absente fait refuser la configuration (la précédente reste en place), avec toutes les erreurs d'un coup. Les configurations livrées sont validées par la CI. |
 | Erreurs | Le client reçoit l'opération en échec et l'identifiant de requête ; le détail (SQL, réponse brute d'un provider) ne quitte pas les logs. |
 | Secrets | Références `secret://<provider>/<chemin>#<clé>` résolues dans une copie de la configuration, tout ou rien : un coffre injoignable laisse la configuration en place. L'empreinte de la configuration résolue détecte une rotation. |
 | Authentification | Backend-for-Frontend : Symphony fait le flux OIDC (code + PKCE) et ne donne au navigateur qu'un cookie signé `HttpOnly` ; rôle recalculé à chaque requête depuis les groupes, CSRF bloqué par contrôle d'origine. Jetons `Bearer` pour les scripts. |
-| Sécurité des actions | Les entrées d'une action Day-2 sont validées contre leur déclaration ; une clé non déclarée est refusée (pas d'injection de variables CI). Les identifiants du registry ne partent que vers le registry qui héberge l'image. |
+| Sécurité des actions | Les entrées d'une action Day-2 sont validées contre leur déclaration, les paramètres d'une stack contre son JSON Schema ; une clé non déclarée est refusée (pas d'injection de variables CI). Les identifiants du registry ne partent que vers le registry qui héberge l'image. |
 | Dépendances | API Docker appelée directement sur le socket (pas de SDK), `database/sql` sans ORM, front embarqué avec `go:embed`, image `scratch`. |
 | Tâches | Étapes enregistrées en base et rejouables : une création interrompue par un redémarrage reprend sans recréer le repo. L'attente d'une pipeline ne bloque aucun thread : un webhook (ou le sondage de secours) relance la tâche. |
 | Métriques | Routes étiquetées par motif chi (séries bornées) ; appels aux providers mesurés par des décorateurs, sans toucher aux implémentations. |
@@ -168,13 +173,14 @@ Fait : v0.1 (binaire unique, `/metrics`, CI et image publiée), v0.2 (démo), v0
 rôles, audit), v0.4 (Kubernetes en GitOps avec Argo CD), v0.5 (tâches asynchrones,
 webhooks, temps réel), v0.6 (vrais projets de démo, fiche catalogue dans le repo du projet,
 connexion unique à GitLab), v0.7 (secrets et identité en providers : Vault, Keycloak et
-son annuaire ; golden path GitHub de bout en bout ; bascule Docker sur le `HEALTHCHECK`),
+son annuaire ; GitHub de bout en bout ; bascule Docker sur le `HEALTHCHECK`),
 v0.8 (chart Helm testé en CI, configuration stricte, droits par équipe, erreurs masquées),
 v0.9 (secrets des applis, environnements et promotion, webhooks GitHub, OpenAPI, mode
 visite), v0.10 (finitions), v0.11 (page Administration, `symphony validate`,
-configuration de référence, quickstart, licence Apache 2.0). À venir : golden paths
-paramétrables, l'infra avec l'appli, import des services existants, gouvernance par
-équipe, puis la v1.0, ouverte aux utilisateurs.
+configuration de référence, quickstart, licence Apache 2.0), v0.12 (stacks
+paramétrables, manifests Helm ou Kustomize fournis par la stack, catalogue officiel). À
+venir : l'infra avec l'appli, import des services existants, gouvernance par équipe,
+puis la v1.0, ouverte aux utilisateurs.
 Détail : [ROADMAP.md](ROADMAP.md) et [CHANGELOG.md](CHANGELOG.md).
 
 **Stack** : Go 1.27, chi, go-oidc, PostgreSQL, Prometheus client, Vue 3 + Vite, GitLab CE,

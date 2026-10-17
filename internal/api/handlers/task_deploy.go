@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/clemuscle/symphony/internal/database"
@@ -55,6 +57,10 @@ func (d TaskDeps) deploy(_ context.Context, x *tasks.Exec) error {
 	if err != nil {
 		return err
 	}
+	manifests, err := d.stackManifests(p.ProjectName, rt)
+	if err != nil {
+		return err
+	}
 	if p.PromotedFrom != "" {
 		x.Progress("promotion %s → %s, %s : %s:%s", p.PromotedFrom, p.Environment, rt.ID(), p.Image, orLatest(p.Tag))
 	} else {
@@ -72,6 +78,7 @@ func (d TaskDeps) deploy(_ context.Context, x *tasks.Exec) error {
 		SecretEnv:   secretEnv,
 		// Identifiants lus au moment du déploiement, jamais enregistrés dans la tâche
 		RegistryAuth: registryAuth(d.Providers, d.DB, p.ProjectName, p.Image),
+		Manifests:    manifests,
 	})
 	if err != nil {
 		return err
@@ -166,4 +173,46 @@ func (d TaskDeps) appEnvVars(project, env string, byRef bool) (map[string]string
 		plain[k] = v
 	}
 	return plain, nil, nil
+}
+
+// stackManifests : le chart Helm ou la base Kustomize que la fiche du projet
+// déclare (spec.kubernetes, écrit par sa stack), lus sur main dans son repo.
+// Seul le runtime argocd s'en sert ; nil : il génère ses manifests.
+func (d TaskDeps) stackManifests(project string, rt provider.RuntimeProvider) (*provider.Manifests, error) {
+	if rt.Type() != "argocd" {
+		return nil, nil
+	}
+	svc, ok := d.Store.Get(project)
+	if !ok || svc.Spec.Kubernetes == nil {
+		return nil, nil
+	}
+	m := &provider.Manifests{Kind: "helm", Files: map[string]string{}}
+	dir := svc.Spec.Kubernetes.Helm
+	if dir == "" {
+		m.Kind, dir = "kustomize", svc.Spec.Kubernetes.Kustomize
+	}
+	dir = strings.Trim(path.Clean(dir), "/")
+	if dir == "" || dir == "." || strings.HasPrefix(dir, "..") {
+		return nil, fmt.Errorf("fiche du projet : spec.kubernetes %q invalide", dir)
+	}
+	proj, err := d.DB.GetProjectByName(project)
+	if err != nil {
+		return nil, fmt.Errorf("projet %s : %w", project, err)
+	}
+	scm, err := d.Providers.SCM(proj.SCMProvider)
+	if err != nil {
+		return nil, err
+	}
+	files, err := scm.ListFiles(proj.RepoPath, "main", dir)
+	if err != nil {
+		return nil, fmt.Errorf("manifests %s (%s) du repo %s : %w", m.Kind, dir, proj.RepoPath, err)
+	}
+	for _, f := range files {
+		content, err := scm.GetFileContent(proj.RepoPath, "main", f)
+		if err != nil {
+			return nil, fmt.Errorf("lecture de %s : %w", f, err)
+		}
+		m.Files[strings.TrimPrefix(f, dir+"/")] = content
+	}
+	return m, nil
 }

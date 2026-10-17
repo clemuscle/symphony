@@ -74,8 +74,8 @@ providers:
         redirect_url: https://symphony.example.com/auth/callback
         groups_claim: groups
 
-  # ─── Forges (SCM) : repos des projets, de la configuration et des golden paths
-  # Le SCM par défaut lit la configuration (bootstrap) et les golden paths.
+  # ─── Forges (SCM) : repos des projets, de la configuration et des stacks
+  # Le SCM par défaut lit la configuration (bootstrap) et le repo de stacks.
   scm:
     - id: gitlab
       type: gitlab # gitlab.com ou GitLab auto-hébergée
@@ -166,7 +166,7 @@ providers:
 # ─── Environnements, dans l'ordre de promotion ─────────────────────────────────
 # Absent : un seul déploiement par projet. Noms DNS courts (ils finissent dans
 # <projet>-<env>). Le premier n'est pas protégé ; un environnement protégé ne
-# reçoit qu'une promotion (image déjà saine dans le précédent). Un golden path
+# reçoit qu'une promotion (image déjà saine dans le précédent). Une stack
 # peut changer le runtime d'un environnement (spec.environments).
 environments:
   - name: staging
@@ -188,14 +188,25 @@ webhooks:
 catalogue:
   file: catalog-info.yaml # défaut catalog-info.yaml
 
-# ─── Golden paths ─────────────────────────────────────────────────────────────
-# Lus avec le SCM par défaut : <path>/<nom>/template.yaml (format :
-# documentation/reference/template.yaml). Un golden path invalide est refusé
-# seul, les autres restent proposés.
-templates:
-  repo: platform/templates # défaut root/symphony-templates
+# ─── Stacks ───────────────────────────────────────────────────────────────────
+# Les modèles de projet proposés à la création : ceux du repo de l'entreprise,
+# lus avec le SCM par défaut (<path>/<nom>/stack.yaml, format :
+# documentation/reference/stack.yaml), et ceux du catalogue officiel de
+# Symphony, embarqués. Une stack du repo remplace l'officielle du même nom ;
+# une stack invalide est refusée seule, les autres restent proposées.
+stacks:
+  repo: platform/stacks # vide : pas de repo, catalogue officiel seul
   branch: main # défaut main
-  path: templates # défaut templates ; "" : racine du repo
+  path: stacks # défaut stacks ; "" : racine du repo
+  # Stacks officielles proposées : ["*"] pour toutes, ou leurs noms
+  # (api-rest-go, api-rest-python, api-rest-node, worker-python) ; défaut :
+  # aucune. Un nom inconnu fait refuser la configuration.
+  official: [api-rest-go, worker-python]
+# Ancien nom de la section (golden paths), lu jusqu'à la v1.0, avec ses
+# anciens défauts (repo root/symphony-templates, dossier templates) ; sans
+# section stacks ni templates, ce sont ces défauts qui s'appliquent :
+# templates:
+#   repo: root/symphony-templates
 
 # ─── Connexion ────────────────────────────────────────────────────────────────
 # Absent : authentification désactivée, tout le monde est admin (développement

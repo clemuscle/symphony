@@ -3,8 +3,8 @@
 # toutes les 15 s : une modification est appliquée à chaud, une erreur est
 # refusée et expliquée dans la page Administration.
 #
-# Les ids des providers sont ceux que désignent les golden paths d'exemple
-# (demo/gitlab/symphony-templates, dossiers *-github).
+# Stacks : le catalogue officiel de Symphony (embarqué), qui suit les
+# providers par défaut ci-dessous, et celles de STACKS_REPO s'il est défini.
 
 providers:
   scm:
@@ -25,15 +25,15 @@ providers:
         owner: ${FORGE_GROUP}
         scm_ref: github
   runtime:
-    - id: docker-local
+    - id: docker
       type: docker
       config:
         socket: tcp://docker-proxy:2375
 
-templates:
-  repo: ${TEMPLATES_REPO}
-  branch: main
-  path: templates
+stacks:
+  repo: ${STACKS_REPO} # vide : catalogue officiel seul
+  path: stacks
+  official: ["*"]
 
 # Pas de section auth : authentification désactivée, tout le monde est admin.
 # Pas de section webhooks : GitHub ne peut pas joindre ce poste, Symphony

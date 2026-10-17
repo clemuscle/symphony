@@ -13,7 +13,7 @@ metadata:
   tier: standard
   lifecycle: staging
   labels:
-    golden_path: api-rest-node
+    stack: api-rest-node
 spec:
   type: api
   language: node

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/clemuscle/symphony/internal/config"
 )
 
 func writeFiles(t *testing.T, files map[string]string) string {
@@ -58,26 +60,34 @@ environments:
 webhooks:
   url: http://symphony:8080
   secret: secret://vault/symphony/webhook#secret
+stacks:
+  repo: platform/stacks
+  official: [api-rest-go]
 `
 
-const template = `apiVersion: symphony/v1
-kind: GoldenPath
+const stack = `apiVersion: symphony/v1
+kind: Stack
 metadata:
   name: api
 spec:
   providers: { scm: gitlab, ci: gitlab-ci, runtime: docker }
   ci_template: ci.yml
+  parameters:
+    - { name: log_level, type: choice, choices: [info, debug], default: info }
 `
 
 // Une configuration complète passe sans rien lire : ni Vault, ni l'environnement
 func TestValidateOK(t *testing.T) {
 	dir := writeFiles(t, map[string]string{
-		"symphony.yaml":               validConfig,
-		"templates/api/template.yaml": template,
-		"templates/api/ci.yml":        "stages: [build]",
-		"templates/api/skeleton/main": "x",
+		"symphony.yaml":            validConfig,
+		"stacks/api/stack.yaml":    stack,
+		"stacks/api/ci.yml":        "stages: [build]",
+		"stacks/api/skeleton/main": "x",
+		"stacks/old/template.yaml": strings.NewReplacer("kind: Stack", "kind: GoldenPath", "name: api", "name: old").Replace(stack),
+		"stacks/old/ci.yml":        "x",
+		"stacks/old/skeleton/main": "x",
 	})
-	code, out := validate(t, "-config", filepath.Join(dir, "symphony.yaml"), "-templates", filepath.Join(dir, "templates"))
+	code, out := validate(t, "-config", filepath.Join(dir, "symphony.yaml"), "-stacks", filepath.Join(dir, "stacks"))
 	if code != 0 {
 		t.Fatalf("code %d :\n%s", code, out)
 	}
@@ -86,7 +96,10 @@ func TestValidateOK(t *testing.T) {
 		"✓ scm gitlab (par défaut)",
 		"✓ environnements : staging → production (protégé)",
 		"pas de section auth",
-		"✓ api : api",
+		"✓ stacks lues dans platform/stacks (branche main, dossier stacks)",
+		"✓ stack officielle api-rest-go",
+		"✓ api : api (paramètres : log_level)",
+		"ancien format",
 		"✓ aucune erreur",
 	} {
 		if !strings.Contains(out, want) {
@@ -102,23 +115,25 @@ func TestValidateErrors(t *testing.T) {
 		"secret://vault/symphony/gitlab#token", "secret://coffre/symphony/gitlab#token", // provider de secrets absent
 	).Replace(validConfig)
 	dir := writeFiles(t, map[string]string{
-		"symphony.yaml":                       bad,
-		"templates/api/template.yaml":         template,
-		"templates/api/ci.yml":                "x",
-		"templates/sans-ci/template.yaml":     strings.Replace(template, "name: api", "name: sans-ci", 1),
-		"templates/sans-ci/skeleton/a":        "x",
-		"templates/mauvais-nom/template.yaml": template,
+		"symphony.yaml":                 bad,
+		"stacks/api/stack.yaml":         stack,
+		"stacks/api/ci.yml":             "x",
+		"stacks/sans-ci/stack.yaml":     strings.Replace(stack, "name: api", "name: sans-ci", 1),
+		"stacks/sans-ci/skeleton/a":     "x",
+		"stacks/mauvais-nom/stack.yaml": stack,
+		"stacks/param/stack.yaml":       strings.NewReplacer("name: api", "name: param", "default: info", "default: trace").Replace(stack),
 	})
-	code, out := validate(t, "-config", filepath.Join(dir, "symphony.yaml"), "-templates", filepath.Join(dir, "templates"))
+	code, out := validate(t, "-config", filepath.Join(dir, "symphony.yaml"), "-stacks", filepath.Join(dir, "stacks"))
 	if code != 1 {
 		t.Fatalf("code %d, attendu 1 :\n%s", code, out)
 	}
 	for _, want := range []string{
 		"sockett",
-		"configuration invalide : providers des golden paths non vérifiés",
+		"configuration invalide : providers des stacks non vérifiés",
 		"skeleton api/skeleton introuvable", // pas de skeleton
 		"différent du dossier",
 		"ci_template",
+		"trace n'est pas l'un des choix",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("%q absent :\n%s", want, out)
@@ -126,15 +141,15 @@ func TestValidateErrors(t *testing.T) {
 	}
 }
 
-// Un golden path qui désigne un provider absent de la configuration est refusé
-func TestValidateTemplateProviders(t *testing.T) {
+// Une stack qui désigne un provider absent de la configuration est refusée
+func TestValidateStackProviders(t *testing.T) {
 	dir := writeFiles(t, map[string]string{
-		"symphony.yaml":               validConfig,
-		"templates/api/template.yaml": strings.Replace(template, "runtime: docker", "runtime: argocd", 1),
-		"templates/api/ci.yml":        "x",
-		"templates/api/skeleton/a":    "x",
+		"symphony.yaml":         validConfig,
+		"stacks/api/stack.yaml": strings.Replace(stack, "runtime: docker", "runtime: argocd", 1),
+		"stacks/api/ci.yml":     "x",
+		"stacks/api/skeleton/a": "x",
 	})
-	code, out := validate(t, "-config", filepath.Join(dir, "symphony.yaml"), "-templates", filepath.Join(dir, "templates"))
+	code, out := validate(t, "-config", filepath.Join(dir, "symphony.yaml"), "-stacks", filepath.Join(dir, "stacks"))
 	if code != 1 || !strings.Contains(out, `runtime provider: runtime provider "argocd" not found`) {
 		t.Errorf("code %d :\n%s", code, out)
 	}
@@ -146,19 +161,31 @@ func TestValidateUsage(t *testing.T) {
 	}
 }
 
-// Les configurations et golden paths livrés passent symphony validate
+// Une stack officielle inconnue fait refuser la configuration
+func TestValidateUnknownOfficial(t *testing.T) {
+	dir := writeFiles(t, map[string]string{
+		"symphony.yaml": strings.Replace(validConfig, "official: [api-rest-go]", "official: [api-rest-cobol]", 1),
+	})
+	code, out := validate(t, "-config", filepath.Join(dir, "symphony.yaml"))
+	if code != 1 || !strings.Contains(out, `stacks.official : "api-rest-cobol" inconnue`) {
+		t.Errorf("code %d :\n%s", code, out)
+	}
+}
+
+// Les configurations et stacks livrées passent symphony validate
 func TestValidateRepo(t *testing.T) {
 	// Variables du quickstart (.env.example)
 	for k, v := range map[string]string{
 		"FORGE_URL": "https://gitlab.com", "REGISTRY_HOST": "registry.gitlab.com",
-		"FORGE_GROUP": "mon-groupe", "TEMPLATES_REPO": "mon-groupe/symphony-templates",
+		"FORGE_GROUP": "mon-groupe", "STACKS_REPO": "",
 	} {
 		t.Setenv(k, v)
 	}
 	for _, args := range [][]string{
 		{"-config", "../../quickstart/symphony.gitlab.yaml"},
 		{"-config", "../../quickstart/symphony.github.yaml"},
-		{"-config", "../../demo/gitlab/symphony-config/symphony.yaml", "-templates", "../../demo/gitlab/symphony-templates/templates"},
+		{"-config", "../../demo/gitlab/symphony-config/symphony.yaml", "-stacks", "../../demo/gitlab/symphony-stacks/stacks"},
+		{"-stacks", "../../stacks"},
 		{"-config", "../../demo/symphony.yaml"},
 		{"-config", "../../symphony.yaml"},
 		{"-config", "../../documentation/reference/symphony.yaml"},
@@ -179,5 +206,34 @@ func TestValidateSecretRef(t *testing.T) {
 	code, out := validate(t, "-config", filepath.Join(dir, "symphony.yaml"))
 	if code != 1 || !strings.Contains(out, "coffre") {
 		t.Errorf("code %d :\n%s", code, out)
+	}
+}
+
+// stacksSource : section stacks, ancienne section templates, ou rien
+func TestStacksSource(t *testing.T) {
+	parse := func(src string) *config.Config {
+		cfg, err := config.Parse([]byte(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg
+	}
+	src, warnings, err := stacksSource(parse("stacks:\n  official: ['*']\n"))
+	if err != nil || src.Repo != "" || src.Path != "stacks" || len(src.Official) != 1 || len(warnings) != 0 {
+		t.Errorf("stacks : %+v %v %v", src, warnings, err)
+	}
+	src, warnings, err = stacksSource(parse("templates:\n  repo: root/t\n"))
+	if err != nil || src.Repo != "root/t" || src.Path != "templates" || len(warnings) != 1 {
+		t.Errorf("templates : %+v %v %v", src, warnings, err)
+	}
+	src, warnings, err = stacksSource(parse("catalogue: {}\n"))
+	if err != nil || src.Repo != "root/symphony-templates" || len(warnings) != 1 {
+		t.Errorf("sans section : %+v %v %v", src, warnings, err)
+	}
+	if _, _, err := stacksSource(parse("stacks: {repo: a}\ntemplates: {repo: b}\n")); err == nil {
+		t.Error("stacks et templates : erreur attendue")
+	}
+	if _, warnings, _ := stacksSource(parse("stacks: {}\n")); len(warnings) != 1 {
+		t.Errorf("aucune stack : %v", warnings)
 	}
 }

@@ -38,7 +38,7 @@ func TestObserveProviderCall(t *testing.T) {
 }
 
 func TestHandler(t *testing.T) {
-	Reload("templates", "ok")
+	Reload("stacks", "ok")
 	rec := httptest.NewRecorder()
 	Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	for _, want := range []string{"symphony_reloads_total", "symphony_last_successful_reload_timestamp_seconds", "go_goroutines"} {

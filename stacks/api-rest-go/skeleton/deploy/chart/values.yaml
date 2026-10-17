@@ -1,0 +1,22 @@
+# Valeurs par défaut du chart. Au déploiement, Symphony écrit les siennes
+# (values.yaml à côté du chart dans le repo de déploiement) : image,
+# réplicas, variables, Ingress. Le reste se règle ici, par un commit.
+fullnameOverride: ""
+replicaCount: 1
+image:
+  repository: ""
+  tag: latest
+containerPort: 8080
+# Variables de l'appli (fiche catalogue, spec.environments[].env)
+env: {}
+# Secret des variables secrètes (créé par External Secrets), vide sans secret
+secretEnv: ""
+ingress:
+  enabled: false
+  host: ""
+  className: ""
+podAnnotations: {}
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi

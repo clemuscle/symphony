@@ -62,9 +62,9 @@ func TestAdminStatus(t *testing.T) {
 	r := provider.NewRegistry()
 	r.RegisterSCM(instrumented.SCM(forge.SCM()), true)
 	scm, _ := r.SCM("")
-	scm.GetFileContent("platform/templates", "main", "absent") // dernier appel : introuvable, pas une panne
+	scm.GetFileContent("platform/stacks", "main", "absent") // dernier appel : introuvable, pas une panne
 
-	templates := gitops.NewTemplateLoader(r, "platform/templates", "main", "templates")
+	stacks := gitops.NewStackLoader(r, nil, gitops.StackSource{Repo: "platform/stacks", Branch: "main", Path: "stacks", Official: []string{"*"}})
 	syncer := gitops.NewSyncer(r, catalogue.NewStore(), func() ([]gitops.ProjectRef, error) { return nil, nil }, "")
 	status := func() config.Status {
 		return config.Status{Source: "platform/config:symphony.yaml (branche main)", Revision: "abc",
@@ -72,22 +72,25 @@ func TestAdminStatus(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	AdminStatus(r, status, templates, syncer)(rec, httptest.NewRequest("GET", "/api/v1/admin/status", nil))
+	AdminStatus(r, status, stacks, syncer)(rec, httptest.NewRequest("GET", "/api/v1/admin/status", nil))
 	var got struct {
 		Config    config.Status    `json:"config"`
 		Providers []providerStatus `json:"providers"`
-		GPs       struct {
-			Repo    string   `json:"repo"`
-			Loaded  []string `json:"loaded"`
-			Refused []any    `json:"refused"`
-		} `json:"golden_paths"`
+		Stacks    struct {
+			Repo     string   `json:"repo"`
+			Official []string `json:"official"`
+			Loaded   []string `json:"loaded"`
+			Refused  []any    `json:"refused"`
+			Warnings []any    `json:"warnings"`
+		} `json:"stacks"`
 		Catalogue gitops.CatalogueReport `json:"catalogue"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Config.Revision != "abc" || got.GPs.Repo != "platform/templates" || got.GPs.Loaded == nil ||
-		got.GPs.Refused == nil || got.Catalogue.File != "catalog-info.yaml" {
+	if got.Config.Revision != "abc" || got.Stacks.Repo != "platform/stacks" || got.Stacks.Loaded == nil ||
+		got.Stacks.Official[0] != "*" || got.Stacks.Refused == nil || got.Stacks.Warnings == nil ||
+		got.Catalogue.File != "catalog-info.yaml" {
 		t.Errorf("statut : %s", rec.Body)
 	}
 	if len(got.Providers) != 1 {

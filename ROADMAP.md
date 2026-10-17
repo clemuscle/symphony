@@ -239,17 +239,25 @@ instance qui crée un projet sur une forge existante.
 
 ## v0.12 — Stacks paramétrables
 
-- [ ] Paramètres d'un golden path (`spec.parameters` : `name`, `title`, `type`,
+- [x] Paramètres d'une stack (`spec.parameters` : `name`, `title`, `type`,
       `choices`, `default`, `required`, `when`, `locked`), validés en JSON Schema,
-      rendus en formulaire et injectés dans le squelette
-- [ ] Manifests Kubernetes fournis par le golden path (chart Helm ou base Kustomize),
+      rendus en formulaire et injectés dans le squelette (`{{params.<nom>}}`, fichiers
+      sous condition)
+- [x] Manifests Kubernetes fournis par la stack (chart Helm ou base Kustomize),
       sinon générés comme aujourd'hui
-- [ ] Catalogue officiel de golden paths dans un repo public, à côté de celui du client
-- [ ] Vocabulaire tranché : « golden path » ou « stack »
+- [x] Catalogue officiel de stacks (`stacks/` du repo public, embarqué dans le binaire),
+      à côté de celles du client, exposé au choix de l'admin (`stacks.official`)
+- [x] Vocabulaire tranché : « stack » (`stack.yaml`, `kind: Stack`, section `stacks`) ;
+      l'ancien format est lu jusqu'à la v1.0 et signalé dans Administration
+
+Fini quand : une stack officielle se remplit dans un formulaire borné (valeur verrouillée,
+champ conditionnel) et donne un repo qui en tient compte ; une stack avec son chart Helm
+ou sa base Kustomize tourne sur Kubernetes par Argo CD ; le quickstart propose les stacks
+officielles sans rien pousser sur la forge.
 
 ## v0.13 — L'infra avec l'appli
 
-- [ ] Un golden path porte son infra, appliquée par la CI du repo (OpenTofu en plan
+- [ ] Une stack porte son infra, appliquée par la CI du repo (OpenTofu en plan
       puis apply, ou manifests d'opérateurs en GitOps) : Symphony déclenche et suit,
       sans identifiants cloud
 - [ ] PostgreSQL par CloudNativePG de bout en bout (démo k3s et CI)
@@ -278,8 +286,8 @@ instance qui crée un projet sur une forge existante.
 
 ## v0.17 — Prêt à être adopté
 
-- [ ] Site de documentation : installation, configuration de référence, écrire un
-      golden path, brancher Symphony sur ses outils
+- [ ] Site de documentation : installation, configuration de référence, écrire une
+      stack, brancher Symphony sur ses outils
 - [ ] Sauvegarde et restauration documentées et testées
 - [ ] Nom tranché ; appel à bêta-testeurs
 
@@ -288,9 +296,10 @@ instance qui crée un projet sur une forge existante.
 Objectif : une équipe plateforme peut installer Symphony, le brancher sur ses outils, le
 mettre à jour et s'y fier sans lire son code.
 
-- [ ] Contrat stable (SemVer strict) : API `/api/v1`, configuration, fiches et golden
-      paths versionnés ; toute dépréciation annoncée une version à l'avance, avec son
-      outil de migration
+- [ ] Contrat stable (SemVer strict) : API `/api/v1`, configuration, fiches et stacks
+      versionnées ; toute dépréciation annoncée une version à l'avance, avec son outil
+      de migration ; l'ancien format des stacks (`template.yaml`, section `templates`)
+      retiré
 - [ ] Montée de version testée d'une version à l'autre, retour arrière documenté
 - [ ] Guide d'exploitation : installation (Compose et Helm), métriques et alertes,
       dépannage

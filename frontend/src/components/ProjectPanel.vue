@@ -25,7 +25,10 @@
         <span :class="['status-badge', pipeline.status]">{{ pipeline.status }}</span>
       </div>
       <div class="info-row"><span>Repo</span><code>{{ project.repo_path }}</code></div>
-      <div class="info-row"><span>Golden path</span><code>{{ project.golden_path }}</code></div>
+      <div class="info-row"><span>Stack</span><code>{{ project.stack }}</code></div>
+      <div class="info-row" v-for="(v, k) in project.stack_parameters" :key="k">
+        <span class="param">{{ k }}</span><code>{{ formatValue(v) }}</code>
+      </div>
       <div class="info-row" v-if="project.team"><span>Équipe</span><strong>{{ project.team }}</strong></div>
       <div class="info-row" v-if="project.created_by"><span>Créé par</span><strong>{{ project.created_by }}</strong></div>
     </section>
@@ -153,6 +156,7 @@
 import { computed, onUnmounted, ref } from 'vue'
 import { api, errorMessage } from '../api'
 import { depIcon, ficheURL, lifecycle, lifecycleLabel, linkIcon, pipelinesURL, repoWebURL, runtimeLabel, tier, tierIcon } from '../lib/projects'
+import { formatValue } from '../lib/parameters'
 import { can, canOperate } from '../stores/session'
 import { activeTaskFor, taskStore, trackTask } from '../stores/tasks'
 import type { Deployment, Project } from '../types'
@@ -250,6 +254,7 @@ h4 { font-size: 11px; text-transform: uppercase; color: #aaa; letter-spacing: .0
 .small code { font-size: 12px; background: #f4f4f4; padding: 1px 5px; border-radius: 4px; }
 .info-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; font-size: 14px; gap: 10px; }
 .info-row span { color: #888; }
+.info-row span.param { padding-left: 12px; font-size: 13px; }
 .info-row a { color: #667eea; text-decoration: none; font-size: 13px; }
 .info-row code { font-size: 12px; background: #f4f4f4; padding: 2px 6px; border-radius: 4px; }
 .pipeline-status { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; color: #666; padding: 8px 12px; background: #f8f9fb; border-radius: 8px; }

@@ -28,7 +28,7 @@
     <div v-if="loading" class="state">Chargement...</div>
     <div v-else-if="!projects.length" class="state">
       Aucun projet pour l'instant.
-      <RouterLink to="/catalogue">Choisir un golden path dans le catalogue →</RouterLink>
+      <RouterLink to="/catalogue">Choisir une stack dans le catalogue →</RouterLink>
     </div>
 
     <div class="grid" v-else>

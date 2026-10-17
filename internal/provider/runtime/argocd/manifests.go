@@ -67,19 +67,44 @@ func sortedEnv(vars map[string]string) []envVar {
 	return env
 }
 
-// kustomization : format de kustomization.yaml, relu par Stop et Restart
+// kustomization : format de kustomization.yaml, relu par Stop et Restart.
+// Les champs facultatifs servent à la base Kustomize d'une stack (préfixe,
+// labels, variables de l'appli) : ils doivent survivre à une relecture.
 type kustomization struct {
-	APIVersion        string            `yaml:"apiVersion"`
-	Kind              string            `yaml:"kind"`
-	Resources         []string          `yaml:"resources"`
-	CommonAnnotations map[string]string `yaml:"commonAnnotations,omitempty"`
-	Images            []kustomizeImage  `yaml:"images"`
-	Replicas          []kustomizeCount  `yaml:"replicas"`
+	APIVersion         string             `yaml:"apiVersion"`
+	Kind               string             `yaml:"kind"`
+	NamePrefix         string             `yaml:"namePrefix,omitempty"`
+	Resources          []string           `yaml:"resources"`
+	Labels             []kustomizeLabels  `yaml:"labels,omitempty"`
+	CommonAnnotations  map[string]string  `yaml:"commonAnnotations,omitempty"`
+	Images             []kustomizeImage   `yaml:"images"`
+	Replicas           []kustomizeCount   `yaml:"replicas"`
+	ConfigMapGenerator []kustomizeConfMap `yaml:"configMapGenerator,omitempty"`
+	Patches            []kustomizePatch   `yaml:"patches,omitempty"`
 }
 
 type kustomizeImage struct {
-	Name   string `yaml:"name"`
-	NewTag string `yaml:"newTag"`
+	Name    string `yaml:"name"`
+	NewName string `yaml:"newName,omitempty"`
+	NewTag  string `yaml:"newTag"`
+}
+
+type kustomizeLabels struct {
+	Pairs            map[string]string `yaml:"pairs"`
+	IncludeSelectors bool              `yaml:"includeSelectors"`
+}
+
+type kustomizeConfMap struct {
+	Name     string   `yaml:"name"`
+	Literals []string `yaml:"literals"`
+}
+
+type kustomizePatch struct {
+	Target struct {
+		Kind string `yaml:"kind"`
+		Name string `yaml:"name,omitempty"`
+	} `yaml:"target"`
+	Patch string `yaml:"patch"`
 }
 
 type kustomizeCount struct {

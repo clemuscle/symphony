@@ -4,7 +4,8 @@ Symphony est une **Internal Developer Platform** (IDP) : un backend Go et une SP
 s'appuient sur les outils existants (GitLab ou GitHub, leur CI, un registry d'images, un
 runtime : Docker ou Kubernetes via Argo CD, un coffre de secrets, un fournisseur
 d'identité) pour qu'un développeur crée un service prêt à déployer en un clic,
-depuis un *golden path* validé par l'équipe plateforme.
+depuis une *stack* validée par l'équipe plateforme (un modèle de projet et son
+formulaire borné).
 
 Ce document décrit l'architecture actuelle et les décisions qui la fondent. Ce qui reste à
 faire est dans [ROADMAP.md](../ROADMAP.md). Symphony est né d'une proposition d'architecture
@@ -13,7 +14,7 @@ dit ce qui en a été repris, adapté ou écarté.
 
 ## Principes
 
-1. **Tout se pilote par Git.** La configuration de Symphony, les golden paths et la fiche
+1. **Tout se pilote par Git.** La configuration de Symphony, les stacks et la fiche
    catalogue de chaque projet vivent dans des repos Git, relus toutes les 15 s. Le binaire est
    immuable ; changer la plateforme, c'est pousser un commit.
 2. **Des drivers, pas des plugins.** Chaque outil externe est derrière une interface Go
@@ -45,8 +46,8 @@ dit ce qui en a été repris, adapté ou écarté.
 ┌──────────────────────────────────▼───────────────────────────────────┐
 │ Symphony (Go)                                                        │
 │                                                                      │
-│  api/ (chi, handlers)   gitops/Syncer      gitops/TemplateLoader     │
-│  tasks/Runner ◄── webhooks GitLab          golden paths (15 s)       │
+│  api/ (chi, handlers)   gitops/Syncer      gitops/StackLoader        │
+│  tasks/Runner ◄── webhooks GitLab          stacks (15 s) + officielles│
 │  (tâches, SSE)          fiches (15 s)                                │
 │  configWatcher (15 s)   catalogue.Store    database (PostgreSQL)     │
 │                                                                      │
@@ -62,17 +63,24 @@ dit ce qui en a été repris, adapté ou écarté.
 
 | Repo | Contenu | Relu |
 |---|---|---|
-| `platform/symphony-config` | `symphony.yaml` (providers, templates, authentification…) | toutes les 15 s, appliqué à chaud |
-| `platform/symphony-templates` | `templates/<nom>/` : `template.yaml`, template CI, `skeleton/` | toutes les 15 s |
-| `apps/<service>` : un repo par projet | le code du service, généré depuis le golden path, et sa fiche `catalog-info.yaml` | la fiche, toutes les 15 s |
+| `platform/symphony-config` | `symphony.yaml` (providers, stacks, authentification…) | toutes les 15 s, appliqué à chaud |
+| `platform/symphony-stacks` | `stacks/<nom>/` : `stack.yaml`, CI, `skeleton/` | toutes les 15 s |
+| `apps/<service>` : un repo par projet | le code du service, généré depuis sa stack, et sa fiche `catalog-info.yaml` | la fiche, toutes les 15 s |
 | `platform/symphony-deployments` | `apps/<service>/` : manifests Kubernetes écrits par Symphony (runtime `argocd`) | par Argo CD |
 
 Deux groupes en démo : **platform**, tenu par l'équipe plateforme, et **apps**, ouvert aux
 développeurs (`providers.scm[].config.namespace` : groupe des repos créés). La fiche d'un
 projet est dans **son** repo, pas dans la configuration de la plateforme : son équipe la
 modifie par un commit, à côté du code qu'elle décrit (le modèle de `catalog-info.yaml`
-chez Backstage). Le catalogue de Symphony, ce sont les golden paths ; ses projets sont ce
-qui en est sorti.
+chez Backstage). Le catalogue de Symphony, ce sont les stacks ; ses projets sont ce qui
+en est sorti.
+
+Aux stacks du repo de l'entreprise s'ajoute le **catalogue officiel** (`stacks/` du repo de
+Symphony), embarqué dans le binaire : versionné avec Symphony, lu sans réseau ni jeton, et
+proposé seulement si la configuration l'expose (`stacks.official`, `["*"]` ou une liste).
+Une stack officielle ne désigne aucun provider et porte une CI par forge
+(`ci_templates`) : elle suit ceux par défaut de l'instance, GitLab ou GitHub. Une stack du
+repo qui porte le même nom la remplace.
 
 Le `symphony.yaml` local n'est qu'un **bootstrap** (section `config_source`) : comment
 joindre GitLab et où lire la configuration. C'est le seul fichier qui demande un
@@ -84,7 +92,7 @@ Trois façons : le [quickstart](../quickstart/README.md) (Symphony et PostgreSQL
 `docker compose`, branchés sur une forge existante), la démo complète, ou le chart Helm
 `deploy/helm/symphony` pour un cluster Kubernetes. Chaque clé de configuration est
 décrite dans [la configuration de référence](reference/symphony.yaml) (avec
-[le bootstrap](reference/bootstrap.yaml) et [un golden path](reference/template.yaml)),
+[le bootstrap](reference/bootstrap.yaml) et [une stack](reference/stack.yaml)),
 que la CI vérifie à chaque changement du schéma. Le chart crée un Deployment à une réplique (`Recreate` : une seule
 instance exécute les tâches), un Service, un Ingress en option, et monte le bootstrap
 depuis une ConfigMap (son empreinte relance le pod quand il change). Les secrets restent
@@ -101,7 +109,8 @@ cluster ; on y utilise `argocd`.
 | `cmd/symphony` | Composition : bootstrap et source de config (`config.go`), secrets et résolution des références (`secrets.go`), construction des providers (`providers.go`), schéma des providers (`schema.go`), `symphony validate` (`validate.go`), assemblage (`main.go`) |
 | `internal/config` | Types de `symphony.yaml` et décodage (`${VAR}` remplacées par l'environnement) ; `Status`, l'état de la configuration en place pour la page Administration |
 | `internal/provider` | Interfaces, `Registry` (providers par id, remplaçable d'un bloc), références `secret://` (`secretref.go`) et implémentations : `scm/gitlab`, `scm/github`, `ci/gitlabci`, `ci/githubactions`, `registry/gitlabregistry`, `registry/ghcr`, `runtime/docker`, `runtime/argocd`, `secrets/env`, `secrets/vault`, `identity/oidc`, `identity/keycloak` |
-| `internal/gitops` | `Syncer` (fiche `catalog-info.yaml` de chaque projet) et `TemplateLoader` (golden paths) |
+| `internal/gitops` | `Syncer` (fiche `catalog-info.yaml` de chaque projet) et `StackLoader` (stacks du repo et catalogue officiel : format dans `stack.go`, paramètres et JSON Schema dans `parameters.go`) |
+| `stacks` | Catalogue officiel de stacks, embarqué (`go:embed`) |
 | `internal/catalogue` | Store en mémoire des fiches (`kind: Service`) |
 | `internal/tasks` | Moteur de tâches : étapes enregistrées en base, attente de pipelines (webhook ou sondage), reprise au démarrage, diffusion des changements (`Hub`, pour le SSE) |
 | `internal/webhook` | Réception des événements de pipeline GitLab (`/webhooks/gitlab`, secret partagé) |
@@ -110,7 +119,7 @@ cluster ; on y utilise `argocd`.
 | `internal/metrics` | Métriques Prometheus sur `/metrics` ; `internal/provider/instrumented` enveloppe chaque provider pour mesurer ses appels et retient le dernier (page Administration) |
 | `internal/auth` | OIDC (connexion, retour, déconnexion), cookie de session signé, rôles, CSRF, CORS ; `Holder` remplacé d'un bloc au rechargement de la config |
 | `internal/web` | Front compilé embarqué (`go:embed`), avec repli sur `index.html` pour les routes Vue |
-| `frontend/` | Vue 3 + Vite : pages Projets (avec leur fiche), Catalogue (golden paths), Déploiements, Activité, Administration (admin) |
+| `frontend/` | Vue 3 + Vite : pages Projets (avec leur fiche), Catalogue (stacks et leur formulaire), Déploiements, Activité, Administration (admin) |
 
 ## Flux principaux
 
@@ -152,22 +161,36 @@ PENDING ──► RUNNING ──► SUCCESS
   sortent jamais de l'API ; les résultats ne contiennent pas de secret. Les identifiants
   du registry sont lus au moment du déploiement, jamais enregistrés.
 
-### Créer un projet depuis un golden path
+### Créer un projet depuis une stack
 
-Tâche `create_project`, après validation (nom DNS, golden path, compatibilité SCM/CI,
-projet inexistant) :
+Tâche `create_project`, après validation (nom DNS, stack, paramètres, compatibilité
+SCM/CI, projet inexistant) :
 
-1. **Repo et squelette** : lire le skeleton et le template CI **avant** de créer le repo
-   (un template cassé ne laisse pas de repo vide), remplacer les placeholders, créer le
-   repo, puis pousser skeleton, CI et fiche `catalog-info.yaml` en **un seul commit**, qui
-   lance la première pipeline. La fiche part de celle du skeleton s'il en a une (liens,
-   SLO, actions du golden path), et reçoit l'équipe, le tier et le cycle de vie saisis.
+0. **Paramètres** : la stack décrit son formulaire (`spec.parameters` : `name`, `title`,
+   `type` string/number/boolean/choice, `choices`, `default`, `required`, `when`,
+   `locked`), dans un format qu'un admin écrit sans connaître JSON Schema. Symphony le
+   traduit en JSON Schema (draft 2020-12, servi par `GET /api/v1/stacks`) : `when`
+   devient un `if/then/else` (sans objet, le paramètre est refusé), `locked` un `const`,
+   et `additionalProperties: false` refuse un paramètre inconnu (comme `resolveInputs`
+   pour les actions). `Stack.Resolve` complète les défauts puis valide avec ce schéma
+   (`santhosh-tekuri/jsonschema`) ; ses erreurs sont traduites en français, un
+   paramètre par ligne. Les valeurs sont gardées avec le projet (`stack_parameters`).
+1. **Repo et squelette** : lire le skeleton et la CI **avant** de créer le repo (une
+   stack cassée ne laisse pas de repo vide), retirer les fichiers dont la condition
+   n'est pas remplie (`spec.files[].when`) et le suffixe `.tmpl`, remplacer les
+   variables (`{{SERVICE_NAME}}`… et `{{params.<nom>}}`), créer le repo, puis pousser
+   skeleton, CI et fiche `catalog-info.yaml` en **un seul commit**, qui lance la
+   première pipeline. La fiche part de celle du skeleton s'il en a une (liens, SLO,
+   actions de la stack), et reçoit l'équipe, le tier, le cycle de vie saisis, la stack
+   (`metadata.labels.stack`) et ses manifests Kubernetes (`spec.kubernetes`) s'ils sont
+   dans le repo.
 2. **Projet et webhook** : enregistrer le projet (le `Syncer` lit alors sa fiche), abonner
    Symphony aux événements de pipeline du repo.
 3. **Première pipeline** : attendre sa fin. Quand la tâche réussit, l'image du service est
    dans le registry : le projet est prêt à déployer.
 
-Sur GitHub (golden path `api-rest-go-github`) : le repo est créé initialisé, puis le
+Sur GitHub (stack `api-rest-go-github` de la démo, ou une stack officielle sur une
+instance GitHub) : le repo est créé initialisé, puis le
 squelette part en un commit par l'API Git (arbre, commit, branche), car l'API « contents »
 ferait un commit (et un workflow) par fichier. Le workflow construit l'image et la pousse
 sur GHCR (`ghcr.io/<owner>/<repo>`, provider `ghcr` : tags et identifiants de pull par
@@ -184,26 +207,28 @@ suppression du repo ne fait pas.
 Le `configWatcher` relit `symphony.yaml` dans Git. Si le contenu a changé et qu'il est
 valide, un nouveau `Registry` est construit puis substitué d'un bloc
 (`Registry.Replace`) : les handlers gardent le même pointeur et voient soit l'ancien jeu de
-providers, soit le nouveau. Le syncer et le template loader sont repointés
+providers, soit le nouveau. Le syncer et le chargeur de stacks sont repointés
 (`SetSource`) et rechargés. Une configuration illisible ou invalide est refusée et la
 précédente reste en place.
 
 Le watcher garde l'état de la configuration (`config.Status`) : source, empreinte de la
 version en place, dernière version refusée et sa raison, erreur de lecture ou de
-secrets. Le template loader et le syncer gardent le leur (golden paths refusés et
-pourquoi, fiches illisibles, projets sans fiche). La page **Administration**
+secrets, et ce qui est appliqué mais à corriger (`warnings` : ancien nom de section). Le
+chargeur de stacks et le syncer gardent le leur (stacks refusées et pourquoi, ancien
+format, stack officielle remplacée, fiches illisibles, projets sans fiche). La page **Administration**
 (`GET /api/v1/admin/status`, admin) les réunit, avec chaque provider et son dernier
 appel ; `GET /api/v1/admin/providers/check` vérifie chaque provider en parallèle par sa
 méthode `Check` (un appel en lecture : l'utilisateur du jeton, la version du daemon, la
-découverte OIDC…), 20 s au plus chacun. Un admin lit ainsi pourquoi un golden path
+découverte OIDC…), 20 s au plus chacun. Un admin lit ainsi pourquoi une stack
 n'apparaît pas sans ouvrir les logs.
 
 ### Valider avant de pousser (`symphony validate`)
 
-`symphony validate -config symphony.yaml -templates templates/` refait hors ligne ce
-que fait le chargement : décodage strict, schéma de chaque provider, références de
-secrets (forme et provider déclaré), construction des providers, environnements,
-`auth`, webhooks, puis chaque golden path contre ces providers. Les secrets ne sont
+`symphony validate -config symphony.yaml -stacks stacks/` refait hors ligne ce que
+fait le chargement : décodage strict, schéma de chaque provider, références de secrets
+(forme et provider déclaré), construction des providers, environnements, `auth`,
+webhooks, stacks officielles exposées, puis chaque stack du dossier (format,
+paramètres, fichiers) contre ces providers. Les secrets ne sont
 pas lus : chaque provider de secrets est remplacé par un substitut (sa propre
 définition est vérifiée), et une variable `${VAR}` absente est laissée telle quelle et
 signalée. Code de sortie 1 s'il y a une erreur, toutes rapportées d'un coup. L'image
@@ -251,7 +276,7 @@ synchronisé et pods prêts, ou conteneur démarré), 5 min au plus.
 ### Environnements et promotion
 
 L'équipe plateforme déclare les environnements dans `symphony.yaml`, dans l'ordre de
-promotion (`environments: [{name, runtime, protected}]`) ; un golden path peut changer le
+promotion (`environments: [{name, runtime, protected}]`) ; une stack peut changer le
 runtime d'un environnement (`spec.environments`, ex. `staging: argocd-k3s`). Un
 déploiement vise un environnement : il s'appelle `<projet>-<environnement>` (conteneur,
 Application Argo CD, hôte de l'Ingress) et porte le projet et l'environnement en labels,
@@ -282,7 +307,7 @@ avec ses jetons) ni les secrets d'un autre projet. Le runtime décide du transpo
 
 ### Déployer sur Kubernetes (runtime `argocd`, GitOps)
 
-Le runtime d'un projet vient de son golden path (`spec.providers.runtime`) ; le formulaire
+Le runtime d'un projet vient de sa stack (`spec.providers.runtime`) ; le formulaire
 de déploiement peut le changer. Avec `argocd`, Symphony ne touche jamais au cluster :
 
 1. Il écrit les manifests du service dans le repo de déploiement, en **un commit** :
@@ -298,6 +323,24 @@ de déploiement peut le changer. Avec `argocd`, Symphony ne touche jamais au clu
    l'`Application`. Arrêter un service le passe à 0 réplica, le relancer change
    l'annotation de redémarrage : toujours par un commit. Les journaux passent par l'API
    d'Argo CD.
+
+**Manifests fournis par la stack.** Une stack peut livrer un chart Helm ou une base
+Kustomize dans le repo créé (`spec.kubernetes`, repris dans la fiche) : l'équipe du
+service les modifie comme son code. Au déploiement, Symphony les lit sur `main` et les
+copie dans le dossier du service, puis écrit ce qu'il décide selon un contrat
+documenté dans [la stack de référence](reference/stack.yaml) :
+
+- **Helm** : `chart/` et, à côté, `values.yaml` (`fullnameOverride`, `replicaCount`,
+  `image`, `containerPort`, `env`, `secretEnv`, `ingress`, `podAnnotations`) ;
+  l'Application lit `chart/` avec ce fichier de valeurs. L'ExternalSecret des secrets est
+  ajoutée aux templates du chart, en chaîne brute (Helm ne l'interprète pas).
+- **Kustomize** : `base/` et un `kustomization.yaml` qui préfixe les noms par celui du
+  déploiement, fixe l'image `app`, les réplicas, les variables (`configMapGenerator` et
+  `envFrom` du premier conteneur), et ajoute l'Ingress et l'ExternalSecret.
+
+Arrêter et relancer modifient `values.yaml` ou `kustomization.yaml` de la même façon. Les
+fichiers d'un déploiement précédent qui ne servent plus (passage des manifests générés à
+ceux de la stack, fichier retiré du chart) sont supprimés du repo de déploiement.
 
 Les identifiants du registry ne sont jamais écrits dans Git : le cluster tire les images
 avec les siens (en démo, `registries.yaml` de k3s avec un jeton `read_registry`). Le
@@ -369,8 +412,8 @@ injecter de variables CI arbitraires.
 |---|---|---|
 | `symphony_http_requests_total`, `symphony_http_request_duration_seconds` | `method`, `route` (motif chi), `status` | trafic, latence et erreurs de l'API |
 | `symphony_provider_calls_total`, `symphony_provider_call_duration_seconds` | `kind`, `provider`, `method`, `result` | santé et lenteur de GitLab, GitHub, Docker… |
-| `symphony_reloads_total`, `symphony_last_successful_reload_timestamp_seconds` | `source` (catalogue, templates, config), `result` (ok, error, refused) | un repo illisible, une config refusée, une synchro arrêtée |
-| `symphony_catalogue_services`, `symphony_golden_paths` | — | ce qui est chargé |
+| `symphony_reloads_total`, `symphony_last_successful_reload_timestamp_seconds` | `source` (catalogue, stacks, config), `result` (ok, error, refused) | un repo illisible, une config refusée, une synchro arrêtée |
+| `symphony_catalogue_services`, `symphony_stacks` | — | ce qui est chargé |
 | `symphony_tasks_finished_total`, `symphony_task_duration_seconds` | `kind`, `status` | tâches réussies ou échouées, et leur durée (pipeline comprise) |
 | `symphony_webhooks_total` | `source`, `event`, `result` (ok, refused, ignored, error) | webhooks reçus, secrets invalides |
 
@@ -392,7 +435,7 @@ implémentations n'en savent rien.
 | Argo CD | compte de service à jeton (`apiKey`), limité aux Applications du projet `default` et à leurs journaux | — |
 | Runtime `docker` | créer un conteneur sur un daemon Docker équivaut à un accès root à la machine : runtime réservé à un poste ou à une démo (en production, `argocd`). Image non-root ; en démo, pas de socket monté dans Symphony mais un proxy qui n'ouvre que les conteneurs et les images | — |
 | Fuite de token | l'auth du registry n'est envoyée qu'au registry qui héberge l'image | — |
-| Injection CI | entrées d'action validées, clés inconnues refusées | — |
+| Injection CI | entrées d'action validées, clés inconnues refusées ; paramètres de stack validés par leur JSON Schema (types, choix, valeurs verrouillées, inconnus refusés) avant d'entrer dans le squelette | — |
 | Webhooks entrants | GitLab : secret partagé (16 caractères min.) comparé en temps constant ; GitHub : signature HMAC-SHA256 du corps ; routes hors `/api/v1`, sans session ; repos réabonnés quand le secret change | — |
 | Configuration | une config invalide est refusée, la précédente reste en place ; la raison du refus n'est montrée qu'aux admins (page Administration), sans valeur de secret | — |
 | Traçabilité | `audit_log` des actions mutantes, avec l'utilisateur OIDC et son adresse | — |
@@ -403,7 +446,11 @@ implémentations n'en savent rien.
 | Décision | Pourquoi | Alternative écartée |
 |---|---|---|
 | IDP maison en Go plutôt que Backstage | léger, un binaire, code maîtrisé de bout en bout ; Backstage demande un monorepo TypeScript à recompiler à chaque plugin | Backstage, SaaS (Port, Cycloid) |
-| Golden paths en dossiers autonomes dans Git (`template.yaml` + `skeleton/`) | ajouter un template = pousser un dossier ; même modèle que les templates Backstage | golden paths dans la config, figés au démarrage |
+| Stacks en dossiers autonomes dans Git (`stack.yaml` + `skeleton/`) | ajouter une stack = pousser un dossier ; même modèle que les templates Backstage | stacks dans la config, figées au démarrage |
+| « Stack » plutôt que « golden path » | un seul mot dans l'interface, la doc et le format ; il dit « une appli et son infra » (l'infra arrive en v0.13), comme chez Cycloid. L'ancien format (`template.yaml`, `kind: GoldenPath`, section `templates`) est lu jusqu'à la v1.0, signalé dans Administration | garder « golden path » (le concept du platform engineering, moins parlant pour l'infra) |
+| Paramètres en YAML maison, traduits en JSON Schema | un admin DevOps les écrit sans connaître JSON Schema ; le schéma généré valide (un validateur éprouvé, pas du code maison) et sert aux clients de l'API | JSON Schema écrit à la main (illisible), validation maison seule |
+| Catalogue officiel embarqué dans le binaire | versionné avec Symphony, aucun accès réseau ni jeton GitHub, marche hors ligne ; l'admin choisit ce qu'il expose | repo public séparé lu par Git (un jeton, une version à épingler, une instance GitLab sans accès à GitHub) |
+| Manifests de la stack copiés dans le repo de déploiement | Argo CD ne lit qu'un repo, avec les identifiants qu'il a déjà ; le contrat (valeurs Helm, noms Kustomize) garde la main de Symphony sur l'image, les réplicas et les secrets | Application qui lit le repo du service (un accès Argo CD par repo) |
 | Config dans Git, bootstrap local minimal | la plateforme se pilote par commits ; le bootstrap règle le problème de poule et d'œuf | tout en local ; tout dans Git sans bootstrap (impossible) |
 | Rechargement de la config par polling (15 s) | simple, sans webhook entrant à exposer pour les repos de la plateforme | webhooks Git |
 | Tâches en base, étapes rejouables | une opération longue survit à un redémarrage ; pas de file externe à opérer | Redis, NATS, Temporal (une brique de plus pour un seul binaire) |
@@ -417,7 +464,7 @@ implémentations n'en savent rien.
 | Session dans un cookie signé, rôle recalculé à chaque requête | pas de stockage de sessions ; un changement de groupes → rôles dans la config s'applique sans reconnexion | sessions en base |
 | Secrets et identité en providers | Vault, OpenBao, un autre coffre ou un autre IdP s'ajoutent comme les autres outils ; la config désigne des secrets par référence, sans savoir où ils vivent | client Vault et Keycloak codés en dur |
 | Références `secret://` résolues dans une copie, tout ou rien | aucune valeur en clair dans la config gardée en mémoire ; un coffre injoignable laisse la config en place au lieu de retirer des providers | résolution provider par provider (perte silencieuse de providers) |
-| Bascule Docker sur le `HEALTHCHECK` de l'image | le service est vraiment prêt (pas seulement démarré) avant que l'ancien disparaisse ; le golden path décide de la sonde | délai fixe (3 s, insuffisant pour une appli lente, trop long pour une rapide) |
+| Bascule Docker sur le `HEALTHCHECK` de l'image | le service est vraiment prêt (pas seulement démarré) avant que l'ancien disparaisse ; la stack décide de la sonde | délai fixe (3 s, insuffisant pour une appli lente, trop long pour une rapide) |
 | Découverte OIDC paresseuse et retentée | Symphony démarre même si l'IdP est absent ; `discovery_url` sépare l'URL interne de l'issuer vu par le navigateur | découverte au démarrage, bloquante |
 | Kubernetes via Argo CD | Symphony écrit des manifests, Argo CD applique et corrige les dérives : fidèle au principe de délégation, et Symphony n'a aucun droit sur le cluster | appels directs à l'API Kubernetes (client-go) |
 | Un repo de déploiement, un dossier par service | un seul endroit à brancher sur Argo CD, un historique de tous les déploiements | un repo par service, ou les manifests dans le repo du code (un commit de déploiement relancerait la CI) |

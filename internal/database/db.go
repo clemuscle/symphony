@@ -24,6 +24,9 @@ var migration003 []byte
 //go:embed migrations/004_project_team.sql
 var migration004 []byte
 
+//go:embed migrations/005_project_stack.sql
+var migration005 []byte
+
 type DB struct {
 	*sql.DB
 }
@@ -70,6 +73,7 @@ func (db *DB) Migrate() error {
 		{"002", migration002},
 		{"003", migration003},
 		{"004", migration004},
+		{"005", migration005},
 	}
 
 	// Une seule migration à la fois : deux instances (ou deux tests) qui

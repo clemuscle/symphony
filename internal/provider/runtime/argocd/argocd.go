@@ -151,18 +151,23 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 		svc.Secrets = secrets
 		svc.SecretStore = p.cfg.SecretStore
 	}
-	files, err := svc.files()
+	files, err := svc.stackFiles(req.Manifests)
 	if err != nil {
 		return nil, err
 	}
 	if err := p.commit(req.Name, files, fmt.Sprintf("deploy: %s %s:%s [symphony]", req.Name, image, tag)); err != nil {
 		return nil, err
 	}
+	// Fichiers d'un déploiement précédent (fichier retiré du chart, passage
+	// des manifests générés à ceux de la stack…) : Argo CD les lirait encore
+	if err := p.prune(req.Name, files); err != nil {
+		return nil, err
+	}
 	owner := appOwner{project: req.Project, environment: req.Environment}
 	if owner.project == "" {
 		owner.project = req.Name
 	}
-	if err := p.upsertApplication(req.Name, false, owner); err != nil {
+	if err := p.upsertApplication(req.Name, false, owner, req.Manifests != nil && req.Manifests.Kind == "helm"); err != nil {
 		return nil, err
 	}
 	p.refresh(req.Name)
@@ -171,42 +176,23 @@ func (p *Provider) Deploy(req provider.DeployRequest) (*provider.Deployment, err
 
 // Stop met le service à zéro réplica, dans Git : Argo CD l'applique
 func (p *Provider) Stop(id string) error {
-	return p.update(id, true, func(k *kustomization) {
-		k.Replicas[0].Count = 0
-	})
+	return p.update(id, true, 0, nil)
 }
 
 // Restart relance les pods (et rallume un service arrêté), dans Git
 func (p *Provider) Restart(id string) error {
-	return p.update(id, false, func(k *kustomization) {
-		k.Replicas[0].Count = 1
-		if k.CommonAnnotations == nil {
-			k.CommonAnnotations = map[string]string{}
-		}
-		k.CommonAnnotations[restartAnnotation] = time.Now().UTC().Format(time.RFC3339)
-	})
+	return p.update(id, false, 1, map[string]string{restartAnnotation: time.Now().UTC().Format(time.RFC3339)})
 }
 
-// update modifie kustomization.yaml du service, commite, puis met à jour
+// update change les réplicas et les annotations du service dans
+// kustomization.yaml (manifests générés ou base Kustomize de la stack) ou
+// values.yaml (chart Helm de la stack), commite, puis met à jour
 // l'Application (marquée arrêtée ou non)
-func (p *Provider) update(id string, stopped bool, change func(*kustomization)) error {
+func (p *Provider) update(id string, stopped bool, replicas int, annotations map[string]string) error {
 	if err := validName(id); err != nil {
 		return err
 	}
-	file := p.servicePath(id, kustomizationFile)
-	content, err := p.scm.GetFileContent(p.cfg.Repo, p.cfg.Branch, file)
-	if errors.Is(err, provider.ErrNotFound) {
-		return fmt.Errorf("déploiement %s introuvable dans %s: %w", id, p.cfg.Repo, provider.ErrNotFound)
-	}
-	if err != nil {
-		return fmt.Errorf("lecture %s: %w", file, err)
-	}
-	k, err := parseKustomization(content)
-	if err != nil {
-		return err
-	}
-	change(&k)
-	rendered, err := k.render()
+	file, rendered, helm, err := p.updated(id, replicas, annotations)
 	if err != nil {
 		return err
 	}
@@ -214,7 +200,7 @@ func (p *Provider) update(id string, stopped bool, change func(*kustomization)) 
 	if stopped {
 		verb = "stop"
 	}
-	if err := p.commit(id, map[string]string{kustomizationFile: rendered}, fmt.Sprintf("%s: %s [symphony]", verb, id)); err != nil {
+	if err := p.commit(id, map[string]string{file: rendered}, fmt.Sprintf("%s: %s [symphony]", verb, id)); err != nil {
 		return err
 	}
 	// Projet et environnement : ceux de l'Application en place
@@ -222,11 +208,54 @@ func (p *Provider) update(id string, stopped bool, change func(*kustomization)) 
 	if d, err := p.Status(id); err == nil {
 		owner = appOwner{project: d.Project, environment: d.Environment}
 	}
-	if err := p.upsertApplication(id, stopped, owner); err != nil {
+	if err := p.upsertApplication(id, stopped, owner, helm); err != nil {
 		return err
 	}
 	p.refresh(id)
 	return nil
+}
+
+// updated : le fichier du service qui porte ses réplicas, modifié
+func (p *Provider) updated(id string, replicas int, annotations map[string]string) (file, rendered string, helm bool, err error) {
+	content, err := p.scm.GetFileContent(p.cfg.Repo, p.cfg.Branch, p.servicePath(id, kustomizationFile))
+	if errors.Is(err, provider.ErrNotFound) {
+		content, err = p.scm.GetFileContent(p.cfg.Repo, p.cfg.Branch, p.servicePath(id, helmValuesFile))
+		if errors.Is(err, provider.ErrNotFound) {
+			return "", "", false, fmt.Errorf("déploiement %s introuvable dans %s: %w", id, p.cfg.Repo, provider.ErrNotFound)
+		}
+		if err != nil {
+			return "", "", false, fmt.Errorf("lecture de %s: %w", helmValuesFile, err)
+		}
+		v, err := parseHelmValues(content)
+		if err != nil {
+			return "", "", false, err
+		}
+		v.ReplicaCount = replicas
+		if len(annotations) > 0 && v.PodAnnotations == nil {
+			v.PodAnnotations = map[string]string{}
+		}
+		for k, a := range annotations {
+			v.PodAnnotations[k] = a
+		}
+		rendered, err = v.render()
+		return helmValuesFile, rendered, true, err
+	}
+	if err != nil {
+		return "", "", false, fmt.Errorf("lecture de %s: %w", kustomizationFile, err)
+	}
+	k, err := parseKustomization(content)
+	if err != nil {
+		return "", "", false, err
+	}
+	k.Replicas[0].Count = replicas
+	if len(annotations) > 0 && k.CommonAnnotations == nil {
+		k.CommonAnnotations = map[string]string{}
+	}
+	for key, a := range annotations {
+		k.CommonAnnotations[key] = a
+	}
+	rendered, err = k.render()
+	return kustomizationFile, rendered, false, err
 }
 
 // appOwner : projet et environnement d'une Application, portés par ses labels
@@ -248,6 +277,33 @@ func (p *Provider) commit(name string, files map[string]string, msg string) erro
 	return nil
 }
 
+// prune supprime du dossier du service les fichiers qui ne sont pas dans
+// keep (un commit par fichier : DeleteFile est la seule suppression commune
+// aux SCM)
+func (p *Provider) prune(name string, keep map[string]string) error {
+	dir := path.Join(p.cfg.Path, name)
+	files, err := p.scm.ListFiles(p.cfg.Repo, p.cfg.Branch, dir)
+	if errors.Is(err, provider.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("manifests de %s: %w", name, err)
+	}
+	stale := map[string]bool{}
+	for _, f := range files {
+		if _, ok := keep[strings.TrimPrefix(f, dir+"/")]; !ok {
+			stale[f] = true
+		}
+	}
+	for _, f := range sortedKeys(stale) {
+		err := p.scm.DeleteFile(p.cfg.Repo, p.cfg.Branch, f, fmt.Sprintf("deploy: %s, fichier retiré [symphony]", name))
+		if err != nil && !errors.Is(err, provider.ErrNotFound) {
+			return fmt.Errorf("suppression de %s: %w", f, err)
+		}
+	}
+	return nil
+}
+
 // ─── API Argo CD ─────────────────────────────────────────────────────────────
 
 // application : la partie d'une Application Argo CD que Symphony écrit et lit
@@ -264,6 +320,10 @@ type application struct {
 			RepoURL        string `json:"repoURL"`
 			Path           string `json:"path"`
 			TargetRevision string `json:"targetRevision"`
+			// Helm : chart de la stack, values.yaml de Symphony à côté
+			Helm *struct {
+				ValueFiles []string `json:"valueFiles"`
+			} `json:"helm,omitempty"`
 		} `json:"source"`
 		Destination struct {
 			Server    string `json:"server"`
@@ -290,12 +350,17 @@ type appStatus struct {
 	Summary struct {
 		Images []string `json:"images"`
 	} `json:"summary"`
+	// Resources : objets de l'Application (pour trouver son Deployment)
+	Resources []struct {
+		Kind string `json:"kind"`
+		Name string `json:"name"`
+	} `json:"resources"`
 }
 
 // upsertApplication crée l'Application du service, ou la met à jour si sa
 // définition a changé (configuration du runtime, arrêt). Synchronisation
 // automatique : Argo CD applique chaque commit et corrige toute dérive.
-func (p *Provider) upsertApplication(name string, stopped bool, owner appOwner) error {
+func (p *Provider) upsertApplication(name string, stopped bool, owner appOwner, helm bool) error {
 	var app application
 	app.Metadata.Name = name
 	// Toujours écrits, même vides : l'upsert d'Argo CD fusionne les labels,
@@ -310,6 +375,12 @@ func (p *Provider) upsertApplication(name string, stopped bool, owner appOwner) 
 	app.Spec.Project = p.cfg.Project
 	app.Spec.Source.RepoURL = p.cfg.RepoURL
 	app.Spec.Source.Path = path.Join(p.cfg.Path, name)
+	if helm {
+		app.Spec.Source.Path = path.Join(p.cfg.Path, name, helmDir)
+		app.Spec.Source.Helm = &struct {
+			ValueFiles []string `json:"valueFiles"`
+		}{ValueFiles: []string{"../" + helmValuesFile}}
+	}
 	app.Spec.Source.TargetRevision = p.cfg.Branch
 	app.Spec.Destination.Server = p.cfg.Cluster
 	app.Spec.Destination.Namespace = p.cfg.Namespace
@@ -383,7 +454,7 @@ func (p *Provider) Logs(id string, lines int) (string, error) {
 		"namespace":    {p.cfg.Namespace},
 		"kind":         {"Deployment"},
 		"group":        {"apps"},
-		"resourceName": {id},
+		"resourceName": {p.deploymentName(id)},
 		"tailLines":    {fmt.Sprint(lines)},
 		"follow":       {"false"},
 	}
@@ -421,6 +492,25 @@ func (p *Provider) Logs(id string, lines int) (string, error) {
 		b.WriteByte('\n')
 	}
 	return b.String(), nil
+}
+
+// deploymentName : le Deployment de l'Application id (le nom d'un chart ou
+// d'une base Kustomize de stack peut différer de celui du déploiement)
+func (p *Provider) deploymentName(id string) string {
+	data, status, err := p.argo("GET", "/api/v1/applications/"+url.PathEscape(id), nil)
+	if err != nil || status != http.StatusOK {
+		return id
+	}
+	var app application
+	if json.Unmarshal(data, &app) != nil || app.Status == nil {
+		return id
+	}
+	for _, r := range app.Status.Resources {
+		if r.Kind == "Deployment" {
+			return r.Name
+		}
+	}
+	return id
 }
 
 // deployment traduit l'état d'une Application

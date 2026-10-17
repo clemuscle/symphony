@@ -13,7 +13,7 @@ metadata:
   tier: critical
   lifecycle: production
   labels:
-    golden_path: api-rest-python
+    stack: api-rest-python
 spec:
   type: api
   language: python

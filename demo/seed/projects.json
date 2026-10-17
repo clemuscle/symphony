@@ -2,15 +2,18 @@
   {
     "name": "auth-service",
     "description": "Authentification des utilisateurs et émission des jetons",
-    "golden_path_id": "api-rest-python",
+    "stack": "api-rest-python",
     "owner": "team-identity",
     "tier": "critical",
-    "lifecycle": "production"
+    "lifecycle": "production",
+    "parameters": {
+      "log_level": "debug"
+    }
   },
   {
     "name": "payment-api",
     "description": "Paiements, remboursements et rapprochement bancaire",
-    "golden_path_id": "api-rest-go-k8s",
+    "stack": "api-rest-go-k8s",
     "owner": "team-payments",
     "tier": "critical",
     "lifecycle": "production",
@@ -19,10 +22,13 @@
   {
     "name": "notification-service",
     "description": "Envoi des e-mails et des notifications push",
-    "golden_path_id": "api-rest-node",
+    "stack": "api-rest-node",
     "owner": "team-product",
     "tier": "standard",
     "lifecycle": "staging",
-    "promote": true
+    "promote": true,
+    "parameters": {
+      "log_level": "warn"
+    }
   }
 ]

@@ -2,7 +2,7 @@
 # Symphony, et Kubernetes (k3s + Argo CD) pour le runtime GitOps.
 #
 # Ne pas lancer directement : ./demo/up.sh démarre GitLab, l'initialise
-# (token, repos symphony-config et symphony-templates, runner) puis Symphony.
+# (token, repos symphony-config et symphony-stacks, runner) puis Symphony.
 #
 # Les ports sont réglables (variables d'environnement ou demo/.env) pour
 # cohabiter avec une autre GitLab :
@@ -44,7 +44,7 @@ services:
         # Registry sur localhost : le daemon Docker l'accepte en HTTP sans
         # réglage « insecure-registries »
         registry_external_url 'http://localhost:${REGISTRY_PORT:-5050}'
-        # Auto DevOps ajouterait ses propres jobs à côté de ceux du golden path
+        # Auto DevOps ajouterait ses propres jobs à côté de ceux de la stack
         # (up.sh le désactive aussi en base : ce réglage seul ne suffit pas)
         gitlab_rails['auto_devops_enabled'] = false
         # Connexion par Keycloak, comme pour Symphony : les comptes du realm

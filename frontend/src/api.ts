@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios'
 import type {
-  AdminStatus, AuditEntry, CreateProjectRequest, Deployment, DeployRequest, GoldenPath, IdentityGroups,
+  AdminStatus, AuditEntry, CreateProjectRequest, Deployment, DeployRequest, IdentityGroups, Stack,
   Me, Pipeline, Project, ProjectImage, ProviderCheck, Task,
 } from './types'
 import { visitAdapter } from './visit/adapter'
@@ -53,7 +53,7 @@ export const api = {
     http.post<Task>(`/api/v1/services/${service}/actions/${encodeURIComponent(action)}`, inputs),
 
   // Catalogue : les golden paths
-  getGoldenPaths: () => http.get<GoldenPath[]>('/api/v1/golden-paths'),
+  getStacks: () => http.get<Stack[]>('/api/v1/stacks'),
 
   // Recharge le catalogue et les golden paths depuis Git
   sync: () => http.post('/api/v1/sync'),

@@ -1,0 +1,37 @@
+apiVersion: symphony/v1
+kind: Stack
+metadata:
+  name: api-rest-python
+  title: API REST Python
+  description: API REST avec FastAPI, pytest, logs structurés, métriques Prometheus et base Kustomize en option
+  icon: python
+spec:
+  language: python
+  type: api
+  ci_templates:
+    gitlab: ci.gitlab-ci.yml
+    github: ci.github-actions.yml
+  parameters:
+    - name: python_version
+      title: Version de Python
+      description: Fixée par l'équipe plateforme (images de build validées)
+      type: choice
+      choices: ["3.12", "3.13"]
+      default: "3.12"
+      locked: true
+    - name: log_level
+      title: Niveau de journalisation
+      description: Par défaut ; la variable LOG_LEVEL le change au déploiement
+      type: choice
+      choices: [debug, info, warning, error]
+      default: info
+    - name: kustomize
+      title: Base Kustomize dans le repo
+      description: Déployée sur Kubernetes (runtime argocd), et modifiable par l'équipe ; sinon Symphony génère les manifests
+      type: boolean
+      default: false
+  files:
+    - path: deploy/kustomize
+      when: { kustomize: true }
+  kubernetes:
+    kustomize: deploy/kustomize

@@ -1,0 +1,58 @@
+apiVersion: symphony/v1
+kind: Stack
+metadata:
+  name: api-rest-go-k8s
+  title: API REST Go (Kubernetes)
+  description: L'API Go, déployée sur Kubernetes dès staging par son chart Helm, en GitOps avec Argo CD
+  icon: go
+spec:
+  language: go
+  type: api
+  providers:
+    scm: gitlab-local
+    ci: gitlab-ci
+    registry: gitlab-registry
+    runtime: argocd-k3s
+  ci_template: ci.gitlab-ci.yml
+  # Kubernetes dès staging (la configuration met staging sur Docker)
+  environments:
+    staging: argocd-k3s
+  parameters:
+    - name: go_version
+      title: Version de Go
+      description: Fixée par l'équipe plateforme (images de build validées)
+      type: choice
+      choices: ["1.22", "1.23"]
+      default: "1.22"
+      locked: true
+    - name: log_level
+      title: Niveau de journalisation
+      description: Par défaut ; la variable LOG_LEVEL le change au déploiement
+      type: choice
+      choices: [debug, info, warn, error]
+      default: info
+    - name: metrics
+      title: Exposer les métriques Prometheus
+      type: boolean
+      default: true
+    - name: metrics_path
+      title: Chemin des métriques
+      type: string
+      default: /metrics
+      required: true
+      when: { metrics: true }
+    - name: helm_chart
+      title: Chart Helm dans le repo
+      description: Imposé par l'équipe plateforme pour les services sur Kubernetes
+      type: boolean
+      default: true
+      locked: true
+  files:
+    - path: cmd/metrics.go
+      when: { metrics: true }
+    - path: cmd/metrics_test.go
+      when: { metrics: true }
+    - path: deploy/chart
+      when: { helm_chart: true }
+  kubernetes:
+    helm: deploy/chart

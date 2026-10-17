@@ -43,9 +43,9 @@ func TestTeamRights(t *testing.T) {
 		{Name: "staging", Runtime: "docker-local"},
 		{Name: "production", Runtime: "docker-local", Protected: true},
 	})
-	templates := gitops.NewTemplateLoader(providers, "", "", "") // pas de golden path : runtimes de la configuration
-	runner := tasks.NewRunner(db, providers)                     // pas démarré : les tâches restent en file
-	RegisterTasks(runner, TaskDeps{Providers: providers, DB: db, Templates: templates, Envs: envs})
+	stacks := gitops.NewStackLoader(providers, nil, gitops.StackSource{}) // pas de stack : runtimes de la configuration
+	runner := tasks.NewRunner(db, providers)                              // pas démarré : les tâches restent en file
+	RegisterTasks(runner, TaskDeps{Providers: providers, DB: db, Stacks: stacks, Envs: envs})
 
 	name := fmt.Sprintf("authz-%d", time.Now().UnixNano()%1e9)
 	if err := db.CreateProject(&database.Project{Name: name, RepoPath: "apps/" + name, CIProvider: "gitlab-ci", Team: "team-payments"}); err != nil {
@@ -70,8 +70,8 @@ func TestTeamRights(t *testing.T) {
 	k8s.Deploy(provider.DeployRequest{Name: mobile + "-staging", Project: mobile, Environment: "staging", Image: "img"})
 
 	r := chi.NewRouter()
-	r.Post("/deployments", Deploy(providers, db, templates, envs, runner))
-	r.Post("/projects/{name}/promote", Promote(providers, db, templates, envs, runner))
+	r.Post("/deployments", Deploy(providers, db, stacks, envs, runner))
+	r.Post("/projects/{name}/promote", Promote(providers, db, stacks, envs, runner))
 	r.Delete("/deployments/{id}", StopDeployment(providers, db))
 	r.Get("/deployments/{id}/logs", GetLogs(providers, db))
 	r.Post("/pipelines/trigger", TriggerPipeline(providers, db))

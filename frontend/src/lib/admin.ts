@@ -50,17 +50,21 @@ export function problems(s: AdminStatus, checks: ProviderCheck[] = []): string[]
     if (providerState(p, check).level === 'error') failed.add(`${p.kind}/${p.id}`)
   }
   if (failed.size) out.push(`${failed.size} provider${failed.size > 1 ? 's' : ''} en erreur`)
-  if (s.golden_paths.error) out.push('Repo des golden paths illisible')
-  const refused = s.golden_paths.refused.length
-  if (refused) out.push(`${refused} golden path${refused > 1 ? 's' : ''} refusé${refused > 1 ? 's' : ''}`)
+  if (s.stacks.error) out.push('Repo des stacks illisible')
+  const refused = s.stacks.refused.length
+  if (refused) out.push(`${refused} stack${refused > 1 ? 's' : ''} refusée${refused > 1 ? 's' : ''}`)
   const fiches = s.catalogue.errors.length
   if (fiches) out.push(`${fiches} fiche${fiches > 1 ? 's' : ''} catalogue en erreur`)
   if (s.catalogue.error) out.push('Catalogue : liste des projets illisible')
+  const warnings = (s.config.warnings || []).length + (s.stacks.warnings || []).length
+  if (warnings) out.push(`${warnings} point${warnings > 1 ? 's' : ''} à corriger (ancien format…)`)
   return out
 }
 
-// templateName : le golden path d'un fichier refusé (templates/<nom>/template.yaml)
-export function templateName(file: string): string {
+// stackName : la stack d'un fichier refusé (stacks/<nom>/stack.yaml, ou
+// officiel:<nom> pour une stack du catalogue officiel)
+export function stackName(file: string): string {
+  if (file.startsWith('officiel:')) return file.slice('officiel:'.length)
   const parts = file.split('/')
   return parts.length >= 2 ? parts[parts.length - 2] : file
 }

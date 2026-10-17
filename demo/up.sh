@@ -3,7 +3,7 @@
 #   1. vérifie les prérequis
 #   2. démarre PostgreSQL, GitLab CE et le runner
 #   3. initialise GitLab : Auto DevOps désactivé, token API, groupes platform
-#      (symphony-config, symphony-templates, symphony-deployments : contenu de
+#      (symphony-config, symphony-stacks, symphony-deployments : contenu de
 #      demo/gitlab/) et apps (les projets), comptes du realm Keycloak et leurs
 #      droits, runner enregistré
 #   4. démarre Kubernetes (k3s) et y installe Argo CD, avec un compte pour
@@ -13,7 +13,7 @@
 #      symphony-directory pour l'annuaire), qui sert aussi à se connecter à GitLab
 #   6. remplit Vault avec les secrets de Symphony (jetons GitLab, Argo CD,
 #      GitHub, secret des webhooks, client de l'annuaire) et lui crée un AppRole
-#   7. démarre Symphony et attend qu'il ait chargé les golden paths
+#   7. démarre Symphony et attend qu'il ait chargé les stacks
 #   8. crée et déploie, via l'API de Symphony, les projets de demo/seed/ :
 #      de vrais repos, pipelines et services joignables (~5 min)
 #
@@ -23,7 +23,7 @@
 # --no-seed : sans les projets de démo (on les crée pendant la démo).
 # GITHUB_TOKEN=<classic PAT : repo, workflow, delete_repo, read/write/delete:packages>
 #   ajoute GitHub (repos dans le compte du jeton, GitHub Actions, GHCR) et le
-#   golden path api-rest-go-github ; sans lui, la démo reste 100 % locale.
+#   stacks *-github ; sans lui, la démo reste 100 % locale.
 # Ports réglables : GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 \
 #   SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 VAULT_PORT=18200 K8S_HTTP_PORT=18081 \
 #   ARGOCD_PORT=18088 K8S_API_PORT=16443 ./demo/up.sh
@@ -209,15 +209,15 @@ ensure_group() {
     | jq -e .id >/dev/null || fail "création du groupe $path impossible"
   ok "Groupe $path créé"
 }
-ensure_group platform "Configuration de Symphony : golden paths, repo de déploiement"
+ensure_group platform "Configuration de Symphony : stacks, repo de déploiement"
 ensure_group apps "Projets créés par Symphony"
 
 # Sans GITHUB_TOKEN, la démo reste locale : les blocs « github:début … github:fin »
-# de la configuration et le golden path GitHub ne sont pas poussés ; avec
+# de la configuration et les stacks GitHub ne sont pas poussés ; avec
 # --no-k8s, de même pour « k8s:début … k8s:fin » (runtime argocd-k3s) et le
-# golden path api-rest-go-k8s
+# la stack api-rest-go-k8s
 if [ -n "$GITHUB_TOKEN" ]; then
-  ok "GitHub activé (GITHUB_TOKEN) : providers github, github-actions, ghcr et golden path api-rest-go-github"
+  ok "GitHub activé (GITHUB_TOKEN) : providers github, github-actions, ghcr et stacks *-github"
 fi
 content_of() {
   if [ "$1" != ./symphony.yaml ]; then cat "$1"; return; fi
@@ -238,8 +238,8 @@ seed_repo() {
     -d "visibility=private" | jq -e .id >/dev/null || fail "création de $path impossible"
   local actions
   actions=$(cd "$dir" && find . -type f | sort | while read -r f; do
-    [ -z "$GITHUB_TOKEN" ] && [[ $f == ./templates/*-github/* ]] && continue
-    [ "$K8S" = true ] || [[ $f != ./templates/*-k8s/* ]] || continue
+    [ -z "$GITHUB_TOKEN" ] && [[ $f == ./stacks/*-github/* ]] && continue
+    [ "$K8S" = true ] || [[ $f != ./stacks/*-k8s/* ]] || continue
     jq -n --arg p "${f#./}" --arg c "$(content_of "$f"; echo x)" \
       '{action: "create", file_path: $p, content: ($c | rtrimstr("x"))}'
   done | jq -s .)
@@ -251,7 +251,7 @@ seed_repo() {
   ok "$path créé ($(echo "$actions" | jq length) fichiers)"
 }
 seed_repo symphony-config
-seed_repo symphony-templates
+seed_repo symphony-stacks
 seed_repo symphony-deployments
 
 # Comptes du realm Keycloak : créés ici avec leur e-mail, GitLab les lie à
@@ -513,12 +513,12 @@ token=$(curl -sf -d grant_type=password -d client_id=symphony -d username=carol 
 [ -n "$token" ] && [ "$token" != null ] || fail "jeton de démo impossible à obtenir auprès de Keycloak"
 count() { curl -sf -H "Authorization: Bearer $token" "$SYMPHONY_URL/api/v1/$1" 2>/dev/null | jq length 2>/dev/null || echo 0; }
 for i in $(seq 60); do
-  n=$(count golden-paths)
+  n=$(count stacks)
   [ "${n:-0}" -gt 0 ] && break
-  [ "$i" = 60 ] && fail "Symphony n'a pas chargé les golden paths : $COMPOSE logs symphony"
+  [ "$i" = 60 ] && fail "Symphony n'a pas chargé les stacks : $COMPOSE logs symphony"
   sleep 2
 done
-ok "Symphony prêt : $n golden paths au catalogue"
+ok "Symphony prêt : $n stacks au catalogue"
 
 # ── 8. Projets de démo ────────────────────────────────────────────────────────
 

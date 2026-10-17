@@ -50,7 +50,7 @@ func TestLoadConfigFromGit(t *testing.T) {
 	srv := fakeGitLab(t, "root/symphony-config", map[string]string{
 		"symphony.yaml": "providers:\n  scm:\n    - id: gitlab-local\n      type: gitlab\n" +
 			"      config:\n        url: http://gitlab\n        token: jeton\n" +
-			"templates:\n  repo: root/symphony-templates\n",
+			"stacks:\n  repo: root/symphony-stacks\n",
 		"boucle.yaml": "config_source:\n  repo: root/autre\n",
 	})
 
@@ -59,7 +59,7 @@ func TestLoadConfigFromGit(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(cfg.Providers.SCM) != 1 || cfg.Providers.SCM[0].ID != "gitlab-local" ||
-		cfg.Templates.Repo != "root/symphony-templates" {
+		cfg.Stacks.Repo != "root/symphony-stacks" {
 		t.Errorf("config = %+v", cfg)
 	}
 
@@ -76,9 +76,9 @@ func TestLoadConfigFromGit(t *testing.T) {
 
 func TestLoadConfigLocal(t *testing.T) {
 	f := filepath.Join(t.TempDir(), "symphony.yaml")
-	os.WriteFile(f, []byte("templates:\n  repo: root/local\n"), 0o600)
+	os.WriteFile(f, []byte("stacks:\n  repo: root/local\n"), 0o600)
 	cfg, err := loadConfig(f)
-	if err != nil || cfg.Templates.Repo != "root/local" {
+	if err != nil || cfg.Stacks.Repo != "root/local" {
 		t.Errorf("config = %+v, err = %v", cfg, err)
 	}
 }
@@ -115,7 +115,7 @@ func TestConfigWatcher(t *testing.T) {
 		source:    source,
 		providers: providers,
 		syncer:    syncer,
-		templates: gitops.NewTemplateLoader(providers, "root/symphony-templates", "main", "templates"),
+		stacks:    gitops.NewStackLoader(providers, nil, gitops.StackSource{Repo: "root/stacks", Branch: "main", Path: "stacks"}),
 		security:  auth.NewHolder(&auth.Policy{}),
 		webhooks:  webhook.NewHolder(nil),
 		codec:     codec,

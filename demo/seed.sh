@@ -55,9 +55,9 @@ wait_task() {
 
 projects=$(jq -c '.[]' seed/projects.json)
 if [ "$K8S" != true ]; then
-  # Sans Kubernetes, pas de golden path api-rest-go-k8s (la production est
-  # alors sur Docker, voir up.sh)
-  projects=$(echo "$projects" | jq -c 'if .golden_path_id == "api-rest-go-k8s" then .golden_path_id = "api-rest-go" else . end')
+  # Sans Kubernetes, pas de stack api-rest-go-k8s (la production est alors
+  # sur Docker, voir up.sh) : la stack officielle api-rest-go à la place
+  projects=$(echo "$projects" | jq -c 'if .stack == "api-rest-go-k8s" then .stack = "api-rest-go" else . end')
 fi
 
 # 1. Création : les trois tâches partent ensemble, leurs pipelines passent

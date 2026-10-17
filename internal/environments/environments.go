@@ -13,7 +13,7 @@ import (
 
 type Environment struct {
 	Name      string `yaml:"name" json:"name"`
-	Runtime   string `yaml:"runtime" json:"runtime"` // runtime par défaut ; un golden path peut le changer
+	Runtime   string `yaml:"runtime" json:"runtime"` // runtime par défaut ; une stack peut le changer
 	Protected bool   `yaml:"protected" json:"protected"`
 }
 

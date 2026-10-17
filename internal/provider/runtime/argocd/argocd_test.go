@@ -221,7 +221,7 @@ func TestDeploy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if k.Images[0] != (kustomizeImage{"localhost:5050/root/mon-api", "abc123"}) || k.Replicas[0].Count != 1 {
+	if k.Images[0] != (kustomizeImage{Name: "localhost:5050/root/mon-api", NewTag: "abc123"}) || k.Replicas[0].Count != 1 {
 		t.Errorf("kustomization = %+v", k)
 	}
 	if !strings.Contains(scm.files["apps/mon-api/ingress.yaml"], `host: "mon-api.localhost"`) {

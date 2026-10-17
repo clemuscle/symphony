@@ -7,7 +7,7 @@ function project(over: Partial<Project> = {}, svc: Partial<Service['metadata']> 
     id: 1, name: 'payment-api', description: 'Paiements', language: 'go', type: 'api', port: 8080,
     namespace: '', scm_provider: 'gitlab', ci_provider: 'gitlab-ci', registry_provider: '',
     runtime_provider: 'docker-local', repo_path: 'apps/payment-api',
-    repo_url: 'http://gitlab/apps/payment-api.git', registry_url: '', golden_path: 'api-rest-go',
+    repo_url: 'http://gitlab/apps/payment-api.git', registry_url: '', stack: 'api-rest-go', stack_parameters: {},
     team: 'team-payments', created_by: 'bob', created_at: '', environments: [],
     service: svc === null ? null : {
       api_version: 'symphony/v1', kind: 'Service',

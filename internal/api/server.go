@@ -26,7 +26,7 @@ type Server struct {
 	store     *catalogue.Store
 	db        *database.DB
 	syncer    *gitops.Syncer
-	templates *gitops.TemplateLoader
+	stacks    *gitops.StackLoader
 }
 
 func NewServer(
@@ -34,7 +34,7 @@ func NewServer(
 	store *catalogue.Store,
 	db *database.DB,
 	syncer *gitops.Syncer,
-	templates *gitops.TemplateLoader,
+	stacks *gitops.StackLoader,
 	security *auth.Holder,
 	runner *tasks.Runner,
 	hooks *webhook.Holder,
@@ -46,7 +46,7 @@ func NewServer(
 		store:     store,
 		db:        db,
 		syncer:    syncer,
-		templates: templates,
+		stacks:    stacks,
 	}
 
 	r := chi.NewRouter()
@@ -83,15 +83,15 @@ func NewServer(
 		r.With(viewer).Get("/services/{name}", handlers.GetService(store))
 		r.With(developer).Post("/services/{name}/actions/{action}", handlers.TriggerAction(store, providers, db, runner))
 
-		// Golden Paths
-		r.With(viewer).Get("/golden-paths", handlers.ListGoldenPaths(templates))
+		// Stacks
+		r.With(viewer).Get("/stacks", handlers.ListStacks(stacks))
 
 		// Projets
-		r.With(viewer).Get("/projects", handlers.ListProjects(db, store, templates, envs))
-		r.With(developer).Post("/projects", handlers.CreateProject(providers, db, templates, runner))
+		r.With(viewer).Get("/projects", handlers.ListProjects(db, store, stacks, envs))
+		r.With(developer).Post("/projects", handlers.CreateProject(providers, db, stacks, runner))
 		r.With(admin).Delete("/projects/{name}", handlers.DeleteProject(db, runner))
 		r.With(viewer).Get("/projects/{name}/image", handlers.GetProjectImage(providers, db))
-		r.With(developer).Post("/projects/{name}/promote", handlers.Promote(providers, db, templates, envs, runner))
+		r.With(developer).Post("/projects/{name}/promote", handlers.Promote(providers, db, stacks, envs, runner))
 
 		// Environnements (staging, production…), dans l'ordre de promotion
 		r.With(viewer).Get("/environments", handlers.ListEnvironments(envs))
@@ -106,7 +106,7 @@ func NewServer(
 
 		// Déploiements (les logs peuvent contenir des données sensibles : developer)
 		r.With(viewer).Get("/deployments", handlers.ListDeployments(providers, db))
-		r.With(developer).Post("/deployments", handlers.Deploy(providers, db, templates, envs, runner))
+		r.With(developer).Post("/deployments", handlers.Deploy(providers, db, stacks, envs, runner))
 		r.With(developer).Delete("/deployments/{id}", handlers.StopDeployment(providers, db))
 		r.With(developer).Get("/deployments/{id}/logs", handlers.GetLogs(providers, db))
 		r.With(developer).Post("/deployments/{id}/restart", handlers.RestartDeployment(providers, db))
@@ -119,9 +119,9 @@ func NewServer(
 		// Admin
 		r.With(viewer).Get("/providers", handlers.ListProviders(providers))
 		r.With(viewer).Get("/identity/groups", handlers.ListIdentityGroups(providers, security))
-		r.With(admin).Post("/sync", handlers.ForceSync(syncer, templates, db))
+		r.With(admin).Post("/sync", handlers.ForceSync(syncer, stacks, db))
 		r.With(admin).Get("/audit", handlers.ListAudit(db))
-		r.With(admin).Get("/admin/status", handlers.AdminStatus(providers, configStatus, templates, syncer))
+		r.With(admin).Get("/admin/status", handlers.AdminStatus(providers, configStatus, stacks, syncer))
 		r.With(admin).Get("/admin/providers/check", handlers.CheckProviders(providers))
 	})
 

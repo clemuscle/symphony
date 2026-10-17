@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/clemuscle/symphony/internal/provider"
 	"github.com/clemuscle/symphony/internal/provider/instrumented"
 	"github.com/clemuscle/symphony/internal/webhook"
+	officialstacks "github.com/clemuscle/symphony/stacks"
 )
 
 // configSource lit la configuration : dans le repo Git désigné par le
@@ -138,22 +141,53 @@ func catalogueFile(cfg *config.Config) string {
 	return orDefault(cfg.Catalogue.File, gitops.DefaultCatalogueFile)
 }
 
-// templatesSource : repo, branche et dossier des templates, avec leurs défauts
-func templatesSource(cfg *config.Config) (repo, branch, dir string) {
-	return orDefault(cfg.Templates.Repo, "root/symphony-templates"),
-		orDefault(cfg.Templates.Branch, "main"),
-		orDefault(cfg.Templates.Path, "templates")
+// stacksSource : d'où lire les stacks (section stacks, ou l'ancienne section
+// templates), avec leurs défauts, et ce que l'admin doit corriger. Une stack
+// officielle inconnue est une erreur : la configuration est refusée.
+func stacksSource(cfg *config.Config) (gitops.StackSource, []string, error) {
+	switch {
+	case cfg.Stacks != nil && cfg.Templates != nil:
+		return gitops.StackSource{}, nil, fmt.Errorf("stacks et templates (son ancien nom) : n'en garder qu'une")
+	case cfg.Templates != nil:
+		return gitops.StackSource{
+				Repo:   orDefault(cfg.Templates.Repo, "root/symphony-templates"),
+				Branch: orDefault(cfg.Templates.Branch, "main"),
+				Path:   orDefault(cfg.Templates.Path, "templates"),
+			}, []string{"section templates : renommée stacks (l'ancien nom est lu jusqu'à la v1.0 ; " +
+				"défauts de stacks : dossier stacks, et official pour le catalogue officiel)"}, nil
+	case cfg.Stacks == nil:
+		return gitops.StackSource{Repo: "root/symphony-templates", Branch: "main", Path: "templates"},
+			[]string{"pas de section stacks : stacks lues dans root/symphony-templates, dossier templates " +
+				"(ancien défaut, à déclarer : il disparaît à la v1.0)"}, nil
+	}
+	src := gitops.StackSource{
+		Repo:     cfg.Stacks.Repo,
+		Branch:   orDefault(cfg.Stacks.Branch, "main"),
+		Path:     orDefault(cfg.Stacks.Path, "stacks"),
+		Official: cfg.Stacks.Official,
+	}
+	available := gitops.OfficialNames(officialstacks.FS())
+	for _, name := range src.Official {
+		if name != "*" && !slices.Contains(available, name) {
+			return src, nil, fmt.Errorf("stacks.official : %q inconnue (%s, ou * pour toutes)", name, strings.Join(available, ", "))
+		}
+	}
+	var warnings []string
+	if src.Repo == "" && len(src.Official) == 0 {
+		warnings = append(warnings, "stacks : ni repo ni official, aucune stack n'est proposée")
+	}
+	return src, warnings, nil
 }
 
 // configWatcher relit la configuration périodiquement et l'applique à chaud :
-// nouveaux providers, repos du catalogue et des templates. Une configuration
+// nouveaux providers, repos du catalogue et des stacks. Une configuration
 // illisible ou invalide est refusée et la précédente reste en place.
 // Le bootstrap local, lui, n'est relu qu'au redémarrage.
 type configWatcher struct {
 	source    *configSource
 	providers *provider.Registry
 	syncer    *gitops.Syncer
-	templates *gitops.TemplateLoader
+	stacks    *gitops.StackLoader
 	security  *auth.Holder
 	webhooks  *webhook.Holder
 	envs      *environments.Holder
@@ -196,6 +230,7 @@ func (w *configWatcher) applied(raw []byte, cfg *config.Config) {
 		s.CheckedAt = s.AppliedAt
 		s.Refused = nil
 		s.Types = cfg.ProviderTypes()
+		_, s.Warnings, _ = stacksSource(cfg)
 	})
 }
 
@@ -291,8 +326,12 @@ func (w *configWatcher) refuse(raw []byte, err error) {
 }
 
 // apply construit les nouveaux providers puis les met en place d'un bloc ;
-// le catalogue et les golden paths sont rechargés avec eux
+// le catalogue et les stacks sont rechargés avec eux
 func (w *configWatcher) apply(cfg *config.Config) error {
+	stacks, _, err := stacksSource(cfg)
+	if err != nil {
+		return err
+	}
 	next, resolved, err := buildProviders(cfg)
 	if err != nil {
 		return err
@@ -317,11 +356,11 @@ func (w *configWatcher) apply(cfg *config.Config) error {
 		go w.resubscribe(hooks)
 	}
 	w.syncer.SetFile(catalogueFile(cfg))
-	w.templates.SetSource(templatesSource(cfg))
+	w.stacks.SetSource(stacks)
 	logProviders("configuration rechargée", w.providers)
 
 	go w.syncer.ForceSync()
-	go w.templates.Reload()
+	go w.stacks.Reload()
 	return nil
 }
 

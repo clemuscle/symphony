@@ -48,10 +48,10 @@ func ListDeployments(providers *provider.Registry, db *database.DB) http.Handler
 
 // Deploy valide la demande puis lance le déploiement en tâche (202) :
 // déploiement par le runtime, puis attente du démarrage du service. Avec des
-// environnements, la cible est un environnement (son runtime, celui du golden
-// path s'il en change) ; un environnement protégé ne reçoit que des promotions.
+// environnements, la cible est un environnement (son runtime, celui de sa
+// stack si elle en change) ; un environnement protégé ne reçoit que des promotions.
 // Les variables de l'application viennent de sa fiche, pas de la demande.
-func Deploy(providers *provider.Registry, db *database.DB, templates *gitops.TemplateLoader,
+func Deploy(providers *provider.Registry, db *database.DB, stacks *gitops.StackLoader,
 	envs *environments.Holder, runner *tasks.Runner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -91,10 +91,10 @@ func Deploy(providers *provider.Registry, db *database.DB, templates *gitops.Tem
 				respondError(w, http.StatusBadRequest, "projet inconnu de Symphony : pas d'environnement")
 				return
 			}
-			rtID, _ = environmentRuntime(envs, templates, proj, env.Name)
+			rtID, _ = environmentRuntime(envs, stacks, proj, env.Name)
 		} else if rtID == "" && proj != nil {
 			// Sans environnements : runtime demandé, sinon celui du projet
-			// (choisi par son golden path), sinon le runtime par défaut
+			// (choisi par sa stack), sinon le runtime par défaut
 			rtID = proj.RTProvider
 		}
 		rt, err := providers.Runtime(rtID)

@@ -4,7 +4,7 @@ info:
   version: "0.9"
   summary: API d'une Internal Developer Platform
   description: |
-    API de Symphony : golden paths, projets et leur fiche catalogue, déploiements par
+    API de Symphony : stacks, projets et leur fiche catalogue, déploiements par
     environnement, tâches asynchrones, actions Day-2.
 
     **Authentification** : cookie de session posé par `/auth/login` (navigateur), ou jeton
@@ -33,9 +33,9 @@ tags:
   - name: Session
     description: Connexion OIDC (Backend-for-Frontend) et utilisateur courant
   - name: Projets
-    description: Projets créés depuis les golden paths, leur équipe et leur fiche
+    description: Projets créés depuis les stacks, leur équipe et leur fiche
   - name: Catalogue
-    description: Golden paths, fiches catalogue et actions Day-2
+    description: Stacks, fiches catalogue et actions Day-2
   - name: Déploiements
     description: Déploiements par environnement, promotion, arrêt, relance, journaux
   - name: Pipelines
@@ -128,16 +128,19 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Me" } } } }
         "401": { $ref: "#/components/responses/Error" }
 
-  /api/v1/golden-paths:
+  /api/v1/stacks:
     get:
       tags: [Catalogue]
-      summary: Golden paths (le catalogue)
-      operationId: getGoldenPaths
+      summary: Stacks proposées (repo de l'entreprise et catalogue officiel)
+      description: >-
+        Chaque stack avec ses providers résolus, ses paramètres (le formulaire de
+        création) et leur JSON Schema, qui valide les valeurs à la création.
+      operationId: getStacks
       x-symphony-role: viewer
       responses:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
-        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/GoldenPath" } } } } }
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Stack" } } } } }
   /api/v1/services:
     get:
       tags: [Catalogue]
@@ -195,7 +198,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Project" } } } } }
     post:
       tags: [Projets]
-      summary: Créer un projet depuis un golden path
+      summary: Créer un projet depuis une stack
       operationId: postProjects
       description: Repo, squelette et fiche en un commit, webhook, première pipeline (tâche).
       x-symphony-role: developer
@@ -437,7 +440,7 @@ paths:
   /api/v1/sync:
     post:
       tags: [Plateforme]
-      summary: Relire tout de suite les fiches et les golden paths
+      summary: Relire tout de suite les fiches et les stacks
       operationId: postSync
       x-symphony-role: admin
       responses:
@@ -458,10 +461,10 @@ paths:
   /api/v1/admin/status:
     get:
       tags: [Plateforme]
-      summary: État de la plateforme (configuration, providers, golden paths, catalogue)
+      summary: État de la plateforme (configuration, providers, stacks, catalogue)
       description: >
         Ce que l'admin doit savoir sans lire les logs : configuration en place et dernier
-        refus, providers et leur dernier appel, golden paths chargés et refusés avec la
+        refus, providers et leur dernier appel, stacks chargées et refusées avec la
         raison, fiches catalogue illisibles.
       operationId: getAdminStatus
       x-symphony-role: admin
@@ -529,7 +532,7 @@ components:
         name: { type: string, examples: [production] }
         runtime: { type: string, examples: [argocd-k3s] }
         protected: { type: boolean, description: Promotion seulement }
-    GoldenPath:
+    Stack:
       type: object
       properties:
         id: { type: string }
@@ -538,11 +541,37 @@ components:
         icon: { type: string }
         language: { type: string }
         type: { type: string }
-        scm_provider: { type: string }
+        scm_provider: { type: string, description: Résolu (vide dans stack.yaml = celui par défaut) }
         ci_provider: { type: string }
         registry_provider: { type: string }
         runtime_provider: { type: string }
+        official: { type: boolean, description: Stack du catalogue officiel de Symphony }
+        repo: { type: string, description: Repo de la stack (absent pour une stack officielle) }
+        branch: { type: string }
+        ci_template: { type: string, description: Chemin de la CI de la stack pour la plateforme de son SCM }
         environments: { type: object, additionalProperties: { type: string }, description: Runtime par environnement }
+        parameters:
+          type: array
+          items: { $ref: "#/components/schemas/StackParameter" }
+        schema: { type: object, description: "JSON Schema (draft 2020-12) des valeurs des paramètres" }
+        kubernetes:
+          type: object
+          description: Chart Helm ou base Kustomize du repo créé
+          properties:
+            helm: { type: string }
+            kustomize: { type: string }
+    StackParameter:
+      type: object
+      properties:
+        name: { type: string }
+        title: { type: string }
+        description: { type: string }
+        type: { type: string, enum: [string, number, boolean, choice] }
+        choices: { type: array, items: { type: string } }
+        default: { description: Du type du paramètre }
+        required: { type: boolean }
+        when: { type: object, description: "Paramètre → valeur (ou liste de valeurs) : le paramètre n'existe que si elles sont remplies" }
+        locked: { type: boolean, description: Valeur fixée (default), non modifiable }
     Service:
       type: object
       description: Fiche catalogue (catalog-info.yaml du repo du projet)
@@ -578,7 +607,8 @@ components:
         description: { type: string }
         language: { type: string }
         team: { type: string, description: Équipe propriétaire }
-        golden_path: { type: string }
+        stack: { type: string }
+        stack_parameters: { type: object, description: Valeurs des paramètres de la stack à la création }
         repo_path: { type: string }
         repo_url: { type: string }
         scm_provider: { type: string }
@@ -592,11 +622,16 @@ components:
         environments: { type: array, items: { $ref: "#/components/schemas/Environment" } }
     CreateProjectRequest:
       type: object
-      required: [name, golden_path_id]
+      required: [name, stack]
       properties:
         name: { type: string, pattern: "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$" }
         description: { type: string }
-        golden_path_id: { type: string }
+        stack: { type: string }
+        parameters:
+          type: object
+          description: >-
+            Valeurs des paramètres de la stack ; les défauts et valeurs verrouillées
+            sont complétés, puis le tout validé par le JSON Schema de la stack (400 sinon)
         owner: { type: string, description: "Équipe propriétaire : l'une de celles de l'utilisateur (un admin : n'importe laquelle)" }
         tier: { type: string, enum: [critical, standard, internal] }
         lifecycle: { type: string, enum: [production, staging, experimental, deprecated] }
@@ -678,6 +713,7 @@ components:
             checked_at: { type: string, format: date-time }
             read_error: { type: string, description: Source illisible }
             secrets_error: { type: string, description: Relecture des secrets en échec }
+            warnings: { type: array, items: { type: string }, description: "Configuration appliquée, mais à corriger (ancien nom de section…)" }
             refused:
               type: object
               description: Version présente dans la source et refusée ; celle en place reste appliquée
@@ -700,12 +736,13 @@ components:
                   method: { type: string }
                   at: { type: string, format: date-time }
                   error: { type: string, description: "Absent si l'appel a réussi" }
-        golden_paths:
+        stacks:
           type: object
           properties:
-            repo: { type: string }
+            repo: { type: string, description: Vide sans repo de stacks }
             branch: { type: string }
             path: { type: string }
+            official: { type: array, items: { type: string }, description: "Stacks officielles exposées (* : toutes)" }
             loaded_at: { type: string, format: date-time }
             error: { type: string, description: Dernier rechargement en échec (liste précédente en place) }
             loaded: { type: array, items: { type: string } }
@@ -714,8 +751,9 @@ components:
               items:
                 type: object
                 properties:
-                  file: { type: string }
+                  file: { type: string, description: "<dossier>/<nom>/stack.yaml, ou officiel:<nom>" }
                   error: { type: string }
+            warnings: { type: array, items: { type: string }, description: "Stacks chargées à corriger (ancien format, officielle remplacée)" }
         catalogue:
           type: object
           properties:

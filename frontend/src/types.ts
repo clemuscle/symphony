@@ -88,7 +88,8 @@ export interface Project {
   repo_path: string
   repo_url: string
   registry_url: string
-  golden_path: string
+  stack: string
+  stack_parameters: Record<string, ParamValue> // valeurs des paramètres de la stack, à la création
   team: string
   created_by: string
   created_at: string
@@ -97,21 +98,44 @@ export interface Project {
   environments: Environment[] // vide : pas d'environnements configurés
 }
 
-export interface GoldenPath {
+// Stack : modèle de projet, du repo de l'entreprise ou du catalogue officiel
+export interface Stack {
   id: string
   name: string
   description: string
   icon: string
   language: string
   type: string
+  // Providers résolus (ceux par défaut si la stack n'en désigne pas)
   scm_provider: string
   ci_provider: string
   registry_provider: string
   runtime_provider: string
-  repo: string
-  branch: string
-  skeleton: string
+  official: boolean
+  repo?: string
+  branch?: string
   ci_template: string
+  environments?: Record<string, string>
+  parameters: StackParameter[]
+  schema: Record<string, unknown> // JSON Schema des paramètres, appliqué par l'API
+  kubernetes?: { helm?: string; kustomize?: string }
+}
+
+export type ParamValue = string | number | boolean
+
+// Un champ du formulaire d'une stack
+export interface StackParameter {
+  name: string
+  title: string
+  description?: string
+  type: 'string' | 'number' | 'boolean' | 'choice'
+  choices?: string[]
+  default?: ParamValue
+  required?: boolean
+  // Le paramètre n'existe que si ces paramètres ont ces valeurs (ou l'une
+  // d'une liste)
+  when?: Record<string, ParamValue | ParamValue[]>
+  locked?: boolean
 }
 
 export interface Deployment {
@@ -181,7 +205,8 @@ export interface CreateProjectRequest {
   owner: string
   tier: string
   lifecycle: string
-  golden_path_id: string
+  stack: string
+  parameters: Record<string, ParamValue>
   scm_provider?: string
   runtime_provider?: string
 }
@@ -217,6 +242,7 @@ export interface ConfigStatus {
   read_error?: string
   secrets_error?: string
   refused?: { revision: string; at: string; error: string }
+  warnings: string[] // configuration appliquée, mais à corriger
 }
 
 export interface ProviderStatus {
@@ -230,14 +256,16 @@ export interface ProviderStatus {
 export interface AdminStatus {
   config: ConfigStatus
   providers: ProviderStatus[]
-  golden_paths: {
-    repo: string
+  stacks: {
+    repo: string // vide : pas de repo de stacks
     branch: string
     path: string
+    official: string[] // stacks officielles exposées ('*' : toutes)
     loaded_at: string
     error?: string
     loaded: string[]
     refused: { file: string; error: string }[]
+    warnings: string[]
   }
   catalogue: {
     file: string

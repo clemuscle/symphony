@@ -1,5 +1,5 @@
 # Bootstrap de Symphony : comment joindre le repo qui contient la configuration
-# (providers, catalogue, templates). Le reste est dans root/symphony-config.
+# (providers, catalogue, stacks). Le reste est dans root/symphony-config.
 #
 # Sans config_source, ce fichier est lu comme une configuration complète
 # (format de root/symphony-config/symphony.yaml), pour travailler hors ligne.
