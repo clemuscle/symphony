@@ -59,9 +59,18 @@ func TestCNPGOnCluster(t *testing.T) {
 	if dep := scm.files["apps/"+name+"/deployment.yaml"]; !strings.Contains(dep, `name: "`+db+`-app"`) {
 		t.Errorf("deployment.yaml ne lit pas %s-app :\n%s", db, dep)
 	}
-	out := kubectl("-n", ns, "exec", db+"-1", "-c", "postgres", "--", "psql", string(uri), "-tAc", "select 42")
-	if strings.TrimSpace(out) != "42" {
-		t.Errorf("requête : %q", out)
+	// Le Service -rw peut accepter les connexions un peu après Ready
+	var out []byte
+	for i := 0; i < 30; i++ {
+		out, err = exec.Command("kubectl", "-n", ns, "exec", db+"-1", "-c", "postgres", "--",
+			"psql", string(uri), "-tAc", "select 42").CombinedOutput()
+		if err == nil {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+	if err != nil || strings.TrimSpace(string(out)) != "42" {
+		t.Errorf("requête : %v\n%s", err, out)
 	}
 
 	// Supprimer l'infra (ce que fait Argo CD en supprimant l'Application en
