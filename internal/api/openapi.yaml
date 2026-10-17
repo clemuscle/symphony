@@ -585,7 +585,7 @@ components:
         default: { description: Du type du paramètre }
         required: { type: boolean }
         when: { type: object, description: "Paramètre → valeur (ou liste de valeurs) : le paramètre n'existe que si elles sont remplies" }
-        locked: { type: boolean, description: Valeur fixée (default), non modifiable }
+        locked: { type: boolean, description: "Valeur fixée (default), non modifiable" }
     Service:
       type: object
       description: Fiche catalogue (catalog-info.yaml du repo du projet)
