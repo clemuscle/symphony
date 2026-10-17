@@ -21,7 +21,7 @@ services:
     restart: unless-stopped
 
   symphony:
-    image: ${SYMPHONY_IMAGE:-ghcr.io/clemuscle/symphony:${SYMPHONY_VERSION:-0.12}}
+    image: ${SYMPHONY_IMAGE:-ghcr.io/clemuscle/symphony:${SYMPHONY_VERSION:-0.13}}
     depends_on:
       postgres:
         condition: service_healthy
