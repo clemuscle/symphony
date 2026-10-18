@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -60,7 +59,8 @@ func TriggerAction(store *catalogue.Store, providers *provider.Registry, db *dat
 			return
 		}
 		// La fiche porte le nom du projet
-		if _, ok := authorizeProject(w, r, db, svcName); !ok {
+		proj, ok := authorizeProject(w, r, db, svcName)
+		if !ok {
 			return
 		}
 
@@ -103,14 +103,25 @@ func TriggerAction(store *catalogue.Store, providers *provider.Registry, db *dat
 			}, map[string]any{"action": actionName, "mode": "webhook", "inputs": inputs})
 
 		case action.CIProvider != "":
-			repoPath := repoPathFromSpec(svc.Spec.Repo)
-			if repoPath == "" {
-				respondError(w, http.StatusBadRequest, "spec.repo requis pour une action pipeline")
+			// Le repo est celui du projet, jamais celui que dit la fiche : un
+			// repo pourrait sinon lancer les pipelines d'un autre
+			if proj == nil || proj.RepoPath == "" {
+				respondError(w, http.StatusBadRequest, "action pipeline : projet sans repo connu de Symphony")
 				return
 			}
+			repoPath := proj.RepoPath
 			ci, err := providers.CI(action.CIProvider)
 			if err != nil {
 				respondError(w, http.StatusBadRequest, "ci provider: "+err.Error())
+				return
+			}
+			scm, err := providers.SCM(proj.SCMProvider)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "scm provider: "+err.Error())
+				return
+			}
+			if err := provider.CheckCompatible(scm, ci); err != nil {
+				respondError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 
@@ -129,6 +140,7 @@ func TriggerAction(store *catalogue.Store, providers *provider.Registry, db *dat
 				Inputs:     inputs,
 				CIProvider: ci.ID(),
 				Repo:       repoPath,
+				Ref:        proj.Branch,
 				Vars:       vars,
 			}, map[string]any{"action": actionName, "mode": "pipeline", "ci_provider": ci.ID(), "repo": repoPath, "inputs": inputs})
 
@@ -205,13 +217,4 @@ func callWebhook(url string, payload map[string]any) (int, error) {
 		return resp.StatusCode, fmt.Errorf("status %d — %s", resp.StatusCode, strings.TrimSpace(string(msg)))
 	}
 	return resp.StatusCode, nil
-}
-
-// repoPathFromSpec accepte "groupe/projet" ou une URL complète (http(s)://host/groupe/projet[.git])
-func repoPathFromSpec(repo string) string {
-	repo = strings.TrimSpace(repo)
-	if u, err := url.Parse(repo); err == nil && u.Host != "" {
-		repo = u.Path
-	}
-	return strings.TrimSuffix(strings.Trim(repo, "/"), ".git")
 }

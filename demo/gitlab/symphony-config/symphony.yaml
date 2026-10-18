@@ -128,9 +128,19 @@ webhooks:
   secret: secret://vault/symphony/webhook#secret
 
 # Catalogue : chaque projet porte sa fiche (équipe, tier, SLO, liens, actions)
-# dans son propre repo, à la racine
+# dans son propre repo, à la racine : un Component Backstage
 catalogue:
   file: catalog-info.yaml
+  # Services existants : les repos du groupe services qui ont une fiche
+  # deviennent des projets (invoice-service, poussé par seed.sh sans passer
+  # par Symphony)
+  discovery:
+    interval: 1m
+    sources:
+      - group: services
+        scm: gitlab-local
+        ci: gitlab-ci
+        registry: gitlab-registry
 
 # Stacks proposées : le catalogue officiel de Symphony, et celles de la
 # plateforme (variantes Kubernetes et GitHub) ; une stack du repo remplace

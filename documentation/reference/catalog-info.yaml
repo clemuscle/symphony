@@ -1,0 +1,114 @@
+# Fiche de référence : catalog-info.yaml à la racine du repo d'un projet
+# (catalogue.file de la configuration), lue par Symphony toutes les 15 s.
+# Symphony l'écrit à la création d'un projet ; l'équipe la tient à jour par
+# des commits, comme le reste de son code.
+#
+# C'est un Component Backstage (backstage.io/v1alpha1) : une équipe qui a déjà
+# ses fiches Backstage les garde telles quelles. Ce que Backstage n'a pas
+# passe par des annotations symphony.io/… (valeurs simples) et par des champs
+# en plus dans spec (environnements, actions, SLO, manifests, infra), que
+# Backstage accepte. Les clés que Symphony ne connaît pas sont ignorées.
+#
+# Le fichier peut décrire plusieurs entités (séparées par ---) : Symphony lit
+# le Component qui porte le nom du projet, ou le seul Component du fichier ;
+# les autres entités (API, Resource, System…) sont ignorées.
+#
+# Ancien format (apiVersion symphony/v1, kind Service) : encore lu jusqu'à la
+# v1.0 et signalé dans la page Administration.
+
+apiVersion: backstage.io/v1alpha1 # requis
+kind: Component # requis
+metadata:
+  # Nom du projet. Pour un projet créé par Symphony, c'est son nom qui compte ;
+  # pour un projet découvert (catalogue.discovery), c'est celui-ci :
+  # minuscules, chiffres et tirets, 63 caractères max.
+  name: payment-api
+  description: API de paiement par carte
+  tags: [go, rest-api, pci] # recherche du catalogue
+  labels:
+    stack: api-rest-go # stack de création, écrite par Symphony
+  annotations:
+    # Repo du service (annotation standard de Backstage) ; affiché seulement :
+    # Symphony agit toujours sur le repo connu du projet
+    backstage.io/source-location: url:https://gitlab.example.com/apps/payment-api/
+    symphony.io/tier: critical # critical, standard, internal
+    symphony.io/language: go # icône et étiquette
+    symphony.io/version: 2.1.0
+    symphony.io/registry: registry.example.com/apps/payment-api # affiché seulement
+    symphony.io/docs: https://docs.example.com/payment-api
+    # Port de l'appli d'un projet découvert (défaut 8080) ; celui d'un projet
+    # créé vient de sa stack
+    symphony.io/port: "8080"
+    # Contact de l'équipe propriétaire
+    symphony.io/team-name: Paiements
+    symphony.io/team-slack: "#team-payments"
+    symphony.io/team-email: payments@example.com
+  links:
+    - title: Runbook
+      url: https://wiki.example.com/payment-api
+      icon: docs
+spec:
+  type: api # requis par Backstage : service, website, library… (Symphony : api, worker…)
+  lifecycle: production # requis par Backstage : production, staging, experimental, deprecated
+  # Équipe propriétaire (requis par Backstage), référence d'entité
+  # [group:][<namespace>/]<nom>. Pour un projet découvert, ses membres le
+  # déploient et lancent ses actions ; un projet créé garde l'équipe choisie à
+  # la création.
+  owner: group:default/team-payments
+  # Dépendances : références d'entités (component, resource, api, system)
+  dependsOn:
+    - component:auth-service
+    - resource:postgres-payments
+
+  # ─── Champs de Symphony ────────────────────────────────────────────────────
+
+  # Variables de l'appli par environnement (environments de la configuration) :
+  # valeurs, ou secrets secret://<provider>/apps/<projet>/<chemin>#<clé>,
+  # limités au préfixe du projet
+  environments:
+    - name: production
+      url: https://payment-api.example.com # affichée sur la page du projet
+      type: production
+      env:
+        LOG_LEVEL: info
+        DB_PASSWORD: secret://vault/apps/payment-api/db#password
+  slo:
+    availability: "99.99%"
+    latency_p99: 200ms
+    error_budget: "0.01%"
+  # Actions Day-2, lancées depuis la page du projet (developer de l'équipe)
+  actions:
+    # Pipeline du repo du projet, avec SYMPHONY_SERVICE, SYMPHONY_ACTION et
+    # SYMPHONY_PIPELINE ; le CI doit tourner sur la plateforme du SCM
+    - name: Vider le cache
+      description: Purge le cache Redis
+      ci_provider: gitlab-ci
+      pipeline: purge-cache # SYMPHONY_PIPELINE
+      # Entrées du formulaire, passées en variables CI ; une entrée non
+      # déclarée est refusée
+      inputs:
+        - id: SCOPE
+          label: Portée
+          type: text # text ou integer ; avec options : liste de choix
+          required: true
+          default: all
+          options: [all, sessions]
+        - id: TTL
+          label: Durée (s)
+          type: integer
+          min: 0
+          max: 3600
+    # Ou un webhook appelé en POST avec les entrées en JSON
+    - name: Prévenir l'astreinte
+      webhook_url: https://hooks.example.com/oncall
+  # Chart Helm ou base Kustomize du service dans son repo (écrit par sa stack),
+  # déployé par le runtime argocd à la place des manifests générés
+  kubernetes:
+    helm: deploy/chart
+    # kustomize: deploy/kustomize
+  # Infra du service (écrite par sa stack) : manifests d'opérateurs appliqués
+  # avec lui dans chaque environnement, et variables lues dans leurs secrets
+  infra:
+    kubernetes: deploy/infra
+    env:
+      DATABASE_URL: { secret: db-app, key: uri }

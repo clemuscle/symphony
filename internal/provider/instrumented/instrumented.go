@@ -85,6 +85,10 @@ func (s scm) ListRepos() ([]provider.Repo, error) {
 	return call("scm", s.ID(), "ListRepos", s.SCMProvider.ListRepos)
 }
 
+func (s scm) ListGroupRepos(group string) ([]provider.Repo, error) {
+	return call("scm", s.ID(), "ListGroupRepos", func() ([]provider.Repo, error) { return s.SCMProvider.ListGroupRepos(group) })
+}
+
 func (s scm) GetFileContent(repoPath, branch, filePath string) (string, error) {
 	return call("scm", s.ID(), "GetFileContent", func() (string, error) { return s.SCMProvider.GetFileContent(repoPath, branch, filePath) })
 }

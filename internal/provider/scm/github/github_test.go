@@ -131,3 +131,39 @@ func TestEnsureWebhook(t *testing.T) {
 		t.Errorf("appels : %v", calls)
 	}
 }
+
+// ListGroupRepos : une organisation, ou le compte du jeton (repos privés
+// compris), sans archives ni forks
+func TestListGroupRepos(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/orgs/acme":
+			w.Write([]byte(`{"login":"acme"}`))
+		case "/orgs/acme/repos":
+			w.Write([]byte(`[{"full_name":"acme/api","default_branch":"main"},{"full_name":"acme/old","archived":true},{"full_name":"acme/fork","fork":true}]`))
+		case "/user":
+			w.Write([]byte(`{"login":"Me"}`))
+		case "/user/repos":
+			if r.URL.Query().Get("affiliation") != "owner" {
+				t.Errorf("repos du compte : %s", r.URL.RawQuery)
+			}
+			w.Write([]byte(`[{"full_name":"me/private","default_branch":"main"}]`))
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer srv.Close()
+	p := New("github", "t", "").WithAPIURL(srv.URL)
+	repos, err := p.ListGroupRepos("acme")
+	if err != nil || len(repos) != 1 || repos[0].Path != "acme/api" {
+		t.Errorf("organisation : %+v %v", repos, err)
+	}
+	repos, err = p.ListGroupRepos("me")
+	if err != nil || len(repos) != 1 || repos[0].Path != "me/private" {
+		t.Errorf("compte du jeton : %+v %v", repos, err)
+	}
+	// Un autre compte : ses repos publics (/users/<nom>/repos), absent ici
+	if _, err := p.ListGroupRepos("inconnu"); err == nil {
+		t.Error("compte absent : erreur attendue")
+	}
+}

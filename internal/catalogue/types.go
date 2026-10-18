@@ -8,13 +8,17 @@ type Service struct {
 }
 
 type Metadata struct {
-	Name      string            `yaml:"name"                json:"name"`
-	Owner     string            `yaml:"owner,omitempty"     json:"owner"`
-	Team      Team              `yaml:"team,omitempty"      json:"team"`
-	Tags      []string          `yaml:"tags,omitempty"      json:"tags"`
-	Tier      string            `yaml:"tier,omitempty"      json:"tier"`
-	Lifecycle string            `yaml:"lifecycle,omitempty" json:"lifecycle"`
-	Labels    map[string]string `yaml:"labels,omitempty"    json:"labels,omitempty"`
+	Name        string            `yaml:"name"                  json:"name"`
+	Description string            `yaml:"description,omitempty" json:"description,omitempty"`
+	Owner       string            `yaml:"owner,omitempty"     json:"owner"`
+	Team        Team              `yaml:"team,omitempty"      json:"team"`
+	Tags        []string          `yaml:"tags,omitempty"      json:"tags"`
+	Tier        string            `yaml:"tier,omitempty"      json:"tier"`
+	Lifecycle   string            `yaml:"lifecycle,omitempty" json:"lifecycle"`
+	Labels      map[string]string `yaml:"labels,omitempty"    json:"labels,omitempty"`
+	// Annotations : celles de la fiche Backstage (symphony.io/…, et les
+	// autres, gardées telles quelles)
+	Annotations map[string]string `yaml:"annotations,omitempty" json:"annotations,omitempty"`
 }
 
 type Team struct {

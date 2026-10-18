@@ -72,6 +72,29 @@ type ProviderDef struct {
 // catalog-info.yaml)
 type CatalogueConfig struct {
 	File string `yaml:"file"`
+	// Discovery : groupes scannés ; chaque repo qui y a une fiche devient un
+	// projet de Symphony (services existants)
+	Discovery *DiscoveryConfig `yaml:"discovery"`
+}
+
+// DiscoveryConfig : la découverte des services existants
+type DiscoveryConfig struct {
+	Interval string            `yaml:"interval"` // durée Go (10m, 1h) ; défaut 5m, 1m min.
+	Sources  []DiscoverySource `yaml:"sources"`
+}
+
+// DiscoverySource : un groupe GitLab (sous-groupes compris) ou une
+// organisation GitHub, et les providers de ses projets
+type DiscoverySource struct {
+	SCM   string `yaml:"scm"`   // provider SCM ; vide : celui par défaut
+	Group string `yaml:"group"` // requis
+	// CI des pipelines et des actions (sur la plateforme du SCM) ; vide :
+	// celui par défaut
+	CI string `yaml:"ci"`
+	// Registry des images ; vide : celui par défaut
+	Registry string `yaml:"registry"`
+	// Exclude : repos ignorés, motifs de chemin (apps/legacy-*)
+	Exclude []string `yaml:"exclude"`
 }
 
 // StacksConfig : repo Git des stacks du client, un dossier par stack

@@ -1,0 +1,56 @@
+# Fiche Backstage d'un service d'avant Symphony (groupe services de la
+# GitLab) : Symphony le découvre par elle (catalogue.discovery), sans rien
+# écrire dans son repo. Un fichier Backstage peut décrire plusieurs entités :
+# Symphony lit le Component, et ignore l'API.
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: invoice-api
+  description: API de facturation
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/team-payments
+  definition: |
+    openapi: 3.0.0
+    info: { title: Facturation, version: 3.2.0 }
+    paths: {}
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: invoice-service
+  description: Facturation et avoirs, service d'avant Symphony
+  tags: [go, rest-api, billing]
+  annotations:
+    backstage.io/source-location: url:__REPO_URL__/
+    gitlab.com/project-slug: services/invoice-service
+    symphony.io/tier: standard
+    symphony.io/language: go
+    symphony.io/version: 3.2.0
+    symphony.io/port: "8080"
+    symphony.io/team-name: Paiements
+    symphony.io/team-slack: "#team-payments"
+  links:
+    - title: Repository
+      url: __REPO_URL__
+      icon: code
+    - title: Pipelines
+      url: __REPO_URL__/-/pipelines
+      icon: ci
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/team-payments
+  system: billing
+  providesApis: [invoice-api]
+  dependsOn:
+    - component:payment-api
+    - resource:postgres-billing
+  slo:
+    availability: "99.9%"
+    latency_p99: 300ms
+  actions:
+    - name: Relancer la pipeline
+      description: Relance la pipeline CI sur main
+      ci_provider: gitlab-ci

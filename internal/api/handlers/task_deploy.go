@@ -243,13 +243,13 @@ func (d TaskDeps) repoDir(project, dir string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	list, err := scm.ListFiles(proj.RepoPath, "main", dir)
+	list, err := scm.ListFiles(proj.RepoPath, proj.Branch, dir)
 	if err != nil {
 		return nil, fmt.Errorf("%s du repo %s : %w", dir, proj.RepoPath, err)
 	}
 	files := make(map[string]string, len(list))
 	for _, f := range list {
-		content, err := scm.GetFileContent(proj.RepoPath, "main", f)
+		content, err := scm.GetFileContent(proj.RepoPath, proj.Branch, f)
 		if err != nil {
 			return nil, fmt.Errorf("lecture de %s : %w", f, err)
 		}

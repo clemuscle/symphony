@@ -3,6 +3,42 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
+## v0.14 — Les services existants
+
+### Ajouté
+- **Fiches Backstage** : `catalog-info.yaml` est un Component `backstage.io/v1alpha1`. Ce
+  que Backstage a vient de ses champs (`spec.owner`, `lifecycle`, `type`, `dependsOn`,
+  `metadata.links`…), les valeurs de Symphony d'annotations `symphony.io/…` (tier,
+  langage, port, contact de l'équipe), les structures de champs en plus dans `spec`
+  (environnements, actions, SLO, manifests, infra). Un fichier à plusieurs entités est
+  accepté : Symphony lit le Component du projet. Les nouveaux projets reçoivent une fiche
+  Backstage. Fiche de référence : `documentation/reference/catalog-info.yaml`, vérifiée
+  par les tests.
+- **Découverte des services existants** (`catalogue.discovery`) : des groupes GitLab
+  (sous-groupes compris) ou organisations GitHub scannés à intervalle (`interval`, 5 min
+  par défaut) ou à la demande (« Relire Git ») ; chaque repo qui a une fiche devient un
+  projet, au nom de sa fiche, à l'équipe de son `spec.owner` (si l'annuaire la connaît),
+  avec le CI et le registry de sa source, motifs `exclude`. Symphony n'écrit rien dans ces
+  repos. Conflits de nom, fiches illisibles, équipes inconnues et projets orphelins (que
+  leur source ne donne plus) se lisent dans la page Administration ; `symphony validate`
+  vérifie la section.
+- Retirer un projet découvert supprime ses déploiements, jamais son repo ni ses images ;
+  refusé (409) tant que sa source le donne encore.
+- Méthode SCM `ListGroupRepos` (GitLab, GitHub : organisation ou compte).
+- Démo : groupe `services` et `invoice-service`, poussé sans Symphony avec une fiche
+  Backstage (Component et API), découvert puis déployé en staging.
+
+### Modifié
+- L'ancienne fiche (`symphony/v1`, `kind: Service`) est lue jusqu'à la v1.0 et signalée
+  dans Administration.
+- La branche d'un projet est celle par défaut de son repo (`projects.branch`, migration
+  006) : fiche, manifests, pipelines et actions ne supposent plus `main`.
+
+### Sécurité
+- Une action pipeline tourne sur le repo du projet connu de Symphony, et non sur celui que
+  donne sa fiche (`spec.repo`) : un repo pouvait lancer les pipelines d'un autre avec le
+  jeton de Symphony. Le CI de l'action doit tourner sur la plateforme du SCM du projet.
+
 ## v0.13 — L'infra avec l'appli
 
 ### Ajouté

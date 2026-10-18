@@ -27,7 +27,8 @@ pour Symphony et GitLab.
 
 ## 1. Les projets (1 min)
 
-La page **Projets** liste trois services créés par `up.sh` avec les stacks de la démo,
+La page **Projets** liste trois services créés par `up.sh` avec les stacks de la démo
+(et un quatrième, découvert : voir 1 bis),
 comme un développeur l'aurait fait : `auth-service` (Python, Kubernetes, avec sa base
 PostgreSQL), `payment-api`
 (Go, Kubernetes, déployé par son chart Helm) et `notification-service` (Node, Kubernetes).
@@ -42,6 +43,24 @@ Ce sont de vrais projets :
 
 Côté GitLab, bob voit le groupe **apps** (les projets, en Developer) mais pas **platform**
 (la configuration de Symphony, tenue par alice).
+
+## 1 bis. Un service d'avant Symphony (1 min)
+
+Le quatrième projet, `invoice-service` (badge **🔎 découvert**), n'a pas été créé par
+Symphony : `seed.sh` a poussé son repo directement dans le groupe GitLab **services**, avec
+sa CI et une fiche **Backstage** (`apiVersion: backstage.io/v1alpha1`, un `Component` et
+une `API` dans le même fichier). La configuration scanne ce groupe
+(`catalogue.discovery`, toutes les minutes) : tout repo qui a une fiche devient un projet,
+au nom de sa fiche, à l'équipe de son `spec.owner` (`team-payments` : bob peut le déployer).
+Il est déployé en staging comme les autres.
+
+- **Administration → 🔎 Services existants** : le groupe scanné, ses repos, ses projets.
+- Pousser dans `services/` un repo avec une fiche dont le `metadata.name` est
+  `payment-api` : refusé (nom déjà pris), et la raison s'affiche.
+- **Retirer de Symphony** (en alice) est refusé tant que le groupe donne le projet : le scan
+  suivant le reprendrait. Ajouter `exclude: [services/invoice-service]` à la source dans
+  `platform/symphony-config` : le projet devient orphelin (signalé), et le retirer garde son
+  repo et ses images ; le retirer de `exclude` le fait revenir.
 
 ## 2. Créer un service depuis le catalogue (4 min, suivi en direct)
 

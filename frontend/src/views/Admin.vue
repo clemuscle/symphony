@@ -6,7 +6,7 @@
         <p class="subtitle">Ce que Symphony a chargé depuis Git, ce qu'il a refusé et pourquoi</p>
       </div>
       <div class="actions">
-        <button class="btn" @click="sync" :disabled="syncing" title="Relire les stacks et les fiches sans attendre">
+        <button class="btn" @click="sync" :disabled="syncing" title="Relire les stacks et les fiches, scanner les groupes de la découverte, sans attendre">
           {{ syncing ? 'Synchronisation…' : '⟳ Relire Git' }}
         </button>
         <button class="btn" @click="load">↻ Rafraîchir</button>
@@ -142,6 +142,63 @@
           <div class="alert-title">Fiche de <strong>{{ e.project }}</strong> illisible : la version connue reste au catalogue</div>
           <pre>{{ e.error }}</pre>
         </div>
+        <div class="alert warn" v-if="status.catalogue.legacy?.length">
+          <div class="alert-title">
+            Fiches à l'ancien format (<code>symphony/v1</code>, lu jusqu'à la v1.0) :
+            <span class="chip" v-for="p in status.catalogue.legacy" :key="p">{{ p }}</span>
+          </div>
+          <div class="hint">
+            Les réécrire en Component Backstage (<code>apiVersion: backstage.io/v1alpha1</code>) :
+            voir <code>documentation/reference/catalog-info.yaml</code>.
+          </div>
+        </div>
+      </section>
+
+      <!-- Découverte -->
+      <section class="card">
+        <h3>🔎 Services existants</h3>
+        <p class="muted" v-if="!status.discovery.enabled">
+          Pas de découverte : la section <code>catalogue.discovery</code> de la configuration désigne les groupes
+          GitLab ou organisations GitHub dont les repos avec une fiche deviennent des projets.
+        </p>
+        <template v-else>
+          <dl class="facts">
+            <dt>Dernier scan</dt>
+            <dd>{{ status.discovery.scan_at ? ago(status.discovery.scan_at) : 'en cours' }}
+              <span class="muted">(tous les {{ status.discovery.interval }})</span></dd>
+          </dl>
+          <table>
+            <thead><tr><th>Groupe</th><th>Providers</th><th>Repos</th><th>Projets</th></tr></thead>
+            <tbody>
+              <tr v-for="src in status.discovery.sources" :key="src.key">
+                <td><code>{{ src.group }}</code> <span class="muted">({{ src.scm }})</span></td>
+                <td class="muted">{{ src.ci }}<template v-if="src.registry"> · {{ src.registry }}</template></td>
+                <td v-if="src.error" colspan="2"><span class="state-text error">{{ src.error }}</span></td>
+                <template v-else>
+                  <td>{{ src.repos }} <span class="muted">
+                    ({{ src.no_fiche }} sans fiche<template v-if="src.excluded">, {{ src.excluded }} exclu{{ src.excluded > 1 ? 's' : '' }}</template>)</span></td>
+                  <td>
+                    <span class="chip" v-for="p in src.projects" :key="p" :class="{ new: src.imported.includes(p) }"
+                      :title="src.imported.includes(p) ? 'ajouté à ce scan' : ''">{{ p }}</span>
+                    <span class="muted" v-if="!src.projects.length">aucun</span>
+                  </td>
+                </template>
+              </tr>
+            </tbody>
+          </table>
+        </template>
+        <div class="alert warn" v-if="status.discovery.error"><pre>{{ status.discovery.error }}</pre></div>
+        <div class="alert error" v-for="e in status.discovery.errors" :key="e.source + e.repo">
+          <div class="alert-title"><code>{{ e.repo }}</code> <span class="muted">({{ e.source }})</span></div>
+          <pre>{{ e.error }}</pre>
+        </div>
+        <div class="alert warn" v-for="o in status.discovery.orphans" :key="o.project">
+          <div class="alert-title">
+            <strong>{{ o.project }}</strong> n'est plus donné par <code>{{ o.source }}</code>
+            (fiche retirée, repo exclu, archivé ou supprimé, source retirée)
+          </div>
+          <div class="hint">Il reste dans Symphony : le retirer depuis sa page Projets (son repo <code>{{ o.repo }}</code> est gardé).</div>
+        </div>
       </section>
 
       <!-- Audit -->
@@ -252,6 +309,7 @@ h2 { font-size: 22px; font-weight: 700; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; background: #f4f4f8; padding: 1px 6px; border-radius: 4px; }
 .muted { color: #888; }
 .small-text { font-size: 13px; margin-bottom: 10px; }
+.chip.new { background: #f0fff4; color: #276749; }
 .chip { display: inline-block; font-size: 12px; padding: 2px 10px; border-radius: 20px; background: #ebf4ff; color: #4c51bf; margin: 0 6px 4px 0; }
 .badge { font-size: 11px; padding: 1px 8px; border-radius: 20px; background: #f4f4f8; color: #555; margin-left: 4px; }
 .alert { border-radius: 8px; padding: 10px 14px; margin-top: 12px; font-size: 13px; }

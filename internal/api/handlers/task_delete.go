@@ -19,6 +19,9 @@ type deleteParams struct {
 	RepoPath    string `json:"repo_path"`
 	SCMProvider string `json:"scm_provider"`
 	RegProvider string `json:"reg_provider"`
+	// KeepRepo : projet découvert, que Symphony n'a pas créé : son repo et
+	// ses images restent
+	KeepRepo bool `json:"keep_repo,omitempty"`
 }
 
 // removeTimeout : délai pour qu'un déploiement supprimé ait disparu (Argo CD
@@ -84,6 +87,10 @@ func (d TaskDeps) deleteRepo(_ context.Context, x *tasks.Exec) error {
 	if p.RepoPath == "" {
 		return nil
 	}
+	if p.KeepRepo {
+		x.Progress("projet découvert : %s et ses images sont gardés", p.RepoPath)
+		return nil
+	}
 	// Projets antérieurs à la migration 002 : pas de scm_provider, SCM par défaut
 	scm, err := d.Providers.SCM(p.SCMProvider)
 	if err != nil {
@@ -110,7 +117,7 @@ func (d TaskDeps) deleteCatalogue(_ context.Context, x *tasks.Exec) error {
 	if err := x.Params(&p); err != nil {
 		return err
 	}
-	// La fiche est partie avec le repo
+	// La fiche est partie avec le repo (ou n'est plus lue : projet découvert)
 	d.Syncer.Forget(p.Name)
 	return nil
 }

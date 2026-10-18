@@ -6,6 +6,7 @@
         <div class="panel-badges">
           <span :class="['tier-badge', tier(project)]">{{ tierIcon(tier(project)) }} {{ tier(project) }}</span>
           <span :class="['lifecycle-badge', lifecycle(project)]" v-if="lifecycle(project)" title="Cycle de vie (fiche catalogue)">{{ lifecycleLabel(lifecycle(project)) }}</span>
+          <span class="discovered-badge" v-if="project.discovered_from" :title="'Service existant, découvert dans ' + project.discovered_from">🔎 découvert</span>
         </div>
       </div>
       <button class="close" @click="emit('close')">✕</button>
@@ -25,12 +26,13 @@
         <span :class="['status-badge', pipeline.status]">{{ pipeline.status }}</span>
       </div>
       <div class="info-row"><span>Repo</span><code>{{ project.repo_path }}</code></div>
-      <div class="info-row"><span>Stack</span><code>{{ project.stack }}</code></div>
+      <div class="info-row" v-if="project.stack"><span>Stack</span><code>{{ project.stack }}</code></div>
+      <div class="info-row" v-if="project.discovered_from"><span>Découvert dans</span><code>{{ project.discovered_from }}</code></div>
       <div class="info-row" v-for="(v, k) in project.stack_parameters" :key="k">
         <span class="param">{{ k }}</span><code>{{ formatValue(v) }}</code>
       </div>
       <div class="info-row" v-if="project.team"><span>Équipe</span><strong>{{ project.team }}</strong></div>
-      <div class="info-row" v-if="project.created_by"><span>Créé par</span><strong>{{ project.created_by }}</strong></div>
+      <div class="info-row" v-if="project.created_by && !project.discovered_from"><span>Créé par</span><strong>{{ project.created_by }}</strong></div>
     </section>
 
     <!-- Environnements : un déploiement par environnement, promotion de l'un à l'autre -->
@@ -150,8 +152,12 @@
     <section v-if="can('admin')">
       <h4>Zone dangereuse</h4>
       <button class="btn-ghost btn-danger block" :disabled="deleting" @click="deleteProject">
-        {{ deleting ? 'Suppression…' : '🗑 Supprimer le projet' }}
+        {{ deleting ? 'Suppression…' : project.discovered_from ? '➖ Retirer de Symphony' : '🗑 Supprimer le projet' }}
       </button>
+      <p class="muted small" v-if="project.discovered_from">
+        Service existant : son repo et ses images restent. Pour qu'il ne revienne pas au scan suivant,
+        retirer sa fiche ou exclure son repo de <code>catalogue.discovery</code>.
+      </p>
     </section>
   </aside>
 </template>
@@ -205,7 +211,7 @@ onUnmounted(() => clearTimeout(pollTimer))
 
 async function triggerPipeline() {
   try {
-    const { data } = await api.triggerPipeline(props.project.name, 'main')
+    const { data } = await api.triggerPipeline(props.project.name, props.project.branch || 'main')
     pipeline.value = { id: data.id, status: 'pending' }
     pollPipeline(data.id)
   } catch (e) {
@@ -226,7 +232,10 @@ function pollPipeline(id: string, attempts = 0) {
 
 async function deleteProject() {
   const p = props.project
-  if (!confirm(`Supprimer définitivement ${p.name} ?\n\nSes déploiements (conteneurs, Application Argo CD, manifests), le repo ${p.repo_path}, ses images et sa fiche catalogue seront supprimés.`)) return
+  const question = p.discovered_from
+    ? `Retirer ${p.name} de Symphony ?\n\nSes déploiements faits par Symphony seront supprimés. Le repo ${p.repo_path} et ses images restent.`
+    : `Supprimer définitivement ${p.name} ?\n\nSes déploiements (conteneurs, Application Argo CD, manifests), le repo ${p.repo_path}, ses images et sa fiche catalogue seront supprimés.`
+  if (!confirm(question)) return
   try {
     const { data } = await api.deleteProject(p.name)
     trackTask(data)

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"cmp"
 	"encoding/json"
 	"time"
 )
@@ -24,8 +25,13 @@ type Project struct {
 	// StackParameters : valeurs des paramètres de la stack, à la création
 	StackParameters map[string]any `json:"stack_parameters"`
 	Team            string         `json:"team"` // équipe propriétaire (groupe de l'annuaire)
-	CreatedBy       string         `json:"created_by"`
-	CreatedAt       time.Time      `json:"created_at"`
+	// Branch : branche par défaut du repo (fiche, manifests, pipelines)
+	Branch string `json:"branch"`
+	// DiscoveredFrom : source de la découverte (<scm>/<groupe>) ; vide : créé
+	// par Symphony
+	DiscoveredFrom string    `json:"discovered_from"`
+	CreatedBy      string    `json:"created_by"`
+	CreatedAt      time.Time `json:"created_at"`
 	// Deleting n'est pas en base : renseigné par l'API pendant une suppression en cours
 	Deleting bool `json:"deleting,omitempty"`
 }
@@ -35,13 +41,27 @@ func (db *DB) CreateProject(p *Project) error {
 		INSERT INTO projects
 			(name, description, language, type, port, namespace,
 			 scm_provider, ci_provider, reg_provider, rt_provider,
-			 repo_path, repo_url, registry_url, stack, stack_parameters, created_by, team)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+			 repo_path, repo_url, registry_url, stack, stack_parameters, created_by, team,
+			 branch, discovered_from)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
 		RETURNING id, created_at`,
 		p.Name, p.Description, p.Language, p.Type, p.Port, p.Namespace,
 		p.SCMProvider, p.CIProvider, p.RegProvider, p.RTProvider,
 		p.RepoPath, p.RepoURL, p.RegistryURL, p.Stack, jsonParams(p.StackParameters), p.CreatedBy, p.Team,
+		cmp.Or(p.Branch, "main"), p.DiscoveredFrom,
 	).Scan(&p.ID, &p.CreatedAt)
+}
+
+// UpdateDiscoveredProject reprend ce que la fiche d'un projet découvert a
+// changé (équipe, description, port, branche, providers de la source)
+func (db *DB) UpdateDiscoveredProject(p *Project) error {
+	_, err := db.Exec(`
+		UPDATE projects SET team=$2, description=$3, language=$4, type=$5, port=$6, branch=$7,
+		       repo_url=$8, ci_provider=$9, reg_provider=$10, updated_at=NOW()
+		WHERE name=$1 AND discovered_from <> ''`,
+		p.Name, p.Team, p.Description, p.Language, p.Type, p.Port, cmp.Or(p.Branch, "main"),
+		p.RepoURL, p.CIProvider, p.RegProvider)
+	return err
 }
 
 // jsonParams : les valeurs des paramètres en JSON ({} sans paramètre)
@@ -69,7 +89,8 @@ func (db *DB) ListProjects() ([]Project, error) {
 		       COALESCE(port,0), COALESCE(namespace,''),
 		       COALESCE(scm_provider,''), COALESCE(ci_provider,''), COALESCE(reg_provider,''), COALESCE(rt_provider,''),
 		       COALESCE(repo_path,''), COALESCE(repo_url,''), COALESCE(registry_url,''),
-		       COALESCE(stack,''), stack_parameters, COALESCE(created_by,''), team, created_at
+		       COALESCE(stack,''), stack_parameters, COALESCE(created_by,''), team, created_at,
+		       branch, discovered_from
 		FROM projects ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -82,7 +103,8 @@ func (db *DB) ListProjects() ([]Project, error) {
 		var params []byte
 		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Language, &p.Type, &p.Port,
 			&p.Namespace, &p.SCMProvider, &p.CIProvider, &p.RegProvider, &p.RTProvider,
-			&p.RepoPath, &p.RepoURL, &p.RegistryURL, &p.Stack, &params, &p.CreatedBy, &p.Team, &p.CreatedAt); err != nil {
+			&p.RepoPath, &p.RepoURL, &p.RegistryURL, &p.Stack, &params, &p.CreatedBy, &p.Team, &p.CreatedAt,
+			&p.Branch, &p.DiscoveredFrom); err != nil {
 			return nil, err
 		}
 		p.StackParameters = scanParams(params)
@@ -99,11 +121,13 @@ func (db *DB) GetProjectByName(name string) (*Project, error) {
 		       COALESCE(port,0), COALESCE(namespace,''),
 		       COALESCE(scm_provider,''), COALESCE(ci_provider,''), COALESCE(reg_provider,''), COALESCE(rt_provider,''),
 		       COALESCE(repo_path,''), COALESCE(repo_url,''), COALESCE(registry_url,''),
-		       COALESCE(stack,''), stack_parameters, COALESCE(created_by,''), team, created_at
+		       COALESCE(stack,''), stack_parameters, COALESCE(created_by,''), team, created_at,
+		       branch, discovered_from
 		FROM projects WHERE name=$1`, name).
 		Scan(&p.ID, &p.Name, &p.Description, &p.Language, &p.Type, &p.Port,
 			&p.Namespace, &p.SCMProvider, &p.CIProvider, &p.RegProvider, &p.RTProvider,
-			&p.RepoPath, &p.RepoURL, &p.RegistryURL, &p.Stack, &params, &p.CreatedBy, &p.Team, &p.CreatedAt)
+			&p.RepoPath, &p.RepoURL, &p.RegistryURL, &p.Stack, &params, &p.CreatedBy, &p.Team, &p.CreatedAt,
+			&p.Branch, &p.DiscoveredFrom)
 	if err != nil {
 		return nil, err
 	}

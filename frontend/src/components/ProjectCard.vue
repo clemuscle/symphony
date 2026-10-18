@@ -11,7 +11,8 @@
     <div class="svc-meta">
       <span v-if="owner(project)">👤 {{ owner(project) }}</span>
       <span>{{ langIcon(project.language) }} {{ project.language }}</span>
-      <span class="muted">{{ project.stack }}</span>
+      <span class="muted" v-if="project.stack">{{ project.stack }}</span>
+      <span class="discovered-badge" v-if="project.discovered_from" :title="'Service existant, découvert dans ' + project.discovered_from">🔎 découvert</span>
     </div>
 
     <div class="deploy-line" v-for="d in deployments" :key="d.provider + d.id">

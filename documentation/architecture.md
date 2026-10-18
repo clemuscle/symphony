@@ -66,14 +66,40 @@ dit ce qui en a été repris, adapté ou écarté.
 | `platform/symphony-config` | `symphony.yaml` (providers, stacks, authentification…) | toutes les 15 s, appliqué à chaud |
 | `platform/symphony-stacks` | `stacks/<nom>/` : `stack.yaml`, CI, `skeleton/` | toutes les 15 s |
 | `apps/<service>` : un repo par projet | le code du service, généré depuis sa stack, et sa fiche `catalog-info.yaml` | la fiche, toutes les 15 s |
+| `services/<service>` : un service existant | son code, sa CI et sa fiche, écrits sans Symphony (`catalogue.discovery`) | le groupe, toutes les 1 à 5 min ; la fiche, toutes les 15 s |
 | `platform/symphony-deployments` | `apps/<service>/` : manifests Kubernetes écrits par Symphony (runtime `argocd`) | par Argo CD |
 
-Deux groupes en démo : **platform**, tenu par l'équipe plateforme, et **apps**, ouvert aux
-développeurs (`providers.scm[].config.namespace` : groupe des repos créés). La fiche d'un
+Trois groupes en démo : **platform**, tenu par l'équipe plateforme, **apps**, ouvert aux
+développeurs (`providers.scm[].config.namespace` : groupe des repos créés), et
+**services**, les services d'avant Symphony qu'il découvre. La fiche d'un
 projet est dans **son** repo, pas dans la configuration de la plateforme : son équipe la
 modifie par un commit, à côté du code qu'elle décrit (le modèle de `catalog-info.yaml`
 chez Backstage). Le catalogue de Symphony, ce sont les stacks ; ses projets sont ce qui
-en est sorti.
+en est sorti, et les services existants qu'il a découverts.
+
+### Fiches Backstage et services existants
+
+La fiche est un **Component Backstage** (`backstage.io/v1alpha1`) : une entreprise qui a
+déjà ses fiches les garde. `gitops/fiche.go` la traduit dans le format interne
+(`catalogue.Service`, celui que lit le front) : ce que Backstage a (`spec.owner`,
+`lifecycle`, `type`, `dependsOn`, `metadata.links`, `tags`, `labels`) vient de ses champs ;
+les valeurs simples de Symphony d'annotations `symphony.io/…` (tier, langage, port, contact
+de l'équipe) ; les structures (environnements, actions, SLO, manifests, infra) de champs en
+plus dans `spec`, que le schéma de Backstage accepte. Un fichier peut décrire plusieurs
+entités : Symphony lit le Component du projet et ignore le reste (API, Resource…).
+L'ancien format (`symphony/v1`, `kind: Service`) reste lu jusqu'à la v1.0, signalé dans la
+page Administration ; Symphony écrit du Backstage pour les nouveaux projets.
+
+La **découverte** (`gitops.Discoverer`, section `catalogue.discovery`) scanne des groupes
+GitLab (sous-groupes compris) ou des organisations GitHub (`ListGroupRepos`, sans archives
+ni forks) : chaque repo qui a une fiche devient un projet (`projects.discovered_from` =
+`<scm>/<groupe>`), au nom de sa fiche, avec les providers CI et registry de sa source.
+Symphony n'écrit rien dans ces repos : pas de webhook (les pipelines sont sondées), et
+retirer le projet ne supprime que ses déploiements, jamais le repo ni les images. Un repo
+qui n'est plus trouvé (fiche retirée, exclu, archivé) rend son projet **orphelin** : signalé,
+pas retiré ; tant que sa source le donne encore, le retirer est refusé (409), le scan suivant
+le reprendrait. Un nom déjà pris est un conflit signalé, jamais une fusion ; un groupe
+illisible ne rend aucun projet orphelin.
 
 Aux stacks du repo de l'entreprise s'ajoute le **catalogue officiel** (`stacks/` du repo de
 Symphony), embarqué dans le binaire : versionné avec Symphony, lu sans réseau ni jeton, et
@@ -109,9 +135,9 @@ cluster ; on y utilise `argocd`.
 | `cmd/symphony` | Composition : bootstrap et source de config (`config.go`), secrets et résolution des références (`secrets.go`), construction des providers (`providers.go`), schéma des providers (`schema.go`), `symphony validate` (`validate.go`), assemblage (`main.go`) |
 | `internal/config` | Types de `symphony.yaml` et décodage (`${VAR}` remplacées par l'environnement) ; `Status`, l'état de la configuration en place pour la page Administration |
 | `internal/provider` | Interfaces, `Registry` (providers par id, remplaçable d'un bloc), références `secret://` (`secretref.go`) et implémentations : `scm/gitlab`, `scm/github`, `ci/gitlabci`, `ci/githubactions`, `registry/gitlabregistry`, `registry/ghcr`, `runtime/docker`, `runtime/argocd`, `secrets/env`, `secrets/vault`, `identity/oidc`, `identity/keycloak` |
-| `internal/gitops` | `Syncer` (fiche `catalog-info.yaml` de chaque projet) et `StackLoader` (stacks du repo et catalogue officiel : format dans `stack.go`, paramètres et JSON Schema dans `parameters.go`) |
+| `internal/gitops` | `Syncer` (fiche `catalog-info.yaml` de chaque projet, format dans `fiche.go`), `Discoverer` (services existants) et `StackLoader` (stacks du repo et catalogue officiel : format dans `stack.go`, paramètres et JSON Schema dans `parameters.go`) |
 | `stacks` | Catalogue officiel de stacks, embarqué (`go:embed`) |
-| `internal/catalogue` | Store en mémoire des fiches (`kind: Service`) |
+| `internal/catalogue` | Store en mémoire des fiches, dans le format interne (`catalogue.Service`) |
 | `internal/tasks` | Moteur de tâches : étapes enregistrées en base, attente de pipelines (webhook ou sondage), reprise au démarrage, diffusion des changements (`Hub`, pour le SSE) |
 | `internal/webhook` | Réception des événements de pipeline GitLab (`/webhooks/gitlab`, secret partagé) |
 | `internal/database` | PostgreSQL via `database/sql` : `projects`, `pipelines`, `deployments`, `tasks`, `audit_log` ; migrations embarquées |
@@ -398,9 +424,9 @@ que la politique : quel provider (`auth.identity`) et quels groupes donnent quel
 En démo, GitLab se connecte au même realm Keycloak (OmniAuth OpenID Connect, client
 `gitlab`) : un seul annuaire pour les deux outils. `up.sh` crée les comptes dans GitLab
 avec leur e-mail (liés à Keycloak à la première connexion) et leur donne leurs droits :
-alice Owner de `platform` et `apps`, bob Developer et carol Reporter de `apps`. GitLab CE
-ne synchronise pas les groupes de l'annuaire (fonction payante) : ces droits sont posés
-par le script, pas déduits des groupes Keycloak.
+alice Owner de `platform`, `apps` et `services`, bob Developer et carol Reporter de
+`apps` et `services`. GitLab CE ne synchronise pas les groupes de l'annuaire (fonction
+payante) : ces droits sont posés par le script, pas déduits des groupes Keycloak.
 
 ### Équipes et droits par projet
 
@@ -412,7 +438,10 @@ un admin, n'importe laquelle), enregistrée en base (`projects.team`) et reprise
 lancer une action d'un projet demandent d'être admin, ou developer **membre de son
 équipe** (`authorizeProject`) ; un projet sans équipe (antérieur à la v0.8) est réservé
 aux admins. La lecture reste ouverte à tous les viewers. La base fait foi pour les droits :
-changer l'`owner` de la fiche par un commit ne donne aucun droit.
+changer l'`owner` de la fiche d'un projet créé par Symphony ne donne aucun droit. Un projet
+**découvert**, lui, prend l'équipe de son `spec.owner` à chaque scan (sa fiche est la seule
+source) ; une équipe que l'annuaire ne connaît pas (ou un groupe de rôle) le réserve aux
+admins, et l'erreur se lit dans Administration.
 
 `POST /api/v1/pipelines/trigger` prend un nom de projet et relance sa pipeline, sur son
 repo et avec son CI, sans variables : une pipeline paramétrée passe par une action Day-2,
@@ -431,7 +460,9 @@ de création propose les équipes comme owner du projet ; la saisie reste libre.
 Une fiche de catalogue peut déclarer des actions (« Relancer la pipeline »…) : un appel
 webhook, ou une pipeline avec des entrées typées. Les entrées sont validées (bornes, options,
 requis) et **les clés non déclarées sont refusées**, pour qu'un appelant ne puisse pas
-injecter de variables CI arbitraires.
+injecter de variables CI arbitraires. Une action pipeline tourne sur le repo du projet
+connu de Symphony, jamais sur celui qu'écrit la fiche (`spec.repo`, affiché seulement) :
+un repo ne peut pas lancer les pipelines d'un autre avec le jeton de Symphony.
 
 ## Observabilité
 
@@ -490,6 +521,8 @@ implémentations n'en savent rien.
 | API Docker sur le socket, sans SDK | quelques appels HTTP suffisent, pas de dépendance lourde | SDK Docker |
 | Catalogue en mémoire, source dans Git | Git est la source de vérité, la base ne garde que l'état propre à Symphony | catalogue en base |
 | Fiche dans le repo du projet | elle évolue avec le code, par l'équipe qui le connaît, avec ses droits sur le repo ; plus de fiche sans repo ni pipeline derrière | dossier `services/` du repo de config (versions ≤ 0.5) |
+| Fiche au format Backstage, ajouts en annotations et champs de spec | une entreprise qui a Backstage garde ses fiches et ses outils ; aucun format propre à apprendre | format maison (`symphony/v1`, lu jusqu'à la v1.0) ; un fichier Symphony à côté de celui de Backstage |
+| Découverte déclarée dans la configuration, en lecture seule | Git reste la source (pas d'import cliqué à refaire) ; aucun droit d'écriture sur les repos découverts ; un projet orphelin est signalé, pas retiré (une erreur passagère ne fait rien disparaître) | import ponctuel dans l'interface ; webhook posé dans chaque repo scanné |
 | Backend-for-Frontend pour l'OIDC | le navigateur ne détient aucun jeton (pas de vol par XSS), le front n'a pas de bibliothèque OIDC ; recommandé par l'IETF pour les applications navigateur | jetons gérés par la SPA (oidc-client) |
 | Session dans un cookie signé, rôle recalculé à chaque requête | pas de stockage de sessions ; un changement de groupes → rôles dans la config s'applique sans reconnexion | sessions en base |
 | Secrets et identité en providers | Vault, OpenBao, un autre coffre ou un autre IdP s'ajoutent comme les autres outils ; la config désigne des secrets par référence, sans savoir où ils vivent | client Vault et Keycloak codés en dur |

@@ -1,24 +1,35 @@
-# Fiche catalogue du service, lue par Symphony toutes les 15 s.
+# Fiche catalogue du service (Component Backstage), lue par Symphony toutes les 15 s.
 # À tenir à jour par l'équipe : owner, tier, SLO, liens, dépendances, actions.
-apiVersion: symphony/v1
-kind: Service
+apiVersion: backstage.io/v1alpha1
+kind: Component
 metadata:
   name: auth-service
-  owner: team-identity
-  team:
-    name: Identité
-    slack: "#team-identity"
-    email: identity@demo.symphony
+  description: Authentification des utilisateurs et émission des jetons
   tags: [python, rest-api, auth]
-  tier: critical
-  lifecycle: production
   labels:
     stack: api-rest-python-k8s
+  annotations:
+    backstage.io/source-location: url:__REPO_URL__/
+    symphony.io/tier: critical
+    symphony.io/language: python
+    symphony.io/version: 1.4.0
+    symphony.io/team-name: Identité
+    symphony.io/team-slack: "#team-identity"
+    symphony.io/team-email: identity@demo.symphony
+  links:
+    - title: Repository
+      url: __REPO_URL__
+      icon: code
+    - title: Pipelines
+      url: __REPO_URL__/-/pipelines
+      icon: ci
 spec:
   type: api
-  language: python
-  version: 1.4.0
-  repo: __REPO_URL__
+  lifecycle: production
+  owner: team-identity
+  dependsOn:
+    - resource:postgres-identity
+    - resource:redis-sessions
   # k8s:début
   # Base PostgreSQL du service (écrite par la stack) : une par environnement,
   # appliquée par Argo CD avec lui ; l'appli lit son URI dans DATABASE_URL
@@ -27,18 +38,6 @@ spec:
     env:
       DATABASE_URL: { secret: db-app, key: uri }
   # k8s:fin
-  links:
-    - title: Repository
-      url: __REPO_URL__
-      icon: code
-    - title: Pipelines
-      url: __REPO_URL__/-/pipelines
-      icon: ci
-  dependencies:
-    - service: postgres-identity
-      type: database
-    - service: redis-sessions
-      type: cache
   slo:
     availability: "99.95%"
     latency_p99: 120ms

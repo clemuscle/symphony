@@ -34,6 +34,7 @@ func NewServer(
 	store *catalogue.Store,
 	db *database.DB,
 	syncer *gitops.Syncer,
+	discovery *gitops.Discoverer,
 	stacks *gitops.StackLoader,
 	security *auth.Holder,
 	runner *tasks.Runner,
@@ -89,7 +90,7 @@ func NewServer(
 		// Projets
 		r.With(viewer).Get("/projects", handlers.ListProjects(db, store, stacks, envs))
 		r.With(developer).Post("/projects", handlers.CreateProject(providers, db, stacks, envs, runner))
-		r.With(admin).Delete("/projects/{name}", handlers.DeleteProject(db, runner))
+		r.With(admin).Delete("/projects/{name}", handlers.DeleteProject(db, runner, discovery))
 		r.With(viewer).Get("/projects/{name}/image", handlers.GetProjectImage(providers, db))
 		r.With(developer).Post("/projects/{name}/promote", handlers.Promote(providers, db, stacks, envs, runner))
 
@@ -119,9 +120,9 @@ func NewServer(
 		// Admin
 		r.With(viewer).Get("/providers", handlers.ListProviders(providers))
 		r.With(viewer).Get("/identity/groups", handlers.ListIdentityGroups(providers, security))
-		r.With(admin).Post("/sync", handlers.ForceSync(syncer, stacks, db))
+		r.With(admin).Post("/sync", handlers.ForceSync(syncer, discovery, stacks, db))
 		r.With(admin).Get("/audit", handlers.ListAudit(db))
-		r.With(admin).Get("/admin/status", handlers.AdminStatus(providers, configStatus, stacks, syncer))
+		r.With(admin).Get("/admin/status", handlers.AdminStatus(providers, configStatus, stacks, syncer, discovery))
 		r.With(admin).Get("/admin/providers/check", handlers.CheckProviders(providers))
 	})
 

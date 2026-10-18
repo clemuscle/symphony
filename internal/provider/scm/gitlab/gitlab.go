@@ -276,6 +276,54 @@ func (p *Provider) ListRepos() ([]provider.Repo, error) {
 	return repos, nil
 }
 
+func (p *Provider) ListGroupRepos(group string) ([]provider.Repo, error) {
+	var repos []provider.Repo
+	for page := 1; ; page++ {
+		data, status, err := p.api("GET", fmt.Sprintf(
+			"/groups/%s/projects?include_subgroups=true&archived=false&per_page=100&page=%d&order_by=path&sort=asc",
+			url.PathEscape(strings.Trim(group, "/")), page), nil)
+		if err != nil {
+			return nil, err
+		}
+		if status == 404 {
+			return nil, fmt.Errorf("groupe gitlab %s : %w", group, provider.ErrNotFound)
+		}
+		if status != 200 {
+			return nil, fmt.Errorf("projets du groupe %s : status %d — %s", group, status, string(data))
+		}
+		var projects []struct {
+			ID                int     `json:"id"`
+			Name              string  `json:"name"`
+			PathWithNamespace string  `json:"path_with_namespace"`
+			HTTPURLToRepo     string  `json:"http_url_to_repo"`
+			WebURL            string  `json:"web_url"`
+			DefaultBranch     string  `json:"default_branch"`
+			ForkedFrom        any     `json:"forked_from_project"`
+			MarkedForDeletion *string `json:"marked_for_deletion_on"`
+		}
+		if err := json.Unmarshal(data, &projects); err != nil {
+			return nil, fmt.Errorf("projets du groupe %s : réponse illisible: %w", group, err)
+		}
+		for _, proj := range projects {
+			// Fork, repo vide, ou suppression programmée (GitLab la diffère)
+			if proj.ForkedFrom != nil || proj.DefaultBranch == "" || proj.MarkedForDeletion != nil {
+				continue
+			}
+			repos = append(repos, provider.Repo{
+				ID:            fmt.Sprintf("%d", proj.ID),
+				Name:          proj.Name,
+				Path:          proj.PathWithNamespace,
+				WebURL:        proj.WebURL,
+				HTTPCloneURL:  proj.HTTPURLToRepo,
+				DefaultBranch: proj.DefaultBranch,
+			})
+		}
+		if len(projects) < 100 {
+			return repos, nil
+		}
+	}
+}
+
 func (p *Provider) GetFileContent(repoPath, branch, filePath string) (string, error) {
 	encoded := url.PathEscape(repoPath)
 	fileEncoded := url.PathEscape(filePath)

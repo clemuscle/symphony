@@ -197,7 +197,8 @@ ok "Webhooks de GitLab vers Symphony autorisés"
 urlenc() { jq -rn --arg s "$1" '$s|@uri'; }
 
 # Groupes : platform pour les repos de la plateforme (équipe plateforme),
-# apps pour les projets créés par Symphony (ouverts aux développeurs)
+# apps pour les projets créés par Symphony (ouverts aux développeurs),
+# services pour ceux d'avant Symphony (découverts par leur fiche)
 group_id() { api "$GITLAB_URL/api/v4/groups/$1" | jq -r '.id // empty'; }
 ensure_group() {
   local path=$1 description=$2
@@ -212,6 +213,7 @@ ensure_group() {
 }
 ensure_group platform "Configuration de Symphony : stacks, repo de déploiement"
 ensure_group apps "Projets créés par Symphony"
+ensure_group services "Services existants, d'avant Symphony (découverts par leur fiche)"
 
 # Sans GITHUB_TOKEN, la démo reste locale : les blocs « github:début … github:fin »
 # de la configuration et les stacks GitHub ne sont pas poussés ; avec
@@ -257,8 +259,8 @@ seed_repo symphony-deployments
 
 # Comptes du realm Keycloak : créés ici avec leur e-mail, GitLab les lie à
 # Keycloak à la première connexion (bouton « Keycloak »). Droits : alice
-# (admin) tient la plateforme, bob (developer) travaille dans apps, carol
-# (viewer) y lit ; dave n'a accès à rien.
+# (admin) tient la plateforme, bob (developer) travaille dans apps et
+# services, carol (viewer) y lit ; dave n'a accès à rien.
 # Niveaux GitLab : 20 Reporter, 30 Developer, 40 Maintainer, 50 Owner
 ensure_member() {
   local group=$1 user_id=$2 level=$3
@@ -275,9 +277,9 @@ for u in alice:Alice_Admin bob:Bob_Developer carol:Carol_Viewer dave:Dave_SansRo
     [ -n "$id" ] || fail "création du compte GitLab $username impossible"
   fi
   case $username in
-    alice) ensure_member platform "$id" 50; ensure_member apps "$id" 50 ;;
-    bob)   ensure_member apps "$id" 30 ;;
-    carol) ensure_member apps "$id" 20 ;;
+    alice) ensure_member platform "$id" 50; ensure_member apps "$id" 50; ensure_member services "$id" 50 ;;
+    bob)   ensure_member apps "$id" 30; ensure_member services "$id" 30 ;;
+    carol) ensure_member apps "$id" 20; ensure_member services "$id" 20 ;;
   esac
 done
 ok "Comptes GitLab alice, bob, carol, dave (connexion par Keycloak) et leurs droits"

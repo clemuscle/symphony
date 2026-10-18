@@ -1,27 +1,21 @@
-# Fiche catalogue du service, lue par Symphony toutes les 15 s.
+# Fiche catalogue du service (Component Backstage), lue par Symphony toutes les 15 s.
 # À tenir à jour par l'équipe : owner, tier, SLO, liens, dépendances, actions.
-apiVersion: symphony/v1
-kind: Service
+apiVersion: backstage.io/v1alpha1
+kind: Component
 metadata:
   name: payment-api
-  owner: team-payments
-  team:
-    name: Paiements
-    slack: "#team-payments"
-    email: payments@demo.symphony
+  description: Paiements, remboursements et rapprochement bancaire
   tags: [go, rest-api, kubernetes, pci]
-  tier: critical
-  lifecycle: production
   labels:
     stack: api-rest-go-k8s
-spec:
-  type: api
-  language: go
-  version: 2.1.0
-  repo: __REPO_URL__
-  # Chart Helm du service (écrit par la stack) : déployé par Argo CD
-  kubernetes:
-    helm: deploy/chart
+  annotations:
+    backstage.io/source-location: url:__REPO_URL__/
+    symphony.io/tier: critical
+    symphony.io/language: go
+    symphony.io/version: 2.1.0
+    symphony.io/team-name: Paiements
+    symphony.io/team-slack: "#team-payments"
+    symphony.io/team-email: payments@demo.symphony
   links:
     - title: Repository
       url: __REPO_URL__
@@ -32,13 +26,17 @@ spec:
     - title: Application Argo CD
       url: __ARGOCD_URL__/applications/argocd/payment-api-production
       icon: web
-  dependencies:
-    - service: auth-service
-      type: api
-    - service: postgres-payments
-      type: database
-    - service: kafka-events
-      type: queue
+spec:
+  type: api
+  lifecycle: production
+  owner: team-payments
+  dependsOn:
+    - component:auth-service
+    - resource:postgres-payments
+    - resource:kafka-events
+  # Chart Helm du service (écrit par la stack) : déployé par Argo CD
+  kubernetes:
+    helm: deploy/chart
   # Variables par environnement ; les secrets sont des références, lues dans
   # Vault au déploiement (Docker) ou par External Secrets Operator (Kubernetes)
   environments:

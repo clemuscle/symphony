@@ -12,6 +12,116 @@
   },
   "/projects": [
     {
+      "id": 5,
+      "name": "invoice-service",
+      "description": "Facturation et avoirs, service d'avant Symphony",
+      "language": "go",
+      "type": "service",
+      "port": 8080,
+      "namespace": "",
+      "scm_provider": "gitlab-local",
+      "ci_provider": "gitlab-ci",
+      "registry_provider": "gitlab-registry",
+      "runtime_provider": "",
+      "repo_path": "services/invoice-service",
+      "repo_url": "http://localhost:8929/services/invoice-service.git",
+      "registry_url": "localhost:5050/services/invoice-service",
+      "stack": "",
+      "stack_parameters": {},
+      "team": "team-payments",
+      "branch": "main",
+      "discovered_from": "gitlab-local/services",
+      "created_by": "découverte",
+      "created_at": "2026-10-18T10:53:46.031518Z",
+      "service": {
+        "api_version": "backstage.io/v1alpha1",
+        "kind": "Component",
+        "metadata": {
+          "name": "invoice-service",
+          "description": "Facturation et avoirs, service d'avant Symphony",
+          "owner": "team-payments",
+          "team": {
+            "name": "Paiements",
+            "slack": "#team-payments",
+            "email": ""
+          },
+          "tags": [
+            "go",
+            "rest-api",
+            "billing"
+          ],
+          "tier": "standard",
+          "lifecycle": "production",
+          "annotations": {
+            "backstage.io/source-location": "url:http://localhost:8929/services/invoice-service/",
+            "gitlab.com/project-slug": "services/invoice-service",
+            "symphony.io/language": "go",
+            "symphony.io/port": "8080",
+            "symphony.io/team-name": "Paiements",
+            "symphony.io/team-slack": "#team-payments",
+            "symphony.io/tier": "standard",
+            "symphony.io/version": "3.2.0"
+          }
+        },
+        "spec": {
+          "type": "service",
+          "language": "go",
+          "version": "3.2.0",
+          "repo": "http://localhost:8929/services/invoice-service",
+          "registry": "",
+          "docs": "",
+          "links": [
+            {
+              "title": "Repository",
+              "url": "http://localhost:8929/services/invoice-service",
+              "icon": "code"
+            },
+            {
+              "title": "Pipelines",
+              "url": "http://localhost:8929/services/invoice-service/-/pipelines",
+              "icon": "ci"
+            }
+          ],
+          "actions": [
+            {
+              "name": "Relancer la pipeline",
+              "description": "Relance la pipeline CI sur main",
+              "ci_provider": "gitlab-ci",
+              "inputs": null
+            }
+          ],
+          "dependencies": [
+            {
+              "service": "payment-api",
+              "type": "component"
+            },
+            {
+              "service": "postgres-billing",
+              "type": "resource"
+            }
+          ],
+          "slo": {
+            "availability": "99.9%",
+            "latency_p99": "300ms",
+            "error_budget": ""
+          },
+          "environments": null
+        }
+      },
+      "environments": [
+        {
+          "name": "staging",
+          "runtime": "docker-local",
+          "protected": false
+        },
+        {
+          "name": "production",
+          "runtime": "argocd-k3s",
+          "protected": true
+        }
+      ]
+    },
+    {
       "id": 3,
       "name": "payment-api",
       "description": "Paiements, remboursements et rapprochement bancaire",
@@ -35,13 +145,16 @@
         "metrics_path": "/metrics"
       },
       "team": "team-payments",
+      "branch": "main",
+      "discovered_from": "",
       "created_by": "alice@demo.symphony",
-      "created_at": "2026-10-17T21:46:42.030015Z",
+      "created_at": "2026-10-18T10:47:37.300719Z",
       "service": {
-        "api_version": "symphony/v1",
-        "kind": "Service",
+        "api_version": "backstage.io/v1alpha1",
+        "kind": "Component",
         "metadata": {
           "name": "payment-api",
+          "description": "Paiements, remboursements et rapprochement bancaire",
           "owner": "team-payments",
           "team": {
             "name": "Paiements",
@@ -58,6 +171,15 @@
           "lifecycle": "production",
           "labels": {
             "stack": "api-rest-go-k8s"
+          },
+          "annotations": {
+            "backstage.io/source-location": "url:http://localhost:8929/apps/payment-api/",
+            "symphony.io/language": "go",
+            "symphony.io/team-email": "payments@demo.symphony",
+            "symphony.io/team-name": "Paiements",
+            "symphony.io/team-slack": "#team-payments",
+            "symphony.io/tier": "critical",
+            "symphony.io/version": "2.1.0"
           }
         },
         "spec": {
@@ -95,15 +217,15 @@
           "dependencies": [
             {
               "service": "auth-service",
-              "type": "api"
+              "type": "component"
             },
             {
               "service": "postgres-payments",
-              "type": "database"
+              "type": "resource"
             },
             {
               "service": "kafka-events",
-              "type": "queue"
+              "type": "resource"
             }
           ],
           "slo": {
@@ -173,13 +295,16 @@
         "python_version": "3.12"
       },
       "team": "team-identity",
+      "branch": "main",
+      "discovered_from": "",
       "created_by": "alice@demo.symphony",
-      "created_at": "2026-10-17T21:46:41.828313Z",
+      "created_at": "2026-10-18T10:47:36.767607Z",
       "service": {
-        "api_version": "symphony/v1",
-        "kind": "Service",
+        "api_version": "backstage.io/v1alpha1",
+        "kind": "Component",
         "metadata": {
           "name": "auth-service",
+          "description": "Authentification des utilisateurs et émission des jetons",
           "owner": "team-identity",
           "team": {
             "name": "Identité",
@@ -195,6 +320,15 @@
           "lifecycle": "production",
           "labels": {
             "stack": "api-rest-python-k8s"
+          },
+          "annotations": {
+            "backstage.io/source-location": "url:http://localhost:8929/apps/auth-service/",
+            "symphony.io/language": "python",
+            "symphony.io/team-email": "identity@demo.symphony",
+            "symphony.io/team-name": "Identité",
+            "symphony.io/team-slack": "#team-identity",
+            "symphony.io/tier": "critical",
+            "symphony.io/version": "1.4.0"
           }
         },
         "spec": {
@@ -227,11 +361,11 @@
           "dependencies": [
             {
               "service": "postgres-identity",
-              "type": "database"
+              "type": "resource"
             },
             {
               "service": "redis-sessions",
-              "type": "cache"
+              "type": "resource"
             }
           ],
           "slo": {
@@ -285,13 +419,16 @@
         "node_version": "20"
       },
       "team": "team-product",
+      "branch": "main",
+      "discovered_from": "",
       "created_by": "alice@demo.symphony",
-      "created_at": "2026-10-17T21:46:41.10663Z",
+      "created_at": "2026-10-18T10:47:36.516787Z",
       "service": {
-        "api_version": "symphony/v1",
-        "kind": "Service",
+        "api_version": "backstage.io/v1alpha1",
+        "kind": "Component",
         "metadata": {
           "name": "notification-service",
+          "description": "Envoi des e-mails et des notifications push",
           "owner": "team-product",
           "team": {
             "name": "Produit",
@@ -307,6 +444,15 @@
           "lifecycle": "staging",
           "labels": {
             "stack": "api-rest-node"
+          },
+          "annotations": {
+            "backstage.io/source-location": "url:http://localhost:8929/apps/notification-service/",
+            "symphony.io/language": "node",
+            "symphony.io/team-email": "product@demo.symphony",
+            "symphony.io/team-name": "Produit",
+            "symphony.io/team-slack": "#team-product",
+            "symphony.io/tier": "standard",
+            "symphony.io/version": "0.9.0"
           }
         },
         "spec": {
@@ -344,11 +490,11 @@
           "dependencies": [
             {
               "service": "auth-service",
-              "type": "api"
+              "type": "component"
             },
             {
               "service": "rabbitmq",
-              "type": "queue"
+              "type": "resource"
             }
           ],
           "slo": {
@@ -375,36 +521,15 @@
   ],
   "/deployments": [
     {
-      "id": "auth-service-production",
-      "name": "auth-service-production",
-      "project": "auth-service",
-      "environment": "production",
-      "image": "localhost:5050/apps/auth-service:25126b6e",
-      "status": "running",
-      "url": "http://auth-service-production.localhost:8081",
-      "port": 8081,
-      "created_at": "2026-10-17T21:52:38Z",
-      "provider": "argocd-k3s",
-      "sync": "Synced",
-      "health": "Healthy",
-      "infra": [
-        {
-          "kind": "Cluster",
-          "name": "auth-service-production-db",
-          "health": "Healthy"
-        }
-      ]
-    },
-    {
       "id": "auth-service-staging",
       "name": "auth-service-staging",
       "project": "auth-service",
       "environment": "staging",
-      "image": "localhost:5050/apps/auth-service:25126b6e",
+      "image": "localhost:5050/apps/auth-service:64752cd9",
       "status": "running",
       "url": "http://auth-service-staging.localhost:8081",
       "port": 8081,
-      "created_at": "2026-10-17T21:48:50Z",
+      "created_at": "2026-10-18T10:49:32Z",
       "provider": "argocd-k3s",
       "sync": "Synced",
       "health": "Healthy",
@@ -421,11 +546,11 @@
       "name": "notification-service-production",
       "project": "notification-service",
       "environment": "production",
-      "image": "localhost:5050/apps/notification-service:a754058b",
+      "image": "localhost:5050/apps/notification-service:0c90da33",
       "status": "running",
       "url": "http://notification-service-production.localhost:8081",
       "port": 8081,
-      "created_at": "2026-10-17T21:49:46Z",
+      "created_at": "2026-10-18T10:51:15Z",
       "provider": "argocd-k3s",
       "sync": "Synced",
       "health": "Healthy"
@@ -435,11 +560,11 @@
       "name": "payment-api-production",
       "project": "payment-api",
       "environment": "production",
-      "image": "localhost:5050/apps/payment-api:cd01b76f",
+      "image": "localhost:5050/apps/payment-api:990fafd8",
       "status": "running",
       "url": "http://payment-api-production.localhost:8081",
       "port": 8081,
-      "created_at": "2026-10-17T21:49:41Z",
+      "created_at": "2026-10-18T10:51:11Z",
       "provider": "argocd-k3s",
       "sync": "Synced",
       "health": "Healthy"
@@ -449,25 +574,37 @@
       "name": "payment-api-staging",
       "project": "payment-api",
       "environment": "staging",
-      "image": "localhost:5050/apps/payment-api:cd01b76f",
+      "image": "localhost:5050/apps/payment-api:990fafd8",
       "status": "running",
       "url": "http://payment-api-staging.localhost:8081",
       "port": 8081,
-      "created_at": "2026-10-17T21:48:50Z",
+      "created_at": "2026-10-18T10:49:33Z",
       "provider": "argocd-k3s",
       "sync": "Synced",
       "health": "Healthy"
     },
     {
-      "id": "e844791f5919",
+      "id": "a73fbf0fdf9c",
+      "name": "invoice-service-staging",
+      "project": "invoice-service",
+      "environment": "staging",
+      "image": "localhost:5050/services/invoice-service:faad71dc",
+      "status": "running",
+      "url": "http://localhost:32770",
+      "port": 32770,
+      "created_at": "2026-10-18T11:05:39Z",
+      "provider": "docker-local"
+    },
+    {
+      "id": "e9dabf52ea28",
       "name": "notification-service-staging",
       "project": "notification-service",
       "environment": "staging",
-      "image": "localhost:5050/apps/notification-service:a754058b",
+      "image": "localhost:5050/apps/notification-service:0c90da33",
       "status": "running",
-      "url": "http://localhost:32777",
-      "port": 32777,
-      "created_at": "2026-10-17T21:48:48Z",
+      "url": "http://localhost:32768",
+      "port": 32768,
+      "created_at": "2026-10-18T10:49:32Z",
       "provider": "docker-local"
     }
   ],
@@ -1306,9 +1443,42 @@
   ],
   "/tasks": [
     {
-      "id": 14,
+      "id": 12,
+      "kind": "deploy",
+      "resource": "invoice-service",
+      "status": "SUCCESS",
+      "steps": [
+        "Déploiement",
+        "Démarrage du service"
+      ],
+      "step": 2,
+      "detail": "",
+      "result": {
+        "target": {
+          "environment": "staging"
+        },
+        "deployment": {
+          "id": "a73fbf0fdf9c",
+          "url": "http://localhost:32770",
+          "name": "invoice-service-staging",
+          "port": 32770,
+          "image": "localhost:5050/services/invoice-service:faad71dc",
+          "status": "running",
+          "project": "invoice-service",
+          "provider": "docker-local",
+          "created_at": "2026-10-18T11:05:39.646631066Z",
+          "environment": "staging"
+        }
+      },
+      "created_by": "alice@demo.symphony",
+      "created_at": "2026-10-18T11:05:39.510423Z",
+      "updated_at": "2026-10-18T11:05:45.920055Z",
+      "finished_at": "2026-10-18T11:05:45.919791Z"
+    },
+    {
+      "id": 11,
       "kind": "delete_project",
-      "resource": "symphony-db-e2e",
+      "resource": "invoice-service",
       "status": "SUCCESS",
       "steps": [
         "Déploiements",
@@ -1320,212 +1490,67 @@
       "detail": "",
       "result": {},
       "created_by": "alice@demo.symphony",
-      "created_at": "2026-10-17T22:00:35.644179Z",
-      "updated_at": "2026-10-17T22:05:05.328718Z",
-      "finished_at": "2026-10-17T22:05:05.328342Z"
-    },
-    {
-      "id": 13,
-      "kind": "deploy",
-      "resource": "symphony-db-e2e",
-      "status": "SUCCESS",
-      "steps": [
-        "Déploiement",
-        "Démarrage du service"
-      ],
-      "step": 2,
-      "detail": "",
-      "result": {
-        "target": {
-          "environment": "staging"
-        },
-        "deployment": {
-          "id": "symphony-db-e2e-staging",
-          "url": "http://symphony-db-e2e-staging.localhost:8081",
-          "name": "symphony-db-e2e-staging",
-          "port": 8081,
-          "sync": "Synced",
-          "image": "localhost:5050/apps/symphony-db-e2e:b5eb2ad1",
-          "infra": [
-            {
-              "kind": "Cluster",
-              "name": "symphony-db-e2e-staging-db",
-              "health": "Healthy"
-            }
-          ],
-          "health": "Healthy",
-          "status": "running",
-          "project": "symphony-db-e2e",
-          "provider": "argocd-k3s",
-          "created_at": "2026-10-17T21:59:28Z",
-          "environment": "staging"
-        }
-      },
-      "created_by": "bob@demo.symphony",
-      "created_at": "2026-10-17T21:59:27.018562Z",
-      "updated_at": "2026-10-17T21:59:51.142486Z",
-      "finished_at": "2026-10-17T21:59:51.142148Z"
-    },
-    {
-      "id": 12,
-      "kind": "deploy",
-      "resource": "auth-service",
-      "status": "SUCCESS",
-      "steps": [
-        "Déploiement",
-        "Démarrage du service"
-      ],
-      "step": 2,
-      "detail": "",
-      "result": {
-        "target": {
-          "environment": "production",
-          "promoted_from": "staging"
-        },
-        "deployment": {
-          "id": "auth-service-production",
-          "url": "http://auth-service-production.localhost:8081",
-          "name": "auth-service-production",
-          "port": 8081,
-          "sync": "Synced",
-          "image": "localhost:5050/apps/auth-service:25126b6e",
-          "infra": [
-            {
-              "kind": "Cluster",
-              "name": "auth-service-production-db",
-              "health": "Healthy"
-            }
-          ],
-          "health": "Healthy",
-          "status": "running",
-          "project": "auth-service",
-          "provider": "argocd-k3s",
-          "created_at": "2026-10-17T21:52:38Z",
-          "environment": "production"
-        }
-      },
-      "created_by": "alice@demo.symphony",
-      "created_at": "2026-10-17T21:59:08.640488Z",
-      "updated_at": "2026-10-17T21:59:14.777084Z",
-      "finished_at": "2026-10-17T21:59:14.776782Z"
-    },
-    {
-      "id": 11,
-      "kind": "deploy",
-      "resource": "auth-service",
-      "status": "SUCCESS",
-      "steps": [
-        "Déploiement",
-        "Démarrage du service"
-      ],
-      "step": 2,
-      "detail": "",
-      "result": {
-        "target": {
-          "environment": "staging"
-        },
-        "deployment": {
-          "id": "auth-service-staging",
-          "url": "http://auth-service-staging.localhost:8081",
-          "name": "auth-service-staging",
-          "port": 8081,
-          "sync": "Synced",
-          "image": "localhost:5050/apps/auth-service:25126b6e",
-          "infra": [
-            {
-              "kind": "Cluster",
-              "name": "auth-service-staging-db",
-              "health": "Healthy"
-            }
-          ],
-          "health": "Healthy",
-          "status": "running",
-          "project": "auth-service",
-          "provider": "argocd-k3s",
-          "created_at": "2026-10-17T21:48:50Z",
-          "environment": "staging"
-        }
-      },
-      "created_by": "alice@demo.symphony",
-      "created_at": "2026-10-17T21:59:03.336407Z",
-      "updated_at": "2026-10-17T21:59:05.40785Z",
-      "finished_at": "2026-10-17T21:59:05.407588Z"
+      "created_at": "2026-10-18T10:53:10.590509Z",
+      "updated_at": "2026-10-18T10:53:11.040067Z",
+      "finished_at": "2026-10-18T10:53:11.039853Z"
     },
     {
       "id": 10,
+      "kind": "action_pipeline",
+      "resource": "invoice-service",
+      "status": "SUCCESS",
+      "steps": [
+        "Pipeline"
+      ],
+      "step": 1,
+      "detail": "",
+      "result": {
+        "pipeline": {
+          "id": "8",
+          "ref": "main",
+          "status": "created",
+          "web_url": "http://localhost:8929/services/invoice-service/-/pipelines/8",
+          "created_at": "2026-10-18T10:51:57.955776109Z",
+          "finished_at": null
+        }
+      },
+      "created_by": "bob@demo.symphony",
+      "created_at": "2026-10-18T10:51:57.504406Z",
+      "updated_at": "2026-10-18T10:52:30.858901Z",
+      "finished_at": "2026-10-18T10:52:30.858658Z"
+    },
+    {
+      "id": 9,
       "kind": "deploy",
-      "resource": "auth-service",
-      "status": "FAILED",
+      "resource": "invoice-service",
+      "status": "SUCCESS",
       "steps": [
         "Déploiement",
         "Démarrage du service"
       ],
-      "step": 1,
-      "detail": "deploying · Argo CD : Synced / Progressing",
-      "result": {
-        "target": {
-          "environment": "production",
-          "promoted_from": "staging"
-        },
-        "deployment": {
-          "id": "auth-service-production",
-          "url": "http://auth-service-production.localhost:8081",
-          "name": "auth-service-production",
-          "port": 8081,
-          "sync": "OutOfSync",
-          "image": "",
-          "infra": [
-            {
-              "kind": "Cluster",
-              "name": "auth-service-production-db",
-              "health": "Unknown"
-            }
-          ],
-          "health": "Missing",
-          "status": "deploying",
-          "project": "auth-service",
-          "provider": "argocd-k3s",
-          "created_at": "2026-10-17T21:52:38Z",
-          "environment": "production"
-        }
-      },
-      "error": "service toujours deploying après 5m0s",
-      "created_by": "alice@demo.symphony",
-      "created_at": "2026-10-17T21:52:36.52316Z",
-      "updated_at": "2026-10-17T21:57:40.090201Z",
-      "finished_at": "2026-10-17T21:57:40.089779Z"
-    },
-    {
-      "id": 9,
-      "kind": "create_project",
-      "resource": "symphony-db-e2e",
-      "status": "SUCCESS",
-      "steps": [
-        "Repo et squelette",
-        "Projet et webhook",
-        "Première pipeline (image)"
-      ],
-      "step": 3,
+      "step": 2,
       "detail": "",
       "result": {
-        "repo": {
-          "id": "7",
-          "name": "symphony-db-e2e",
-          "path": "apps/symphony-db-e2e",
-          "web_url": "http://localhost:8929/apps/symphony-db-e2e",
-          "ssh_clone_url": "ssh://git@localhost:12224/apps/symphony-db-e2e.git",
-          "default_branch": "main",
-          "http_clone_url": "http://localhost:8929/apps/symphony-db-e2e.git"
+        "target": {
+          "environment": "staging"
         },
-        "webhook": "ok",
-        "pushed_at": "2026-10-17T21:52:37.578439035Z",
-        "registry_url": "localhost:5050/apps/symphony-db-e2e",
-        "pipelines_url": "http://localhost:8929/apps/symphony-db-e2e/-/pipelines"
+        "deployment": {
+          "id": "1fe4a5ad2f30",
+          "url": "http://localhost:32769",
+          "name": "invoice-service-staging",
+          "port": 32769,
+          "image": "localhost:5050/services/invoice-service:faad71dc",
+          "status": "running",
+          "project": "invoice-service",
+          "provider": "docker-local",
+          "created_at": "2026-10-18T10:51:25.826226102Z",
+          "environment": "staging"
+        }
       },
-      "created_by": "bob@demo.symphony",
-      "created_at": "2026-10-17T21:52:36.433854Z",
-      "updated_at": "2026-10-17T21:53:12.938504Z",
-      "finished_at": "2026-10-17T21:53:12.93822Z"
+      "created_by": "alice@demo.symphony",
+      "created_at": "2026-10-18T10:51:25.697322Z",
+      "updated_at": "2026-10-18T10:51:32.248056Z",
+      "finished_at": "2026-10-18T10:51:32.247833Z"
     },
     {
       "id": 8,
@@ -1549,19 +1574,19 @@
           "name": "notification-service-production",
           "port": 8081,
           "sync": "Synced",
-          "image": "localhost:5050/apps/notification-service:a754058b",
+          "image": "localhost:5050/apps/notification-service:0c90da33",
           "health": "Healthy",
           "status": "running",
           "project": "notification-service",
           "provider": "argocd-k3s",
-          "created_at": "2026-10-17T21:49:46Z",
+          "created_at": "2026-10-18T10:51:15Z",
           "environment": "production"
         }
       },
       "created_by": "alice@demo.symphony",
-      "created_at": "2026-10-17T21:49:45.607589Z",
-      "updated_at": "2026-10-17T21:49:53.083447Z",
-      "finished_at": "2026-10-17T21:49:53.083205Z"
+      "created_at": "2026-10-18T10:51:14.844587Z",
+      "updated_at": "2026-10-18T10:51:22.064236Z",
+      "finished_at": "2026-10-18T10:51:22.064Z"
     },
     {
       "id": 7,
@@ -1585,19 +1610,19 @@
           "name": "payment-api-production",
           "port": 8081,
           "sync": "Synced",
-          "image": "localhost:5050/apps/payment-api:cd01b76f",
+          "image": "localhost:5050/apps/payment-api:990fafd8",
           "health": "Healthy",
           "status": "running",
           "project": "payment-api",
           "provider": "argocd-k3s",
-          "created_at": "2026-10-17T21:49:41Z",
+          "created_at": "2026-10-18T10:51:11Z",
           "environment": "production"
         }
       },
       "created_by": "alice@demo.symphony",
-      "created_at": "2026-10-17T21:49:40.198466Z",
-      "updated_at": "2026-10-17T21:49:44.061777Z",
-      "finished_at": "2026-10-17T21:49:44.061518Z"
+      "created_at": "2026-10-18T10:51:09.490147Z",
+      "updated_at": "2026-10-18T10:51:13.220865Z",
+      "finished_at": "2026-10-18T10:51:13.220616Z"
     },
     {
       "id": 6,
@@ -1615,22 +1640,22 @@
           "environment": "staging"
         },
         "deployment": {
-          "id": "e844791f5919",
-          "url": "http://localhost:32777",
+          "id": "e9dabf52ea28",
+          "url": "http://localhost:32768",
           "name": "notification-service-staging",
-          "port": 32777,
-          "image": "localhost:5050/apps/notification-service:a754058b",
+          "port": 32768,
+          "image": "localhost:5050/apps/notification-service:0c90da33",
           "status": "running",
           "project": "notification-service",
           "provider": "docker-local",
-          "created_at": "2026-10-17T21:48:48.73806149Z",
+          "created_at": "2026-10-18T10:49:32.399550319Z",
           "environment": "staging"
         }
       },
       "created_by": "alice@demo.symphony",
-      "created_at": "2026-10-17T21:48:48.39704Z",
-      "updated_at": "2026-10-17T21:48:55.156183Z",
-      "finished_at": "2026-10-17T21:48:55.155818Z"
+      "created_at": "2026-10-18T10:49:32.257748Z",
+      "updated_at": "2026-10-18T10:49:38.656209Z",
+      "finished_at": "2026-10-18T10:49:38.655949Z"
     },
     {
       "id": 5,
@@ -1653,19 +1678,19 @@
           "name": "payment-api-staging",
           "port": 8081,
           "sync": "Synced",
-          "image": "localhost:5050/apps/payment-api:cd01b76f",
+          "image": "localhost:5050/apps/payment-api:990fafd8",
           "health": "Healthy",
           "status": "running",
           "project": "payment-api",
           "provider": "argocd-k3s",
-          "created_at": "2026-10-17T21:48:50Z",
+          "created_at": "2026-10-18T10:49:33Z",
           "environment": "staging"
         }
       },
       "created_by": "alice@demo.symphony",
-      "created_at": "2026-10-17T21:48:47.819373Z",
-      "updated_at": "2026-10-17T21:48:56.961506Z",
-      "finished_at": "2026-10-17T21:48:56.96123Z"
+      "created_at": "2026-10-18T10:49:31.857038Z",
+      "updated_at": "2026-10-18T10:49:46.999287Z",
+      "finished_at": "2026-10-18T10:49:46.999051Z"
     },
     {
       "id": 4,
@@ -1688,7 +1713,7 @@
           "name": "auth-service-staging",
           "port": 8081,
           "sync": "Synced",
-          "image": "ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1",
+          "image": "localhost:5050/apps/auth-service:64752cd9",
           "infra": [
             {
               "kind": "Cluster",
@@ -1700,14 +1725,14 @@
           "status": "running",
           "project": "auth-service",
           "provider": "argocd-k3s",
-          "created_at": "2026-10-17T21:48:50Z",
+          "created_at": "2026-10-18T10:49:32Z",
           "environment": "staging"
         }
       },
       "created_by": "alice@demo.symphony",
-      "created_at": "2026-10-17T21:48:47.358063Z",
-      "updated_at": "2026-10-17T21:49:35.183817Z",
-      "finished_at": "2026-10-17T21:49:35.183543Z"
+      "created_at": "2026-10-18T10:49:31.53094Z",
+      "updated_at": "2026-10-18T10:51:07.428458Z",
+      "finished_at": "2026-10-18T10:51:07.428216Z"
     },
     {
       "id": 3,
@@ -1723,7 +1748,7 @@
       "detail": "",
       "result": {
         "repo": {
-          "id": "4",
+          "id": "5",
           "name": "notification-service",
           "path": "apps/notification-service",
           "web_url": "http://localhost:8929/apps/notification-service",
@@ -1732,14 +1757,14 @@
           "http_clone_url": "http://localhost:8929/apps/notification-service.git"
         },
         "webhook": "ok",
-        "pushed_at": "2026-10-17T21:46:40.356956288Z",
+        "pushed_at": "2026-10-18T10:47:35.88824184Z",
         "registry_url": "localhost:5050/apps/notification-service",
         "pipelines_url": "http://localhost:8929/apps/notification-service/-/pipelines"
       },
       "created_by": "alice@demo.symphony",
-      "created_at": "2026-10-17T21:46:39.560249Z",
-      "updated_at": "2026-10-17T21:47:38.930323Z",
-      "finished_at": "2026-10-17T21:47:38.929909Z"
+      "created_at": "2026-10-18T10:47:35.204331Z",
+      "updated_at": "2026-10-18T10:48:36.554329Z",
+      "finished_at": "2026-10-18T10:48:36.55411Z"
     },
     {
       "id": 2,
@@ -1755,7 +1780,7 @@
       "detail": "",
       "result": {
         "repo": {
-          "id": "6",
+          "id": "7",
           "name": "payment-api",
           "path": "apps/payment-api",
           "web_url": "http://localhost:8929/apps/payment-api",
@@ -1764,14 +1789,14 @@
           "http_clone_url": "http://localhost:8929/apps/payment-api.git"
         },
         "webhook": "ok",
-        "pushed_at": "2026-10-17T21:46:41.271195167Z",
+        "pushed_at": "2026-10-18T10:47:36.63854036Z",
         "registry_url": "localhost:5050/apps/payment-api",
         "pipelines_url": "http://localhost:8929/apps/payment-api/-/pipelines"
       },
       "created_by": "alice@demo.symphony",
-      "created_at": "2026-10-17T21:46:39.450959Z",
-      "updated_at": "2026-10-17T21:48:37.690446Z",
-      "finished_at": "2026-10-17T21:48:37.690155Z"
+      "created_at": "2026-10-18T10:47:35.088287Z",
+      "updated_at": "2026-10-18T10:49:25.712155Z",
+      "finished_at": "2026-10-18T10:49:25.711903Z"
     },
     {
       "id": 1,
@@ -1787,7 +1812,7 @@
       "detail": "",
       "result": {
         "repo": {
-          "id": "5",
+          "id": "6",
           "name": "auth-service",
           "path": "apps/auth-service",
           "web_url": "http://localhost:8929/apps/auth-service",
@@ -1796,14 +1821,14 @@
           "http_clone_url": "http://localhost:8929/apps/auth-service.git"
         },
         "webhook": "ok",
-        "pushed_at": "2026-10-17T21:46:41.135984746Z",
+        "pushed_at": "2026-10-18T10:47:36.210860591Z",
         "registry_url": "localhost:5050/apps/auth-service",
         "pipelines_url": "http://localhost:8929/apps/auth-service/-/pipelines"
       },
       "created_by": "alice@demo.symphony",
-      "created_at": "2026-10-17T21:46:39.330241Z",
-      "updated_at": "2026-10-17T21:48:02.392378Z",
-      "finished_at": "2026-10-17T21:48:02.392052Z"
+      "created_at": "2026-10-18T10:47:34.975714Z",
+      "updated_at": "2026-10-18T10:49:13.993001Z",
+      "finished_at": "2026-10-18T10:49:13.992716Z"
     }
   ],
   "/identity/groups": {
@@ -1855,6 +1880,16 @@
     ]
   },
   "images": {
+    "invoice-service": {
+      "image": "localhost:5050/services/invoice-service",
+      "port": 8080,
+      "registry_provider": "gitlab-registry",
+      "runtime_provider": "",
+      "tags": [
+        "latest",
+        "faad71dc"
+      ]
+    },
     "payment-api": {
       "image": "localhost:5050/apps/payment-api",
       "port": 8080,
@@ -1862,7 +1897,7 @@
       "runtime_provider": "argocd-k3s",
       "tags": [
         "latest",
-        "cd01b76f"
+        "990fafd8"
       ]
     },
     "auth-service": {
@@ -1872,7 +1907,7 @@
       "runtime_provider": "argocd-k3s",
       "tags": [
         "latest",
-        "25126b6e"
+        "64752cd9"
       ]
     },
     "notification-service": {
@@ -1882,7 +1917,7 @@
       "runtime_provider": "docker-local",
       "tags": [
         "latest",
-        "a754058b"
+        "0c90da33"
       ]
     }
   }

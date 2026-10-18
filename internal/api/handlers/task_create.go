@@ -182,6 +182,7 @@ func (d TaskDeps) registerProject(_ context.Context, x *tasks.Exec) error {
 			StackParameters: p.Parameters,
 			Team:            p.Owner,
 			CreatedBy:       x.Task().CreatedBy,
+			Branch:          repo.DefaultBranch,
 		}
 		if err := d.DB.CreateProject(proj); err != nil {
 			return fmt.Errorf("enregistrement du projet: %w", err)

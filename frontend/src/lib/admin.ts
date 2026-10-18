@@ -56,6 +56,14 @@ export function problems(s: AdminStatus, checks: ProviderCheck[] = []): string[]
   const fiches = s.catalogue.errors.length
   if (fiches) out.push(`${fiches} fiche${fiches > 1 ? 's' : ''} catalogue en erreur`)
   if (s.catalogue.error) out.push('Catalogue : liste des projets illisible')
+  const legacy = s.catalogue.legacy?.length ?? 0
+  if (legacy) out.push(`${legacy} fiche${legacy > 1 ? 's' : ''} à l'ancien format`)
+  const unreadable = s.discovery.sources.filter(src => src.error).length
+  if (unreadable) out.push(`Découverte : ${unreadable} groupe${unreadable > 1 ? 's' : ''} illisible${unreadable > 1 ? 's' : ''}`)
+  const found = s.discovery.errors.length
+  if (found) out.push(`Découverte : ${found} repo${found > 1 ? 's' : ''} en erreur`)
+  const orphans = s.discovery.orphans.length
+  if (orphans) out.push(`Découverte : ${orphans} projet${orphans > 1 ? 's' : ''} que sa source ne donne plus`)
   const warnings = (s.config.warnings || []).length + (s.stacks.warnings || []).length
   if (warnings) out.push(`${warnings} point${warnings > 1 ? 's' : ''} à corriger (ancien format…)`)
   return out

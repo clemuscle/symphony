@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"time"
@@ -19,6 +20,7 @@ type actionParams struct {
 	WebhookURL string            `json:"webhook_url,omitempty"`
 	CIProvider string            `json:"ci_provider,omitempty"`
 	Repo       string            `json:"repo,omitempty"`
+	Ref        string            `json:"ref,omitempty"` // branche du repo ; vide : main
 	Vars       map[string]string `json:"vars,omitempty"`
 }
 
@@ -54,7 +56,7 @@ func (d TaskDeps) runActionPipeline(_ context.Context, x *tasks.Exec) error {
 	var pipeline provider.Pipeline
 	if !x.Get("pipeline", &pipeline) {
 		x.Progress("lancement sur %s", p.Repo)
-		started, err := ci.TriggerPipeline(p.Repo, "main", p.Vars)
+		started, err := ci.TriggerPipeline(p.Repo, cmp.Or(p.Ref, "main"), p.Vars)
 		if err != nil {
 			return fmt.Errorf("pipeline: %w", err)
 		}

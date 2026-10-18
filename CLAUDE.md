@@ -60,7 +60,10 @@ SYMPHONY_TEST_K8S=1 go test -run TestCNPGOnCluster ./internal/provider/runtime/a
   en Backend-for-Frontend, rôles, CSRF), `internal/gitops` (`Syncer` des fiches
   `catalog-info.yaml`, `StackLoader` des stacks : repo du client et catalogue officiel,
   `stack.go` le format, `parameters.go` les paramètres et leur JSON Schema), `internal/webhook`,
-  `internal/metrics`, `internal/database` (migrations embarquées).
+  `internal/metrics`, `internal/database` (migrations embarquées). Fiche `catalog-info.yaml`
+  = Component Backstage (`gitops/fiche.go` ↔ format interne `catalogue.Service` lu par le
+  front ; ancien `symphony/v1` lu jusqu'à la v1.0) ; `gitops/discovery.go` (`Discoverer`,
+  `catalogue.discovery`) fait des projets des repos existants qui ont une fiche.
 - `frontend/src/visit/` : mode visite (GitHub Pages, `npm run build:visit`) : l'API servie
   par `fixtures.json`, capturé sur une démo (`demo/visit/capture-fixtures.sh`), lecture
   seule. À recapturer quand l'API change.
@@ -68,10 +71,12 @@ SYMPHONY_TEST_K8S=1 go test -run TestCNPGOnCluster ./internal/provider/runtime/a
   dossier, sans provider désigné, une CI par forge (`ci_templates`). Fichiers du
   squelette en `.tmpl` (créés sans ce suffixe) pour que le module Go ne les compile pas.
 - `documentation/reference/` : configuration de référence (`symphony.yaml`, chaque clé),
-  bootstrap et stack de référence (`stack.yaml`), vérifiés par les tests.
+  bootstrap, stack (`stack.yaml`) et fiche (`catalog-info.yaml`) de référence, vérifiés
+  par les tests.
 - `quickstart/` : Compose (Symphony, PostgreSQL, proxy Docker) branché sur une forge
   existante, configs GitLab et GitHub, avec les stacks officielles.
-- `demo/` : `up.sh` (rejouable), `seed.sh` (projets de démo par l'API), `gitlab/` (contenu
+- `demo/` : `up.sh` (rejouable), `seed.sh` (projets de démo par l'API, et `invoice-service`
+  poussé sans Symphony dans le groupe `services`, découvert), `gitlab/` (contenu
   poussé dans le groupe `platform` de la GitLab de démo : config, stacks propres à la
   démo, copies des officielles avec leurs providers, repo de déploiement ; à tenir à jour
   avec `stacks/`), `keycloak/`, `k3s/`, `capture/`
@@ -110,11 +115,15 @@ SYMPHONY_TEST_K8S=1 go test -run TestCNPGOnCluster ./internal/provider/runtime/a
 - Deux « registry » : `provider.Registry` (tous les providers) et `RegistryProvider` (images).
 - Supprimer un projet passe par **chaque** runtime (`Remove`) puis le repo et les images
   (`DeleteImages`) : rien ne doit rester. GitLab ne fait que programmer la suppression d'un
-  repo : `DeleteRepo` la force (`permanently_remove`).
+  repo : `DeleteRepo` la force (`permanently_remove`). Exception : un projet **découvert**
+  (`discovered_from`) garde son repo et ses images (`KeepRepo`) ; Symphony n'écrit jamais
+  dans un repo découvert (pas de webhook, pas de fiche).
+- Une action ou une pipeline vise `proj.RepoPath` et `proj.Branch` (la base), jamais ce
+  que dit la fiche (`spec.repo`) : une fiche est écrite par n'importe qui ayant accès au repo.
 - Runtime `argocd` : jamais d'appel à l'API Kubernetes, tout passe par Git ; `repo_url` est
   l'URL vue par Argo CD ; Argo CD répond 403 pour une Application absente. Le chart Helm
-  ou la base Kustomize d'une stack (`spec.kubernetes` de la fiche, lu sur main au
-  déploiement) est copié dans le dossier du service, avec `values.yaml` ou
+  ou la base Kustomize d'une stack (`spec.kubernetes` de la fiche, lu sur la branche du
+  projet au déploiement) est copié dans le dossier du service, avec `values.yaml` ou
   `kustomization.yaml` de Symphony (contrat dans `reference/stack.yaml`) ; `prune` retire
   les fichiers d'un déploiement précédent.
 - Infra d'une stack (`spec.infra`, repris dans la fiche) : manifests d'opérateurs

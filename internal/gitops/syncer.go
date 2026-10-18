@@ -3,14 +3,12 @@ package gitops
 import (
 	"errors"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/clemuscle/symphony/internal/catalogue"
 	"github.com/clemuscle/symphony/internal/metrics"
 	"github.com/clemuscle/symphony/internal/provider"
-	"gopkg.in/yaml.v3"
 )
 
 // DefaultCatalogueFile : fiche d'un projet, à la racine de son repo
@@ -53,6 +51,8 @@ type CatalogueReport struct {
 	Errors []FicheError `json:"errors"`
 	// Missing : projets sans fiche dans leur repo
 	Missing []string `json:"missing"`
+	// Legacy : fiches à l'ancien format (symphony/v1), lu jusqu'à la v1.0
+	Legacy []string `json:"legacy"`
 }
 
 // FicheError : la fiche d'un projet n'a pas pu être lue
@@ -69,6 +69,7 @@ func (s *Syncer) Report() CatalogueReport {
 	r.File = s.file
 	r.Errors = append([]FicheError{}, r.Errors...)
 	r.Missing = append([]string{}, r.Missing...)
+	r.Legacy = append([]string{}, r.Legacy...)
 	return r
 }
 
@@ -140,7 +141,7 @@ func (s *Syncer) sync() {
 	report := CatalogueReport{SyncedAt: time.Now()}
 	services := make([]catalogue.Service, 0, len(refs))
 	for _, ref := range refs {
-		svc, err := s.read(ref, file)
+		svc, legacy, err := s.read(ref, file)
 		switch {
 		case errors.Is(err, provider.ErrNotFound):
 			// Pas de fiche : le projet reste visible, sans métadonnées
@@ -155,6 +156,9 @@ func (s *Syncer) sync() {
 				services = append(services, old)
 			}
 			continue
+		}
+		if legacy {
+			report.Legacy = append(report.Legacy, ref.Name)
 		}
 		services = append(services, svc)
 	}
@@ -175,50 +179,21 @@ func (s *Syncer) sync() {
 	}
 }
 
-// read lit et valide la fiche d'un projet. Le nom vient du projet, pas de la
-// fiche : c'est par lui que l'API retrouve le service et ses actions.
-func (s *Syncer) read(ref ProjectRef, file string) (catalogue.Service, error) {
+// read lit et valide la fiche d'un projet (legacy : ancien format). Le nom
+// vient du projet, pas de la fiche : c'est par lui que l'API retrouve le
+// service et ses actions.
+func (s *Syncer) read(ref ProjectRef, file string) (catalogue.Service, bool, error) {
 	scm, err := s.providers.SCM(ref.SCMProvider)
 	if err != nil {
-		return catalogue.Service{}, err
+		return catalogue.Service{}, false, err
 	}
 	content, err := scm.GetFileContent(ref.RepoPath, ref.Branch, file)
 	if err != nil {
-		return catalogue.Service{}, err
+		return catalogue.Service{}, false, err
 	}
-	return ParseService(ref.Name, content)
-}
-
-// ParseService lit une fiche catalogue (kind: Service) et lui donne le nom du
-// projet. Une fiche invalide est une erreur, pas une fiche vide.
-func ParseService(name, content string) (catalogue.Service, error) {
-	var svc catalogue.Service
-	if err := yaml.Unmarshal([]byte(content), &svc); err != nil {
-		return svc, err
+	f, err := ParseFiche(content, ref.Name)
+	if err != nil {
+		return catalogue.Service{}, false, err
 	}
-	if svc.Kind != "" && svc.Kind != "Service" {
-		return svc, errors.New("kind " + svc.Kind + " : Service attendu")
-	}
-	if svc.Metadata.Name != "" && svc.Metadata.Name != name {
-		slog.Debug("catalogue : metadata.name ignoré, nom du projet utilisé",
-			"fiche", svc.Metadata.Name, "project", name)
-	}
-	if svc.APIVersion == "" {
-		svc.APIVersion = "symphony/v1"
-	}
-	svc.Kind = "Service"
-	svc.Metadata.Name = name
-	svc.Metadata.Tags = cleanTags(svc.Metadata.Tags)
-	return svc, nil
-}
-
-// cleanTags retire les étiquettes vides
-func cleanTags(tags []string) []string {
-	out := tags[:0]
-	for _, t := range tags {
-		if t = strings.TrimSpace(t); t != "" {
-			out = append(out, t)
-		}
-	}
-	return out
+	return f.Service, f.Legacy, nil
 }
