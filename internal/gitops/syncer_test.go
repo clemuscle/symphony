@@ -59,10 +59,12 @@ func TestSyncerReadsProjectFiches(t *testing.T) {
 	if store.Count() != 1 {
 		t.Errorf("seule la fiche valide est au catalogue : %d", store.Count())
 	}
-	// Fiches invalides et absentes rapportées (page Administration)
+	// Fiches invalides, absentes et à l'ancien format rapportées (page
+	// Administration)
 	report := s.Report()
 	if len(report.Errors) != 1 || report.Errors[0].Project != "invalid" ||
-		len(report.Missing) != 1 || report.Missing[0] != "sans-fiche" || report.File != "catalog-info.yaml" {
+		len(report.Missing) != 1 || report.Missing[0] != "sans-fiche" || report.File != "catalog-info.yaml" ||
+		len(report.Legacy) != 1 || report.Legacy[0] != "auth" {
 		t.Errorf("rapport = %+v", report)
 	}
 

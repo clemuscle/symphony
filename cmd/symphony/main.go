@@ -113,6 +113,18 @@ func main() {
 	syncer := gitops.NewSyncer(providers, store, projectRefs(db), catalogueFile(cfg))
 	go syncer.Start()
 
+	// Découverte des services existants : les repos des groupes scannés qui
+	// ont une fiche deviennent des projets
+	discovery, err := buildDiscovery(resolved, providers)
+	if err != nil {
+		slog.Error("configuration", "error", err)
+		os.Exit(1)
+	}
+	discoverer := gitops.NewDiscoverer(providers, handlers.DiscoveryStore{DB: db, Providers: providers}, syncer.File, func() { go syncer.ForceSync() })
+	discoverer.Teams = directoryTeams(providers, security)
+	discoverer.SetSettings(discovery)
+	go discoverer.Start()
+
 	// Stacks : repo du client, rechargé périodiquement, et catalogue officiel
 	stackSrc, stackWarnings, err := stacksSource(cfg)
 	if err != nil {
@@ -143,6 +155,7 @@ func main() {
 		source:    source,
 		providers: providers,
 		syncer:    syncer,
+		discovery: discoverer,
 		stacks:    stackLoader,
 		security:  security,
 		webhooks:  hooks,
@@ -161,7 +174,7 @@ func main() {
 	addr := ":" + getEnv("PORT", "8080")
 	slog.Info("Symphony démarré", "addr", addr)
 
-	if err := http.ListenAndServe(addr, api.NewServer(providers, store, db, syncer, stackLoader, security, runner, hooks, envs, watcher.Status)); err != nil {
+	if err := http.ListenAndServe(addr, api.NewServer(providers, store, db, syncer, discoverer, stackLoader, security, runner, hooks, envs, watcher.Status)); err != nil {
 		slog.Error("serveur HTTP", "error", err)
 		os.Exit(1)
 	}
@@ -211,7 +224,7 @@ func projectRefs(db *database.DB) func() ([]gitops.ProjectRef, error) {
 			refs = append(refs, gitops.ProjectRef{
 				Name:        p.Name,
 				RepoPath:    p.RepoPath,
-				Branch:      "main",
+				Branch:      p.Branch,
 				SCMProvider: p.SCMProvider,
 			})
 		}
@@ -231,7 +244,9 @@ func resubscribeWebhooks(db *database.DB, providers *provider.Registry) func(*we
 		}
 		done, failed := 0, 0
 		for _, p := range projects {
-			if p.RepoPath == "" {
+			// Un projet découvert n'a pas de webhook : Symphony n'écrit pas
+			// dans les repos qu'il découvre, ses pipelines sont sondées
+			if p.RepoPath == "" || p.DiscoveredFrom != "" {
 				continue
 			}
 			scm, err := providers.SCM(p.SCMProvider)

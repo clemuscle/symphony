@@ -18,7 +18,8 @@ const lookup = (table: Record<string, string>, fallback: string) =>
 
 export const tierIcon = lookup({ critical: '🔴', standard: '🟡', internal: '⚪' }, '🟡')
 export const langIcon = lookup({ go: '🐹', python: '🐍', node: '💚', java: '☕' }, '📦')
-export const depIcon = lookup({ database: '🗄️', cache: '⚡', api: '🔌', queue: '📨' }, '📦')
+export const depIcon = lookup(
+  { database: '🗄️', cache: '⚡', api: '🔌', queue: '📨', resource: '🗄️', component: '🧩' }, '📦')
 export const linkIcon = lookup(
   { monitoring: '📊', errors: '🐛', docs: '📖', code: '💻', ci: '⚙️', web: '🌐', docker: '🐳' }, '🔗')
 
@@ -37,7 +38,8 @@ export const pipelinesURL = (p: Project): string | undefined =>
 // Page d'édition de la fiche dans le repo (GitHub ou GitLab)
 export function ficheURL(p: Project): string {
   const base = repoWebURL(p)
-  return base.includes('github.com') ? `${base}/blob/main/catalog-info.yaml` : `${base}/-/blob/main/catalog-info.yaml`
+  const branch = p.branch || 'main'
+  return base.includes('github.com') ? `${base}/blob/${branch}/catalog-info.yaml` : `${base}/-/blob/${branch}/catalog-info.yaml`
 }
 
 export const deploymentsOf = (p: Project, all: Deployment[]): Deployment[] =>

@@ -216,7 +216,11 @@ paths:
       tags: [Projets]
       summary: Supprimer un projet et tout ce qu'il a créé
       operationId: deleteProjectsName
-      description: Déploiements de chaque environnement, repo, images, fiche (tâche).
+      description: >-
+        Déploiements de chaque environnement, repo, images, fiche (tâche). Un projet
+        découvert (discovered_from) est seulement retiré de Symphony avec ses
+        déploiements : son repo et ses images restent ; tant que sa source le donne
+        encore, 409.
       x-symphony-role: admin
       parameters: [{ $ref: "#/components/parameters/name" }]
       responses:
@@ -224,6 +228,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "202": { $ref: "#/components/responses/Task" }
         "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/projects/{name}/image:
     get:
       tags: [Projets]
@@ -440,7 +445,7 @@ paths:
   /api/v1/sync:
     post:
       tags: [Plateforme]
-      summary: Relire tout de suite les fiches et les stacks
+      summary: Relire tout de suite les fiches et les stacks, relancer la découverte
       operationId: postSync
       x-symphony-role: admin
       responses:
@@ -461,11 +466,12 @@ paths:
   /api/v1/admin/status:
     get:
       tags: [Plateforme]
-      summary: État de la plateforme (configuration, providers, stacks, catalogue)
+      summary: État de la plateforme (configuration, providers, stacks, catalogue, découverte)
       description: >
         Ce que l'admin doit savoir sans lire les logs : configuration en place et dernier
         refus, providers et leur dernier appel, stacks chargées et refusées avec la
-        raison, fiches catalogue illisibles.
+        raison, fiches catalogue illisibles ou à l'ancien format, dernier scan de la
+        découverte.
       operationId: getAdminStatus
       x-symphony-role: admin
       responses:
@@ -588,15 +594,19 @@ components:
         locked: { type: boolean, description: "Valeur fixée (default), non modifiable" }
     Service:
       type: object
-      description: Fiche catalogue (catalog-info.yaml du repo du projet)
+      description: >-
+        Fiche catalogue (catalog-info.yaml du repo du projet), lue au format Backstage
+        (Component) ou à l'ancien format (Service), rendue dans ce format commun
       properties:
-        api_version: { type: string }
-        kind: { type: string, const: Service }
+        api_version: { type: string, enum: [backstage.io/v1alpha1, symphony/v1] }
+        kind: { type: string, enum: [Component, Service] }
         metadata:
           type: object
           properties:
             name: { type: string }
-            owner: { type: string }
+            description: { type: string }
+            owner: { type: string, description: "Nom de l'équipe (spec.owner sans group: ni namespace)" }
+            annotations: { type: object, additionalProperties: { type: string } }
             tier: { type: string }
             lifecycle: { type: string }
             tags: { type: [array, "null"], items: { type: string } }
@@ -629,8 +639,10 @@ components:
         ci_provider: { type: string }
         registry_provider: { type: string }
         runtime_provider: { type: string }
-        created_by: { type: string }
+        created_by: { type: string, description: "« découverte » pour un projet découvert" }
         created_at: { type: string, format: date-time }
+        branch: { type: string, description: Branche par défaut du repo }
+        discovered_from: { type: string, description: "Source de la découverte (<scm>/<groupe>) ; vide : créé par Symphony" }
         deleting: { type: boolean }
         service: { oneOf: [{ $ref: "#/components/schemas/Service" }, { type: "null" }] }
         environments: { type: array, items: { $ref: "#/components/schemas/Environment" } }
@@ -791,6 +803,50 @@ components:
                   project: { type: string }
                   error: { type: string }
             missing: { type: array, items: { type: string }, description: Projets sans fiche }
+            legacy: { type: array, items: { type: string }, description: "Fiches à l'ancien format (symphony/v1), lu jusqu'à la v1.0" }
+        discovery:
+          type: object
+          description: Dernier scan des groupes de catalogue.discovery
+          properties:
+            enabled: { type: boolean }
+            interval: { type: string }
+            scan_at: { type: [string, "null"], format: date-time }
+            error: { type: string }
+            sources:
+              type: array
+              items:
+                type: object
+                properties:
+                  key: { type: string, description: "<scm>/<groupe>" }
+                  scm: { type: string }
+                  group: { type: string }
+                  ci: { type: string }
+                  registry: { type: string }
+                  exclude: { type: array, items: { type: string } }
+                  repos: { type: integer, description: Repos parcourus (hors exclus) }
+                  projects: { type: array, items: { type: string } }
+                  imported: { type: array, items: { type: string }, description: Nouveaux à ce scan }
+                  excluded: { type: integer }
+                  no_fiche: { type: integer }
+                  error: { type: string, description: Groupe illisible }
+            errors:
+              type: array
+              description: Fiches inutilisables, noms en conflit, équipes inconnues
+              items:
+                type: object
+                properties:
+                  source: { type: string }
+                  repo: { type: string }
+                  error: { type: string }
+            orphans:
+              type: array
+              description: Projets découverts que leur source ne donne plus (à retirer par un admin)
+              items:
+                type: object
+                properties:
+                  project: { type: string }
+                  source: { type: string }
+                  repo: { type: string }
     ProviderCheck:
       type: object
       properties:

@@ -27,10 +27,16 @@ func TestCatalogueFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc, err := gitops.ParseService("payment-api", content)
+	fiche, err := gitops.ParseFiche(content, "payment-api")
 	if err != nil {
 		t.Fatalf("fiche illisible : %v\n%s", err, content)
 	}
+	// Fiche Backstage : un Component, l'équipe en propriétaire
+	if fiche.Legacy || !strings.Contains(content, "apiVersion: backstage.io/v1alpha1\nkind: Component\n") ||
+		!strings.Contains(content, "owner: team-payments") {
+		t.Errorf("fiche au format Backstage attendue :\n%s", content)
+	}
+	svc := fiche.Service
 	m := svc.Metadata
 	if m.Owner != "team-payments" || m.Tier != "critical" || m.Lifecycle != "production" || m.Labels["stack"] != "api-rest-go" {
 		t.Errorf("metadata : %+v", m)

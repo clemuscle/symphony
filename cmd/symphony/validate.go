@@ -181,6 +181,13 @@ func validateConfig(r *report, file string) *provider.Registry {
 	} else {
 		r.ok("webhooks : %s", cfg.Webhooks.URL)
 	}
+	if discovery, err := buildDiscovery(resolved, providers); err != nil {
+		r.fail("découverte", err)
+	} else {
+		for _, src := range discovery.Sources {
+			r.ok("découverte : %s (ci %s, registry %s), tous les %s", src.Key(), src.CI, orDefault(src.Registry, "aucun"), gitops.FormatInterval(discovery.Interval))
+		}
+	}
 	for _, w := range warnings {
 		r.warn("%s", w)
 	}

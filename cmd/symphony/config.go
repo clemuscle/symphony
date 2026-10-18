@@ -187,6 +187,7 @@ type configWatcher struct {
 	source    *configSource
 	providers *provider.Registry
 	syncer    *gitops.Syncer
+	discovery *gitops.Discoverer
 	stacks    *gitops.StackLoader
 	security  *auth.Holder
 	webhooks  *webhook.Holder
@@ -344,6 +345,10 @@ func (w *configWatcher) apply(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	discovery, err := buildDiscovery(resolved, next)
+	if err != nil {
+		return err
+	}
 	w.fingerprint = fingerprint(resolved)
 	old := w.webhooks.Get()
 	w.providers.Replace(next)
@@ -356,6 +361,9 @@ func (w *configWatcher) apply(cfg *config.Config) error {
 		go w.resubscribe(hooks)
 	}
 	w.syncer.SetFile(catalogueFile(cfg))
+	if w.discovery != nil {
+		w.discovery.SetSettings(discovery)
+	}
 	w.stacks.SetSource(stacks)
 	logProviders("configuration rechargée", w.providers)
 

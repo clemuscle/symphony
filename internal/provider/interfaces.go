@@ -21,6 +21,11 @@ type SCMProvider interface {
 	PushFile(repoPath, branch, filePath, content, commitMsg string) error
 	PushFiles(repoPath, branch string, files map[string]string, commitMsg string) error
 	ListRepos() ([]Repo, error)
+	// ListGroupRepos : les repos actifs (ni archivés, ni forks, ni en cours de
+	// suppression) d'un groupe
+	// GitLab (sous-groupes compris) ou d'une organisation ou d'un compte
+	// GitHub ; ErrNotFound si le groupe est absent
+	ListGroupRepos(group string) ([]Repo, error)
 	GetFileContent(repoPath, branch, filePath string) (string, error)
 	ListFiles(repoPath, branch, dirPath string) ([]string, error)  // ErrNotFound si le dossier est absent
 	DeleteFile(repoPath, branch, filePath, commitMsg string) error // ErrNotFound si absent

@@ -45,12 +45,14 @@ export interface Service {
   kind: string
   metadata: {
     name: string
+    description?: string
     owner: string
     team: { name: string; slack: string; email: string }
     tags: string[] | null
     tier: string
     lifecycle: string
     labels?: Record<string, string>
+    annotations?: Record<string, string> // de la fiche Backstage (symphony.io/… et autres)
   }
   spec: {
     type: string
@@ -91,8 +93,10 @@ export interface Project {
   stack: string
   stack_parameters: Record<string, ParamValue> // valeurs des paramètres de la stack, à la création
   team: string
-  created_by: string
+  created_by: string // « découverte » pour un projet découvert
   created_at: string
+  branch: string // branche par défaut du repo
+  discovered_from: string // source de la découverte (<scm>/<groupe>) ; vide : créé par Symphony
   deleting?: boolean
   service: Service | null // fiche catalogue, absente si le repo n'en a pas
   environments: Environment[] // vide : pas d'environnements configurés
@@ -277,7 +281,33 @@ export interface AdminStatus {
     error?: string
     errors: { project: string; error: string }[]
     missing: string[]
+    legacy: string[] // fiches à l'ancien format (symphony/v1)
   }
+  discovery: DiscoveryStatus
+}
+
+// Dernier scan de la découverte des services existants (catalogue.discovery)
+export interface DiscoveryStatus {
+  enabled: boolean
+  interval: string
+  scan_at: string | null
+  error?: string
+  sources: {
+    key: string // <scm>/<groupe>
+    scm: string
+    group: string
+    ci: string
+    registry: string
+    exclude?: string[]
+    repos: number // repos parcourus (hors exclus)
+    projects: string[]
+    imported: string[] // nouveaux à ce scan
+    excluded: number
+    no_fiche: number
+    error?: string // groupe illisible
+  }[]
+  errors: { source: string; repo: string; error: string }[]
+  orphans: { project: string; source: string; repo: string }[]
 }
 
 // Vérification d'un provider (GET /api/v1/admin/providers/check)

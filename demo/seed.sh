@@ -6,6 +6,10 @@
 # fiche catalogue (seed/<nom>.yaml) commitée dans son repo, comme le ferait
 # son équipe.
 #
+# Un quatrième, invoice-service, est un service « d'avant Symphony » : son
+# repo est poussé directement dans le groupe services de la GitLab, avec une
+# fiche Backstage ; Symphony le découvre (catalogue.discovery), puis le déploie.
+#
 # Appelé par up.sh (étape 7) ; rejouable seul une fois la démo démarrée :
 #   ./demo/seed.sh [true|false]   (false : sans Kubernetes, tout sur Docker)
 # Un projet déjà créé ou déjà déployé n'est pas refait.
@@ -59,6 +63,34 @@ if [ "$K8S" != true ]; then
   # voir up.sh) : la stack officielle à la place, sans base PostgreSQL (son
   # infra demande Kubernetes)
   projects=$(echo "$projects" | jq -c 'if (.stack | endswith("-k8s")) then .stack |= rtrimstr("-k8s") | del(.parameters.postgres) else . end')
+fi
+
+# 0. Un service existant, sans Symphony : repo dans le groupe services, code
+# Go (squelette de la stack officielle, sans métriques ni chart), sa CI et sa
+# fiche Backstage, en un commit ; sa pipeline construit l'image
+EXISTING=invoice-service
+EXISTING_REPO=services/$EXISTING
+gitlab() { curl -sf -H "PRIVATE-TOKEN: $GITLAB_TOKEN" -H "Content-Type: application/json" "$@"; }
+if gitlab "$GITLAB_URL/api/v4/projects/$(urlenc "$EXISTING_REPO")" >/dev/null; then
+  ok "$EXISTING_REPO déjà poussé"
+else
+  group=$(gitlab "$GITLAB_URL/api/v4/groups/services" | jq -r .id)
+  gitlab -X POST --data "$(jq -n --arg n "$EXISTING" --argjson g "$group" '{name: $n, path: $n, namespace_id: $g, visibility: "private"}')"     "$GITLAB_URL/api/v4/projects" >/dev/null || fail "création de $EXISTING_REPO impossible"
+  skeleton=../stacks/api-rest-go/skeleton
+  render() { # placeholders de la stack, remplis comme le ferait une équipe
+    sed -e "s|{{SERVICE_NAME}}|$EXISTING|g" -e 's|{{params.go_version}}|1.22|g' -e 's|{{params.log_level}}|info|g' "$1"
+  }
+  actions=$(
+    {
+      (cd "$skeleton" && find . -type f ! -path './deploy/*' ! -name 'metrics*' | sed 's|^\./||') | while read -r f; do
+        jq -n --arg p "${f%.tmpl}" --arg c "$(render "$skeleton/$f")" '{action: "create", file_path: $p, content: $c}'
+      done
+      jq -n --arg c "$(render ../stacks/api-rest-go/ci.gitlab-ci.yml)" '{action: "create", file_path: ".gitlab-ci.yml", content: $c}'
+      jq -n --arg c "$(sed "s|__REPO_URL__|$GITLAB_URL/$EXISTING_REPO|g" seed/$EXISTING.yaml)"         '{action: "create", file_path: "catalog-info.yaml", content: $c}'
+      jq -n --arg c "# $EXISTING"$'\n\nFacturation et avoirs. Service écrit avant Symphony, qui le découvre par sa fiche (catalog-info.yaml).\n'         '{action: "create", file_path: "README.md", content: $c}'
+    } | jq -s .
+  )
+  jq -n --argjson a "$actions" '{branch: "main", commit_message: "feat: service de facturation", actions: $a}'     | gitlab -X POST --data @- "$GITLAB_URL/api/v4/projects/$(urlenc "$EXISTING_REPO")/repository/commits" >/dev/null     && ok "$EXISTING_REPO poussé sans Symphony (code, CI, fiche Backstage)"     || fail "push de $EXISTING_REPO impossible"
 fi
 
 # 1. Création : les trois tâches partent ensemble, leurs pipelines passent
@@ -162,6 +194,38 @@ while read -r p; do
   [ -n "$id" ] || { warn "promotion de $name refusée par Symphony"; continue; }
   wait_task "$id" "promotion de $name" && ok "$name promu en production"
 done <<<"$projects"
+
+# 5. Le service existant : découvert par sa fiche une fois sa pipeline finie
+# (image dans le registry), puis déployé en staging comme les autres
+info "$EXISTING : attente de sa pipeline, puis de sa découverte…"
+for _ in $(seq 120); do
+  # La dernière pipeline qui a tourné (un commit [skip ci] en laisse une « skipped »)
+  status=$(gitlab "$GITLAB_URL/api/v4/projects/$(urlenc "$EXISTING_REPO")/pipelines?ref=main&per_page=20" \
+    | jq -r '[.[] | select(.status != "skipped")][0].status // empty')
+  case $status in success|failed|canceled) break ;; esac
+  sleep 5
+done
+[ "$status" = success ] || warn "$EXISTING : pipeline $status"
+sym -X POST "$SYMPHONY_URL/api/v1/sync" >/dev/null || true
+for _ in $(seq 30); do
+  sym "$SYMPHONY_URL/api/v1/projects" | jq -e --arg n "$EXISTING" 'any(.[]; .name == $n and .service != null)' >/dev/null && break
+  sleep 2
+done
+if ! sym "$SYMPHONY_URL/api/v1/projects" | jq -e --arg n "$EXISTING" 'any(.[]; .name == $n)' >/dev/null; then
+  warn "$EXISTING pas découvert : voir la page Administration de Symphony"
+elif deployed "$EXISTING" staging; then
+  ok "$EXISTING déjà déployé en staging"
+else
+  ok "$EXISTING découvert dans le groupe services"
+  image=$(sym "$SYMPHONY_URL/api/v1/projects/$EXISTING/image" || true)
+  tag=$(echo "$image" | jq -r '[.tags[]? | select(. != "latest")][0] // empty' 2>/dev/null || true)
+  if [ -n "$tag" ]; then
+    id=$(jq -n --arg n "$EXISTING" --arg i "$(echo "$image" | jq -r .image)" --arg t "$tag"         '{project_name: $n, environment: "staging", image: $i, tag: $t}'       | sym -X POST --data @- "$SYMPHONY_URL/api/v1/deployments" | jq -r '.id // empty')
+    [ -n "$id" ] && wait_task "$id" "déploiement de $EXISTING" && ok "$EXISTING déployé en staging"
+  else
+    warn "$EXISTING : pas d'image dans le registry, déploiement sauté"
+  fi
+fi
 
 echo
 sym "$SYMPHONY_URL/api/v1/deployments" | jq -r '.[] | select(.url != "") | "  \(.project) (\(.environment))\t\(.url)"' | sort

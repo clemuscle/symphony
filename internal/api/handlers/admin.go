@@ -68,12 +68,14 @@ func ListIdentityGroups(providers *provider.Registry, security *auth.Holder) htt
 	}
 }
 
-// ForceSync recharge le catalogue et les stacks depuis Git
-func ForceSync(syncer *gitops.Syncer, stacks *gitops.StackLoader, db *database.DB) http.HandlerFunc {
+// ForceSync recharge le catalogue et les stacks depuis Git, et relance la
+// découverte des services existants
+func ForceSync(syncer *gitops.Syncer, discovery *gitops.Discoverer, stacks *gitops.StackLoader, db *database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		audit(db, r, "force_sync", "catalogue+stacks", nil)
+		audit(db, r, "force_sync", "catalogue+stacks+discovery", nil)
 		go syncer.ForceSync()
 		go stacks.Reload()
+		discovery.Wake()
 		respond(w, http.StatusOK, map[string]string{"status": "sync déclenché"})
 	}
 }
@@ -94,8 +96,9 @@ func ListAudit(db *database.DB) http.HandlerFunc {
 
 // AdminStatus : ce que l'admin plateforme doit savoir sans lire les logs :
 // configuration en place et dernier refus, providers et leur dernier appel,
-// stacks chargées et refusées, fiches catalogue en erreur
-func AdminStatus(providers *provider.Registry, configStatus func() config.Status, stacks *gitops.StackLoader, syncer *gitops.Syncer) http.HandlerFunc {
+// stacks chargées et refusées, fiches catalogue en erreur, dernier scan de la
+// découverte
+func AdminStatus(providers *provider.Registry, configStatus func() config.Status, stacks *gitops.StackLoader, syncer *gitops.Syncer, discovery *gitops.Discoverer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := configStatus()
 		entries := providers.Entries()
@@ -116,6 +119,7 @@ func AdminStatus(providers *provider.Registry, configStatus func() config.Status
 			"providers": list,
 			"stacks":    stacksStatus{StackReport: stacks.Report(), Loaded: loaded},
 			"catalogue": syncer.Report(),
+			"discovery": discovery.Report(),
 		})
 	}
 }

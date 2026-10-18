@@ -3,6 +3,7 @@ package gitlab
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -200,5 +201,46 @@ func TestCheck(t *testing.T) {
 	}
 	if _, err := New("gitlab", srv.URL, "expiré").Check(); err == nil || !strings.Contains(err.Error(), "jeton refusé") {
 		t.Errorf("jeton refusé attendu, obtenu %v", err)
+	}
+}
+
+// ListGroupRepos parcourt toutes les pages, sans forks ni repos vides ; un
+// groupe absent est ErrNotFound
+func TestListGroupRepos(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.EscapedPath() != "/api/v4/groups/apps%2Flegacy/projects" {
+			w.WriteHeader(404)
+			return
+		}
+		q := r.URL.Query()
+		if q.Get("include_subgroups") != "true" || q.Get("archived") != "false" {
+			t.Errorf("paramètres : %s", r.URL.RawQuery)
+		}
+		var page []map[string]any
+		if q.Get("page") == "1" {
+			for i := 0; i < 100; i++ {
+				page = append(page, map[string]any{"id": i, "path_with_namespace": fmt.Sprintf("apps/legacy/r%d", i), "default_branch": "main"})
+			}
+		} else {
+			page = []map[string]any{
+				{"id": 100, "path_with_namespace": "apps/legacy/billing", "default_branch": "master"},
+				{"id": 101, "path_with_namespace": "apps/legacy/fork", "default_branch": "main", "forked_from_project": map[string]any{"id": 1}},
+				{"id": 102, "path_with_namespace": "apps/legacy/vide"},
+				{"id": 103, "path_with_namespace": "apps/legacy/partant", "default_branch": "main", "marked_for_deletion_on": "2026-10-18"},
+			}
+		}
+		json.NewEncoder(w).Encode(page)
+	}))
+	defer srv.Close()
+	p := New("gitlab", srv.URL, "t")
+	repos, err := p.ListGroupRepos("/apps/legacy/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 101 || repos[100].Path != "apps/legacy/billing" || repos[100].DefaultBranch != "master" {
+		t.Errorf("%d repos, dernier %+v", len(repos), repos[len(repos)-1])
+	}
+	if _, err := p.ListGroupRepos("absent"); !errors.Is(err, provider.ErrNotFound) {
+		t.Errorf("groupe absent : %v", err)
 	}
 }

@@ -58,6 +58,14 @@ func (f *Forge) Repos() []string {
 	return repos
 }
 
+// Seed crée un repo existant, hors de Symphony, avec ses fichiers : une
+// pipeline réussie et une image, comme pour un push (tests de la découverte)
+func (f *Forge) Seed(repo string, files map[string]string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.push(repo, files)
+}
+
 // push enregistre des fichiers et lance une pipeline réussie (appelé sous f.mu)
 func (f *Forge) push(repo string, files map[string]string) {
 	if f.files[repo] == nil {
@@ -122,6 +130,20 @@ func (s forgeSCM) ListRepos() ([]provider.Repo, error) {
 	var out []provider.Repo
 	for _, r := range s.f.Repos() {
 		out = append(out, provider.Repo{Path: r})
+	}
+	return out, nil
+}
+
+func (s forgeSCM) ListGroupRepos(group string) ([]provider.Repo, error) {
+	out := []provider.Repo{}
+	for _, r := range s.f.Repos() {
+		if strings.HasPrefix(r, group+"/") {
+			out = append(out, provider.Repo{ID: r, Name: r[strings.LastIndex(r, "/")+1:], Path: r,
+				WebURL: "http://forge/" + r, DefaultBranch: "main"})
+		}
+	}
+	if len(out) == 0 {
+		return nil, provider.ErrNotFound
 	}
 	return out, nil
 }

@@ -38,3 +38,11 @@ stacks:
 # Pas de section auth : authentification désactivée, tout le monde est admin.
 # Pas de section webhooks : GitHub ne peut pas joindre ce poste, Symphony
 # suit les workflows par sondage (15 s).
+#
+# Services existants : décommenter pour que chaque repo de l'organisation (ou
+# du compte) qui a une fiche catalog-info.yaml (Component Backstage) devienne
+# un projet, sans que Symphony n'y écrive rien.
+# catalogue:
+#   discovery:
+#     sources:
+#       - group: mon-organisation

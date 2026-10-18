@@ -1,13 +1,11 @@
 package handlers
 
 import (
-	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -20,7 +18,6 @@ import (
 	"github.com/clemuscle/symphony/internal/provider"
 	"github.com/clemuscle/symphony/internal/tasks"
 	"github.com/go-chi/chi/v5"
-	"gopkg.in/yaml.v3"
 )
 
 type CreateProjectRequest struct {
@@ -50,10 +47,6 @@ var (
 	validLifecycles = []string{"production", "staging", "experimental", "deprecated"}
 )
 
-// projectNameRe : nom de repo et de service (DNS : utilisable tel quel comme
-// nom Kubernetes, d'image et d'hôte)
-var projectNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-
 // CreateProject valide la demande puis lance la création en tâche (202) :
 // repo, squelette, fiche catalogue, webhook et première pipeline
 func CreateProject(providers *provider.Registry, db *database.DB, stacks *gitops.StackLoader, envs *environments.Holder, runner *tasks.Runner) http.HandlerFunc {
@@ -65,7 +58,7 @@ func CreateProject(providers *provider.Registry, db *database.DB, stacks *gitops
 		}
 
 		req.Name = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(req.Name), " ", "-"))
-		if !projectNameRe.MatchString(req.Name) {
+		if !gitops.ProjectNameRe.MatchString(req.Name) {
 			respondError(w, http.StatusBadRequest, "name invalide : minuscules, chiffres et tirets, 63 caractères max.")
 			return
 		}
@@ -228,8 +221,9 @@ func catalogueFile(base string, p createParams, stack *gitops.Stack, repo *provi
 			return "", fmt.Errorf("fiche catalogue de la stack: %w", err)
 		}
 	}
-	svc.APIVersion, svc.Kind, svc.Metadata.Name = "symphony/v1", "Service", p.Name
+	svc.Metadata.Name = p.Name
 	m := &svc.Metadata
+	m.Description = firstNonEmpty(p.Description, m.Description)
 	m.Owner = firstNonEmpty(p.Owner, m.Owner, createdBy)
 	m.Tier = firstNonEmpty(p.Tier, m.Tier)
 	m.Lifecycle = firstNonEmpty(p.Lifecycle, m.Lifecycle)
@@ -268,15 +262,13 @@ func catalogueFile(base string, p createParams, stack *gitops.Stack, repo *provi
 		}
 	}
 
-	var buf bytes.Buffer
-	buf.WriteString("# Fiche catalogue du service, lue par Symphony toutes les 15 s.\n" +
-		"# À tenir à jour par l'équipe : owner, tier, SLO, liens, dépendances, actions.\n")
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(svc); err != nil {
+	fiche, err := gitops.RenderFiche(svc,
+		"# Fiche catalogue du service (Component Backstage), lue par Symphony toutes les 15 s.\n"+
+			"# À tenir à jour par l'équipe : owner, tier, SLO, liens, dépendances, actions.\n")
+	if err != nil {
 		return "", fmt.Errorf("fiche catalogue: %w", err)
 	}
-	return buf.String(), nil
+	return fiche, nil
 }
 
 func firstNonEmpty(values ...string) string {
@@ -291,7 +283,10 @@ func firstNonEmpty(values ...string) string {
 // DeleteProject lance la suppression en tâche et répond 202 : GitLab purge
 // le container registry de façon asynchrone, ce qui peut prendre plusieurs
 // minutes. Pendant ce temps, ListProjects marque le projet "deleting".
-func DeleteProject(db *database.DB, runner *tasks.Runner) http.HandlerFunc {
+// Un projet découvert est seulement retiré de Symphony (ses déploiements
+// compris) : son repo et ses images restent. Tant que sa source le donne, le
+// retirer ne sert à rien : le scan suivant le reprendrait.
+func DeleteProject(db *database.DB, runner *tasks.Runner, discovery *gitops.Discoverer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := chi.URLParam(r, "name")
 		proj, err := db.GetProjectByName(name)
@@ -303,6 +298,13 @@ func DeleteProject(db *database.DB, runner *tasks.Runner) http.HandlerFunc {
 			internalError(w, r, err)
 			return
 		}
+		discovered := proj.DiscoveredFrom != ""
+		if discovered && discovery.Matched(name) {
+			respondError(w, http.StatusConflict, fmt.Sprintf(
+				"projet découvert dans %s : le scan suivant le reprendrait. Retirer sa fiche du repo %s, "+
+					"ou l'exclure (catalogue.discovery.sources[].exclude), puis le retirer de Symphony", proj.DiscoveredFrom, proj.RepoPath))
+			return
+		}
 		if busy(w, r, runner, name) {
 			return
 		}
@@ -311,7 +313,8 @@ func DeleteProject(db *database.DB, runner *tasks.Runner) http.HandlerFunc {
 			RepoPath:    proj.RepoPath,
 			SCMProvider: proj.SCMProvider,
 			RegProvider: proj.RegProvider,
-		}, map[string]any{"repo": proj.RepoPath})
+			KeepRepo:    discovered,
+		}, map[string]any{"repo": proj.RepoPath, "keep_repo": discovered})
 	}
 }
 

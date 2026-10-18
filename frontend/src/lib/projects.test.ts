@@ -8,7 +8,7 @@ function project(over: Partial<Project> = {}, svc: Partial<Service['metadata']> 
     namespace: '', scm_provider: 'gitlab', ci_provider: 'gitlab-ci', registry_provider: '',
     runtime_provider: 'docker-local', repo_path: 'apps/payment-api',
     repo_url: 'http://gitlab/apps/payment-api.git', registry_url: '', stack: 'api-rest-go', stack_parameters: {},
-    team: 'team-payments', created_by: 'bob', created_at: '', environments: [],
+    team: 'team-payments', created_by: 'bob', created_at: '', branch: 'main', discovered_from: '', environments: [],
     service: svc === null ? null : {
       api_version: 'symphony/v1', kind: 'Service',
       metadata: {
@@ -35,6 +35,8 @@ describe('projets', () => {
   it('déduit l\'URL du repo et de la fiche (GitLab ou GitHub)', () => {
     expect(repoWebURL(project({}, null))).toBe('http://gitlab/apps/payment-api')
     expect(ficheURL(project({}, null))).toBe('http://gitlab/apps/payment-api/-/blob/main/catalog-info.yaml')
+    // Projet découvert : la branche par défaut de son repo
+    expect(ficheURL(project({ branch: 'master' }, null))).toBe('http://gitlab/apps/payment-api/-/blob/master/catalog-info.yaml')
     const gh = project({ repo_url: 'https://github.com/me/api.git' }, null)
     expect(ficheURL(gh)).toBe('https://github.com/me/api/blob/main/catalog-info.yaml')
   })

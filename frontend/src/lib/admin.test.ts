@@ -40,7 +40,8 @@ function status(): AdminStatus {
     config: { source: 's', revision: 'a', applied_at: '', checked_at: '', warnings: [] },
     providers: [gitlab],
     stacks: { repo: 'r', branch: 'main', path: 'stacks', official: ['*'], loaded_at: '', loaded: ['api'], refused: [], warnings: [] },
-    catalogue: { file: 'catalog-info.yaml', synced_at: '', errors: [], missing: [] },
+    catalogue: { file: 'catalog-info.yaml', synced_at: '', errors: [], missing: [], legacy: [] },
+    discovery: { enabled: false, interval: '5m', scan_at: null, sources: [], errors: [], orphans: [] },
   }
 }
 
@@ -54,12 +55,21 @@ describe('problems', () => {
     s.stacks.refused = [{ file: 'stacks/x/stack.yaml', error: 'e' }, { file: 'officiel:y', error: 'e' }]
     s.stacks.warnings = ['stacks/z/template.yaml : ancien format']
     s.catalogue.errors = [{ project: 'p', error: 'e' }]
+    s.catalogue.legacy = ['auth', 'billing']
+    s.discovery.sources = [{ key: 'gitlab/x', scm: 'gitlab', group: 'x', ci: 'gitlab-ci', registry: '', repos: 0,
+      projects: [], imported: [], excluded: 0, no_fiche: 0, error: 'groupe gitlab x : introuvable' }]
+    s.discovery.errors = [{ source: 'gitlab/y', repo: 'y/z', error: 'nom déjà pris' }]
+    s.discovery.orphans = [{ project: 'old', source: 'gitlab/y', repo: 'y/old' }]
     const checks = [{ kind: 'scm' as const, id: 'gitlab', ok: false, error: 'jeton refusé', duration_ms: 3 }]
     expect(problems(s, checks)).toEqual([
       'Configuration b12 refusée : la précédente reste en place',
       '1 provider en erreur',
       '2 stacks refusées',
       '1 fiche catalogue en erreur',
+      "2 fiches à l'ancien format",
+      'Découverte : 1 groupe illisible',
+      'Découverte : 1 repo en erreur',
+      'Découverte : 1 projet que sa source ne donne plus',
       '1 point à corriger (ancien format…)',
     ])
   })

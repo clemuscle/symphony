@@ -72,7 +72,7 @@ func TestAdminStatus(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	AdminStatus(r, status, stacks, syncer)(rec, httptest.NewRequest("GET", "/api/v1/admin/status", nil))
+	AdminStatus(r, status, stacks, syncer, nil)(rec, httptest.NewRequest("GET", "/api/v1/admin/status", nil))
 	var got struct {
 		Config    config.Status    `json:"config"`
 		Providers []providerStatus `json:"providers"`

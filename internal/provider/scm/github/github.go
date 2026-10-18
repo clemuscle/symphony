@@ -269,6 +269,69 @@ func (p *Provider) ListRepos() ([]provider.Repo, error) {
 	return out, nil
 }
 
+// ListGroupRepos : les repos d'une organisation ; un compte personnel est
+// aussi accepté (ses repos privés si c'est celui du jeton)
+func (p *Provider) ListGroupRepos(owner string) ([]provider.Repo, error) {
+	list := "/orgs/" + owner + "/repos?type=all"
+	if _, status, err := p.api("GET", "/orgs/"+owner, nil); err != nil {
+		return nil, err
+	} else if status == 404 {
+		var me struct {
+			Login string `json:"login"`
+		}
+		data, status, err := p.api("GET", "/user", nil)
+		if err != nil {
+			return nil, err
+		}
+		if status == 200 && json.Unmarshal(data, &me) == nil && strings.EqualFold(me.Login, owner) {
+			list = "/user/repos?affiliation=owner"
+		} else {
+			list = "/users/" + owner + "/repos?type=owner"
+		}
+	}
+	var repos []provider.Repo
+	for page := 1; ; page++ {
+		data, status, err := p.api("GET", fmt.Sprintf("%s&per_page=100&page=%d", list, page), nil)
+		if err != nil {
+			return nil, err
+		}
+		if status == 404 {
+			return nil, fmt.Errorf("organisation ou compte github %s : %w", owner, provider.ErrNotFound)
+		}
+		if status != 200 {
+			return nil, fmt.Errorf("repos de %s : status %d — %s", owner, status, string(data))
+		}
+		var items []struct {
+			FullName      string `json:"full_name"`
+			Name          string `json:"name"`
+			HTMLURL       string `json:"html_url"`
+			CloneURL      string `json:"clone_url"`
+			DefaultBranch string `json:"default_branch"`
+			Archived      bool   `json:"archived"`
+			Fork          bool   `json:"fork"`
+		}
+		if err := json.Unmarshal(data, &items); err != nil {
+			return nil, fmt.Errorf("repos de %s : réponse illisible: %w", owner, err)
+		}
+		for _, r := range items {
+			if r.Archived || r.Fork {
+				continue
+			}
+			repos = append(repos, provider.Repo{
+				ID:            r.FullName,
+				Name:          r.Name,
+				Path:          r.FullName,
+				WebURL:        r.HTMLURL,
+				HTTPCloneURL:  r.CloneURL,
+				DefaultBranch: r.DefaultBranch,
+			})
+		}
+		if len(items) < 100 {
+			return repos, nil
+		}
+	}
+}
+
 func (p *Provider) GetFileContent(repoPath, branch, filePath string) (string, error) {
 	data, status, err := p.api("GET",
 		fmt.Sprintf("/repos/%s/contents/%s?ref=%s", repoPath, filePath, branch), nil)

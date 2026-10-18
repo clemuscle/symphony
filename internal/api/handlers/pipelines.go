@@ -26,9 +26,6 @@ func TriggerPipeline(providers *provider.Registry, db *database.DB) http.Handler
 			respondError(w, http.StatusBadRequest, "project requis")
 			return
 		}
-		if req.Ref == "" {
-			req.Ref = "main"
-		}
 		proj, ok := authorizeProject(w, r, db, req.Project)
 		if !ok {
 			return
@@ -36,6 +33,9 @@ func TriggerPipeline(providers *provider.Registry, db *database.DB) http.Handler
 		if proj == nil || proj.RepoPath == "" {
 			respondError(w, http.StatusNotFound, "projet introuvable : "+req.Project)
 			return
+		}
+		if req.Ref == "" {
+			req.Ref = proj.Branch
 		}
 		ci, err := providers.CI(proj.CIProvider)
 		if err != nil {

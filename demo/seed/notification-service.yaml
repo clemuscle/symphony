@@ -1,24 +1,21 @@
-# Fiche catalogue du service, lue par Symphony toutes les 15 s.
+# Fiche catalogue du service (Component Backstage), lue par Symphony toutes les 15 s.
 # À tenir à jour par l'équipe : owner, tier, SLO, liens, dépendances, actions.
-apiVersion: symphony/v1
-kind: Service
+apiVersion: backstage.io/v1alpha1
+kind: Component
 metadata:
   name: notification-service
-  owner: team-product
-  team:
-    name: Produit
-    slack: "#team-product"
-    email: product@demo.symphony
+  description: Envoi des e-mails et des notifications push
   tags: [node, rest-api, notifications]
-  tier: standard
-  lifecycle: staging
   labels:
     stack: api-rest-node
-spec:
-  type: api
-  language: node
-  version: 0.9.0
-  repo: __REPO_URL__
+  annotations:
+    backstage.io/source-location: url:__REPO_URL__/
+    symphony.io/tier: standard
+    symphony.io/language: node
+    symphony.io/version: 0.9.0
+    symphony.io/team-name: Produit
+    symphony.io/team-slack: "#team-product"
+    symphony.io/team-email: product@demo.symphony
   links:
     - title: Repository
       url: __REPO_URL__
@@ -29,11 +26,13 @@ spec:
     - title: Application Argo CD
       url: __ARGOCD_URL__/applications/argocd/notification-service-production
       icon: web
-  dependencies:
-    - service: auth-service
-      type: api
-    - service: rabbitmq
-      type: queue
+spec:
+  type: api
+  lifecycle: staging
+  owner: team-product
+  dependsOn:
+    - component:auth-service
+    - resource:rabbitmq
   slo:
     availability: "99.5%"
     latency_p99: 500ms

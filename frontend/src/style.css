@@ -11,6 +11,7 @@ body { font-family: sans-serif; background: #f5f5f5; color: #1a1a1a; }
 .lifecycle-badge.staging { background: #ebf8ff; color: #2b6cb0; }
 .lifecycle-badge.experimental { background: #faf5ff; color: #6b46c1; }
 .lifecycle-badge.deprecated { color: #999; text-decoration: line-through; }
+.discovered-badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: #fefcbf; color: #744210; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #cbd5e0; flex-shrink: 0; }
 .dot.running { background: #38a169; }
 .dot.deploying { background: #ecc94b; }

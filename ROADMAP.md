@@ -272,9 +272,15 @@ suppression ne laisse rien dans le cluster.
 
 ## v0.14 — Les services existants
 
-- [ ] Fiches compatibles Backstage (`backstage.io/v1alpha1`), nos ajouts en annotations
-      ou champs étendus
-- [ ] Import par scan d'un groupe GitLab ou d'une organisation GitHub
+- [x] Fiches compatibles Backstage (`backstage.io/v1alpha1`), nos ajouts en annotations
+      ou champs étendus ; l'ancien format lu jusqu'à la v1.0
+- [x] Import par scan d'un groupe GitLab ou d'une organisation GitHub, déclaré dans la
+      configuration (`catalogue.discovery`) : sans rien écrire dans les repos, et
+      retirer un projet découvert garde son repo
+
+Fini quand : une fiche Backstage existante est lue telle quelle, un repo poussé sans
+Symphony dans un groupe scanné devient un projet qui se déploie, et le retirer laisse son
+repo et ses images.
 
 ## v0.15 — L'équipe et la gouvernance
 
@@ -305,8 +311,8 @@ mettre à jour et s'y fier sans lire son code.
 
 - [ ] Contrat stable (SemVer strict) : API `/api/v1`, configuration, fiches et stacks
       versionnées ; toute dépréciation annoncée une version à l'avance, avec son outil
-      de migration ; l'ancien format des stacks (`template.yaml`, section `templates`)
-      retiré
+      de migration ; les anciens formats des stacks (`template.yaml`, section
+      `templates`) et des fiches (`symphony/v1`) retirés
 - [ ] Montée de version testée d'une version à l'autre, retour arrière documenté
 - [ ] Guide d'exploitation : installation (Compose et Helm), métriques et alertes,
       dépannage

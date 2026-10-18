@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -140,7 +141,8 @@ func TestIntegration(t *testing.T) {
 	defer cancel()
 	runner.Start(ctx, 2)
 
-	srv := httptest.NewServer(NewServer(providers, store, db, syncer, stacks,
+	discovery := gitops.NewDiscoverer(providers, handlers.DiscoveryStore{DB: db, Providers: providers}, syncer.File, syncer.ForceSync)
+	srv := httptest.NewServer(NewServer(providers, store, db, syncer, discovery, stacks,
 		auth.NewHolder(&auth.Policy{}), runner, hooks, envs, func() config.Status { return config.Status{} }))
 	defer srv.Close()
 
@@ -216,7 +218,7 @@ func TestIntegration(t *testing.T) {
 kind: Service
 metadata: {name: ` + name + `, owner: team-it}
 spec:
-  repo: http://forge/apps/` + name + `
+  repo: http://forge/platform/symphony-stacks # faux : l'action vise le repo du projet
   actions:
     - name: Rollback
       ci_provider: gitlab-ci
@@ -322,6 +324,12 @@ spec:
 	}
 	code, task = call("POST", "/api/v1/services/"+name+"/actions/Rollback", map[string]any{"version": "v1"})
 	wait("action Day-2", code, task)
+	if tk, _ := db.GetTask(int64(task["id"].(float64))); tk != nil {
+		var params struct{ Repo string }
+		if json.Unmarshal(tk.Params, &params); params.Repo != repo {
+			t.Errorf("action lancée hors du repo du projet : %s", tk.Params)
+		}
+	}
 	code, _ = callList(t, srv.URL, "/api/v1/tasks?resource="+name, func(items []map[string]any) bool { return len(items) >= 4 })
 	code, _ = callList(t, srv.URL, "/api/v1/audit", func(items []map[string]any) bool {
 		for _, e := range items {
@@ -378,6 +386,60 @@ spec:
 	}
 	code, task = call("DELETE", "/api/v1/projects/"+withDB, nil)
 	wait("suppression avec infra", code, task)
+
+	// 9. Un service existant, hors de Symphony, découvert par sa fiche
+	// Backstage : il se déploie, et le retirer de Symphony garde son repo
+	legacy := name + "-legacy"
+	legacyRepo := "legacy/" + legacy
+	forge.Seed(legacyRepo, map[string]string{"catalog-info.yaml": `apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ` + legacy + `
+  annotations: {symphony.io/port: "9090"}
+spec: {type: service, lifecycle: production, owner: group:default/team-it}
+`})
+	src := gitops.DiscoverySource{SCM: "gitlab", Group: "legacy", CI: "gitlab-ci", Registry: registry.ID()}
+	discovery.SetSettings(gitops.DiscoverySettings{Sources: []gitops.DiscoverySource{src}})
+	discovery.Scan()
+	p, err := db.GetProjectByName(legacy)
+	if err != nil || p.DiscoveredFrom != "gitlab/legacy" || p.Team != "team-it" || p.Port != 9090 || p.RepoPath != legacyRepo {
+		t.Fatalf("projet découvert : %+v %v (rapport %+v)", p, err, discovery.Report())
+	}
+	if _, ok := store.Get(legacy); !ok {
+		t.Error("fiche du projet découvert absente du catalogue")
+	}
+	code, img = call("GET", "/api/v1/projects/"+legacy+"/image", nil)
+	tags, _ = img["tags"].([]any)
+	if code != http.StatusOK || len(tags) == 0 {
+		t.Fatalf("image du projet découvert : %d %v", code, img)
+	}
+	code, task = call("POST", "/api/v1/deployments", map[string]any{"project_name": legacy, "environment": "staging",
+		"image": img["image"], "tag": tags[0]})
+	wait("déploiement d'un projet découvert", code, task)
+	// Encore dans son groupe : le retirer ne servirait à rien
+	if code, out := call("DELETE", "/api/v1/projects/"+legacy, nil); code != http.StatusConflict {
+		t.Errorf("retrait d'un projet encore découvert : %d %v", code, out)
+	}
+	src.Exclude = []string{legacyRepo}
+	discovery.SetSettings(gitops.DiscoverySettings{Sources: []gitops.DiscoverySource{src}})
+	discovery.Scan()
+	if rep := discovery.Report(); len(rep.Orphans) != 1 || rep.Orphans[0].Project != legacy {
+		t.Errorf("orphelins : %+v", rep.Orphans)
+	}
+	code, task = call("DELETE", "/api/v1/projects/"+legacy, nil)
+	wait("retrait d'un projet découvert", code, task)
+	if _, err := db.GetProjectByName(legacy); err == nil {
+		t.Error("projet découvert toujours en base")
+	}
+	if _, ok := forge.File(legacyRepo, "catalog-info.yaml"); !ok {
+		t.Error("repo d'un projet découvert supprimé")
+	}
+	if tags, _ := registry.ListTags(legacyRepo); len(tags) == 0 {
+		t.Error("images d'un projet découvert supprimées")
+	}
+	if deps, _ := docker.List(); slices.ContainsFunc(deps, func(d provider.Deployment) bool { return d.Project == legacy }) {
+		t.Error("déploiement d'un projet découvert resté en place")
+	}
 
 	// Page Administration : l'audit a tout vu, les stacks sont chargées
 	code, status := call("GET", "/api/v1/admin/status", nil)

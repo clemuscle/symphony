@@ -184,9 +184,29 @@ webhooks:
   secret: secret://vault/symphony/webhook#secret # 16 caractères au moins
 
 # ─── Catalogue ────────────────────────────────────────────────────────────────
-# Chaque projet porte sa fiche dans son repo, à la racine
+# Chaque projet porte sa fiche dans son repo, à la racine (format :
+# documentation/reference/catalog-info.yaml, un Component Backstage)
 catalogue:
   file: catalog-info.yaml # défaut catalog-info.yaml
+  # Services existants : chaque repo de ces groupes qui a une fiche devient un
+  # projet de Symphony, au nom de sa fiche (metadata.name), à l'équipe de son
+  # spec.owner (si l'annuaire la connaît ; sinon réservé aux admins). Symphony
+  # n'écrit rien dans ces repos (pas de webhook : pipelines sondées) ; retirer
+  # un tel projet garde son repo et ses images. Un repo qui n'est plus trouvé
+  # (fiche retirée, exclu, archivé) est signalé dans Administration, pas
+  # retiré. Absent : pas de découverte.
+  discovery:
+    interval: 10m # entre deux scans ; défaut 5m, 1m minimum
+    sources:
+      - group: apps/legacy # groupe GitLab, sous-groupes compris (requis)
+        scm: gitlab # provider SCM ; défaut : celui par défaut
+        ci: gitlab-ci # pipelines et actions ; défaut : celui par défaut
+        registry: gitlab-registry # images ; défaut : celui par défaut
+        exclude: [apps/legacy/archive-*] # repos ignorés (motifs de chemin)
+      - group: acme # organisation GitHub, ou compte
+        scm: github
+        ci: github-actions # le CI tourne sur la plateforme du SCM
+        registry: ghcr
 
 # ─── Stacks ───────────────────────────────────────────────────────────────────
 # Les modèles de projet proposés à la création : ceux du repo de l'entreprise,
