@@ -8,24 +8,13 @@ export const lifecycle = (p: Project): string => p.service?.metadata.lifecycle |
 // Cycle de vie (maturité déclarée dans la fiche), en mots qui ne se confondent
 // pas avec les environnements où le projet est déployé
 export const lifecycleLabels: Record<string, string> = {
-  experimental: '🧪 expérimental', staging: '🚧 en rodage', production: '✅ en service', deprecated: '⛔ obsolète',
+  experimental: 'expérimental', staging: 'en rodage', production: 'en service', deprecated: 'obsolète',
 }
 export const lifecycleLabel = (value: string): string => lifecycleLabels[value] || value
 export const owner = (p: Project): string => p.service?.metadata.owner || p.team || ''
 
-const lookup = (table: Record<string, string>, fallback: string) =>
-  (key: string | undefined): string => (key && table[key]) || fallback
-
-export const tierIcon = lookup({ critical: '🔴', standard: '🟡', internal: '⚪' }, '🟡')
-export const langIcon = lookup({ go: '🐹', python: '🐍', node: '💚', java: '☕' }, '📦')
-export const depIcon = lookup(
-  { database: '🗄️', cache: '⚡', api: '🔌', queue: '📨', resource: '🗄️', component: '🧩' }, '📦')
-export const linkIcon = lookup(
-  { monitoring: '📊', errors: '🐛', docs: '📖', code: '💻', ci: '⚙️', web: '🌐', docker: '🐳' }, '🔗')
-
-export function runtimeLabel(rt: string): string {
-  return ({ 'docker-local': '🐳 Docker', 'argocd-k3s': '☸️ Kubernetes' } as Record<string, string>)[rt] || rt
-}
+// Icônes (langage, runtime, liens, dépendances) : lib/icons.ts et components/AppIcon.vue
+export { runtimeKind, runtimeLabel } from './icons'
 
 export const shortURL = (u: string): string => u.replace(/^https?:\/\//, '')
 

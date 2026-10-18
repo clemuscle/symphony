@@ -1,6 +1,6 @@
 <template>
   <div class="action-block">
-    <div class="action-title">⚡ {{ action.name }}</div>
+    <div class="action-title"><AppIcon name="action" /> {{ action.name }}</div>
     <div class="action-desc" v-if="action.description">{{ action.description }}</div>
     <div v-for="input in action.inputs ?? []" :key="input.id" class="field">
       <label>{{ input.label || input.id }}</label>
@@ -12,10 +12,10 @@
       <input v-else type="text" v-model="values[input.id]" :placeholder="input.default || input.id" />
     </div>
     <button class="btn" v-if="allowed" :disabled="busy" @click="trigger">
-      {{ busy ? '⏳ Envoi...' : 'Déclencher' }}
+      {{ busy ? 'Envoi...' : 'Déclencher' }}
     </button>
     <TaskProgress class="action-task" v-if="task" :task="task" />
-    <div v-else-if="error" class="feedback err">❌ {{ error }}</div>
+    <div v-else-if="error" class="feedback err"><AppIcon name="error" /> {{ error }}</div>
   </div>
 </template>
 
@@ -24,6 +24,7 @@ import { computed, ref } from 'vue'
 import { api, errorMessage } from '../api'
 import { taskStore, trackTask } from '../stores/tasks'
 import type { Action } from '../types'
+import AppIcon from './AppIcon.vue'
 import TaskProgress from './TaskProgress.vue'
 
 const props = defineProps<{

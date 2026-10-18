@@ -3,28 +3,28 @@
     <div class="card-top">
       <div class="card-name-row">
         <span class="svc-name">{{ project.name }}</span>
-        <span :class="['tier-badge', tier(project)]">{{ tierIcon(tier(project)) }} {{ tier(project) }}</span>
+        <span :class="['tier-badge', tier(project)]"><span class="tier-dot"></span>{{ tier(project) }}</span>
       </div>
-      <span :class="['lifecycle-badge', lifecycle(project)]" v-if="lifecycle(project)" title="Cycle de vie (fiche catalogue)">{{ lifecycleLabel(lifecycle(project)) }}</span>
+      <span :class="['lifecycle-badge', lifecycle(project)]" v-if="lifecycle(project)" title="Cycle de vie (fiche catalogue)"><AppIcon :name="lifecycle(project)" :size="12" /> {{ lifecycleLabel(lifecycle(project)) }}</span>
     </div>
     <div class="card-desc">{{ project.description || 'Pas de description' }}</div>
     <div class="svc-meta">
-      <span v-if="owner(project)">👤 {{ owner(project) }}</span>
-      <span>{{ langIcon(project.language) }} {{ project.language }}</span>
+      <span v-if="owner(project)"><AppIcon name="user" :size="13" /> {{ owner(project) }}</span>
+      <span><AppIcon :name="project.language" :size="13" /> {{ project.language }}</span>
       <span class="muted" v-if="project.stack">{{ project.stack }}</span>
-      <span class="discovered-badge" v-if="project.discovered_from" :title="'Service existant, découvert dans ' + project.discovered_from">🔎 découvert</span>
+      <span class="discovered-badge" v-if="project.discovered_from" :title="'Service existant, découvert dans ' + project.discovered_from"><AppIcon name="discovered" :size="12" /> découvert</span>
     </div>
 
     <div class="deploy-line" v-for="d in deployments" :key="d.provider + d.id">
       <span :class="['dot', d.status]"></span>
-      <span class="deploy-rt">{{ runtimeLabel(d.provider) }}</span>
+      <span class="deploy-rt"><AppIcon :name="runtimeKind(d.provider)" :size="13" /> {{ runtimeLabel(d.provider) }}</span>
       <a v-if="d.url && d.status === 'running'" :href="d.url" target="_blank" @click.stop>{{ shortURL(d.url) }} ↗</a>
       <span v-else class="muted">{{ d.status }}</span>
     </div>
     <div class="deploy-line muted" v-if="!deployments.length && !task">Pas encore déployé</div>
 
     <div class="project-task" v-if="task">
-      ⚡ {{ taskTitle(task) }} : {{ task.steps[task.step] }}
+      <AppIcon name="action" :size="13" /> {{ taskTitle(task) }} : {{ task.steps[task.step] }}
     </div>
     <div class="no-fiche" v-else-if="!project.service">Fiche catalogue absente du repo</div>
   </div>
@@ -32,7 +32,8 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { lifecycle, lifecycleLabel, langIcon, owner, runtimeLabel, shortURL, tier, tierIcon } from '../lib/projects'
+import { lifecycle, lifecycleLabel, owner, runtimeKind, runtimeLabel, shortURL, tier } from '../lib/projects'
+import AppIcon from './AppIcon.vue'
 import { taskTitle } from '../lib/tasks'
 import { activeTaskFor } from '../stores/tasks'
 import type { Deployment, Project } from '../types'

@@ -16,7 +16,7 @@
       </li>
     </ol>
 
-    <div class="error" v-if="task.error">❌ {{ task.error }}</div>
+    <div class="error" v-if="task.error"><AppIcon name="error" /> {{ task.error }}</div>
 
     <div class="links" v-if="links.length">
       <a v-for="l in links" :key="l.url" :href="l.url" target="_blank">{{ l.label }} ↗</a>
@@ -32,6 +32,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { taskTitle } from '../lib/tasks'
 import type { Task } from '../types'
+import AppIcon from './AppIcon.vue'
 
 const props = withDefaults(defineProps<{
   task: Task

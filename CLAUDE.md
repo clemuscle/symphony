@@ -67,6 +67,9 @@ SYMPHONY_TEST_K8S=1 go test -run TestCNPGOnCluster ./internal/provider/runtime/a
 - `frontend/src/visit/` : mode visite (GitHub Pages, `npm run build:visit`) : l'API servie
   par `fixtures.json`, capturé sur une démo (`demo/visit/capture-fixtures.sh`), lecture
   seule. À recapturer quand l'API change.
+- Icônes du front : `<AppIcon name="…">` (`src/components/AppIcon.vue`), noms dans
+  `src/lib/icons.ts` (logos Simple Icons, pictogrammes Lucide, importés un par un) ; pas
+  d'émoji dans l'interface.
 - `stacks/` : catalogue officiel, embarqué dans le binaire (`go:embed`) ; une stack par
   dossier, sans provider désigné, une CI par forge (`ci_templates`). Fichiers du
   squelette en `.tmpl` (créés sans ce suffixe) pour que le module Go ne les compile pas.

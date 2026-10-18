@@ -277,6 +277,7 @@ suppression ne laisse rien dans le cluster.
 - [x] Import par scan d'un groupe GitLab ou d'une organisation GitHub, déclaré dans la
       configuration (`catalogue.discovery`) : sans rien écrire dans les repos, et
       retirer un projet découvert garde son repo
+- [x] Interface : icônes des outils et pictogrammes à la place des émojis
 
 Fini quand : une fiche Backstage existante est lue telle quelle, un repo poussé sans
 Symphony dans un groupe scanné devient un projet qui se déploie, et le retirer laisse son
