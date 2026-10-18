@@ -53,7 +53,7 @@ stack du repo qui porte le nom d'une stack officielle la remplace. Avant de pous
 
 ```bash
 docker run --rm --env-file .env -v "$PWD:/w:ro" -w /w \
-  ghcr.io/clemuscle/symphony:0.13 validate -config symphony.gitlab.yaml -stacks <dossier des stacks>
+  ghcr.io/clemuscle/symphony:0.14 validate -config symphony.gitlab.yaml -stacks <dossier des stacks>
 ```
 
 ## Limites du quickstart
