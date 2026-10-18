@@ -5,12 +5,12 @@
         <h2>Déploiements</h2>
         <p class="subtitle">Services déployés, sur tous les runtimes (Docker, Kubernetes via Argo CD)</p>
       </div>
-      <button class="btn-refresh" @click="load()">↻ Rafraîchir</button>
+      <button class="btn-refresh" @click="load()"><AppIcon name="refresh" /> Rafraîchir</button>
     </div>
 
     <!-- Déploiement manuel -->
     <form class="form-card" v-if="can('developer')" @submit.prevent="deploy">
-      <h3>🚀 Nouveau déploiement</h3>
+      <h3><AppIcon name="deployments" /> Nouveau déploiement</h3>
       <div class="form-grid">
         <div class="field">
           <label>Projet *</label>
@@ -59,13 +59,13 @@
       </div>
       <button class="btn-primary" type="submit"
         :disabled="deploying || !form.project_name || !form.image">
-        {{ deploying ? '⏳ Envoi...' : '🚀 Déployer' }}
+        <AppIcon :name="deploying ? 'pending' : 'deployments'" /> {{ deploying ? 'Envoi...' : 'Déployer' }}
       </button>
       <!-- Avancement du déploiement, en direct (tâche asynchrone) -->
       <div class="task-wrap" v-if="deployTask">
         <TaskProgress :task="deployTask" />
       </div>
-      <div class="result-card err" v-if="deployError">❌ {{ deployError }}</div>
+      <div class="result-card err" v-if="deployError"><AppIcon name="error" /> {{ deployError }}</div>
     </form>
 
     <div v-if="loading" class="state">Chargement...</div>
@@ -80,20 +80,20 @@
           <span :class="['status', d.status]">{{ d.status }}</span>
         </div>
         <div class="deploy-runtime">
-          <span class="runtime">{{ d.provider }}</span>
+          <span class="runtime"><AppIcon :name="d.sync ? 'kubernetes' : runtimeKind(d.provider)" :size="13" /> {{ d.provider }}</span>
           <!-- Runtime GitOps : synchronisation avec Git et santé vues par Argo CD -->
           <span v-if="d.sync" :class="['gitops', d.sync]" title="Synchronisation avec Git (Argo CD)">{{ d.sync }}</span>
           <span v-if="d.health" :class="['gitops', d.health]" title="Santé (Argo CD)">{{ d.health }}</span>
         </div>
-        <div class="deploy-image">{{ d.sync ? '☸️' : '🐳' }} {{ d.image || '—' }}</div>
-        <a v-if="d.url" :href="d.url" target="_blank" class="deploy-url">{{ d.url }} ↗</a>
+        <div class="deploy-image">{{ d.image || '—' }}</div>
+        <a v-if="d.url" :href="d.url" target="_blank" class="deploy-url">{{ d.url }} <AppIcon name="external" :size="13" /></a>
         <div class="deploy-footer" v-if="canOperate(teamOf(d.project || d.name))">
-          <button class="btn-stop" v-if="isUp(d)" @click="stop(d)">⏹ Stop</button>
-          <button class="btn-restart" @click="restart(d)">↻ {{ isUp(d) ? 'Redémarrer' : 'Relancer' }}</button>
+          <button class="btn-stop" v-if="isUp(d)" @click="stop(d)"><AppIcon name="stop" :size="13" /> Stop</button>
+          <button class="btn-restart" @click="restart(d)"><AppIcon name="restart" :size="13" /> {{ isUp(d) ? 'Redémarrer' : 'Relancer' }}</button>
         </div>
       </div>
       <div class="empty" v-if="!deployments.length">
-        <div class="empty-icon">🐳</div>
+        <div class="empty-icon"><AppIcon name="deployments" :size="36" /></div>
         <div>Aucun déploiement</div>
         <div class="empty-sub">Crée et déploie un projet depuis l'onglet Projets</div>
       </div>
@@ -105,7 +105,9 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { api, errorMessage } from '../api'
+import AppIcon from '../components/AppIcon.vue'
 import TaskProgress from '../components/TaskProgress.vue'
+import { runtimeKind } from '../lib/icons'
 import { can, canOperate } from '../stores/session'
 import { taskStore, trackTask } from '../stores/tasks'
 import type { Deployment, Project } from '../types'
@@ -256,7 +258,7 @@ h2 { font-size: 22px; font-weight: 700; }
 .btn-restart { padding: 6px 14px; background: white; color: #555; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 13px; margin-left: 6px; }
 .btn-restart:hover { background: #f4f4f8; }
 .empty { color: #888; text-align: center; padding: 60px; grid-column: 1/-1; }
-.empty-icon { font-size: 48px; margin-bottom: 12px; }
+.empty-icon { color: #bbb; margin-bottom: 12px; }
 .empty-sub { font-size: 13px; margin-top: 6px; }
 .form-card { background: white; border: 1px solid #e2e2e2; border-radius: 14px; padding: 24px; margin-bottom: 24px; }
 .form-card h3 { font-size: 16px; margin-bottom: 16px; }

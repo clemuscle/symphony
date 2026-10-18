@@ -67,8 +67,8 @@ describe('environnements', () => {
 
 describe('lifecycleLabel', () => {
   it("ne reprend pas les noms d'environnement", () => {
-    expect(lifecycleLabel('production')).toBe('✅ en service')
-    expect(lifecycleLabel('staging')).toBe('🚧 en rodage')
+    expect(lifecycleLabel('production')).toBe('en service')
+    expect(lifecycleLabel('staging')).toBe('en rodage')
     expect(lifecycleLabel('autre')).toBe('autre')
   })
 })

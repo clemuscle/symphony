@@ -1,25 +1,25 @@
 <template>
   <div class="layout" :class="{ visit: visitMode }">
     <div class="visit-banner" v-if="visitMode">
-      👀 Mode visite : la vraie interface de Symphony sur des données capturées en démo, en
+      <AppIcon name="visit" /> Mode visite : la vraie interface de Symphony sur des données capturées en démo, en
       lecture seule. Pour créer, déployer et promouvoir :
       <a href="https://github.com/clemuscle/symphony#essayer" target="_blank">./demo/up.sh</a>
     </div>
     <header class="header">
       <div class="brand">
-        <span class="logo">🎼</span>
+        <span class="logo"><AppIcon name="logo" :size="24" /></span>
         <span class="name">Symphony</span>
         <span class="subtitle">Internal Developer Platform</span>
       </div>
       <nav class="nav">
-        <RouterLink to="/" class="nav-link">🗂 Projets</RouterLink>
-        <RouterLink to="/catalogue" class="nav-link">📦 Catalogue</RouterLink>
-        <RouterLink to="/deployments" class="nav-link">🚀 Déploiements</RouterLink>
+        <RouterLink to="/" class="nav-link"><AppIcon name="projects" /> Projets</RouterLink>
+        <RouterLink to="/catalogue" class="nav-link"><AppIcon name="catalogue" /> Catalogue</RouterLink>
+        <RouterLink to="/deployments" class="nav-link"><AppIcon name="deployments" /> Déploiements</RouterLink>
         <RouterLink to="/tasks" class="nav-link">
-          ⚡ Activité<span class="count" v-if="activeTasks.length">{{ activeTasks.length }}</span>
+          <AppIcon name="activity" /> Activité<span class="count" v-if="activeTasks.length">{{ activeTasks.length }}</span>
         </RouterLink>
         <!-- Le serveur refuse /api/v1/admin aux autres rôles : le lien est masqué -->
-        <RouterLink to="/admin" class="nav-link" v-if="session.loaded && can('admin')">🛠 Administration</RouterLink>
+        <RouterLink to="/admin" class="nav-link" v-if="session.loaded && can('admin')"><AppIcon name="admin" /> Administration</RouterLink>
       </nav>
       <div class="user" v-if="session.loaded">
         <template v-if="session.authEnabled && session.user">
@@ -47,6 +47,7 @@ import { onMounted } from 'vue'
 import { visitMode } from './api'
 import { session, loadSession, can } from './stores/session'
 import { connectTasks, activeTasks } from './stores/tasks'
+import AppIcon from './components/AppIcon.vue'
 
 // Le flux des tâches s'ouvre une fois la session connue (et un rôle attribué)
 onMounted(async () => {
@@ -63,11 +64,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #
 .visit-banner a { color: #92400e; font-weight: 600; }
 .header { background: #1a1a2e; color: white; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 56px; position: sticky; top: 0; z-index: 100; }
 .brand { display: flex; align-items: center; gap: 10px; }
-.logo { font-size: 22px; }
+.logo { display: inline-flex; color: #a5b4fc; }
 .name { font-weight: 700; font-size: 18px; }
 .subtitle { color: #666; font-size: 13px; }
 .nav { display: flex; gap: 4px; }
-.nav-link { color: #aaa; text-decoration: none; padding: 6px 14px; border-radius: 6px; font-size: 14px; transition: all .15s; }
+.nav-link { display: inline-flex; align-items: center; gap: 6px; color: #aaa; text-decoration: none; padding: 6px 14px; border-radius: 6px; font-size: 14px; transition: all .15s; }
 .nav-link:hover { color: white; background: #ffffff15; }
 .nav-link.router-link-active { color: white; background: #667eea; }
 .count { margin-left: 6px; background: #f6ad55; color: #1a1a2e; border-radius: 10px; padding: 0 7px; font-size: 12px; font-weight: 600; }

@@ -9,7 +9,7 @@
         </p>
       </div>
       <button class="btn-ghost" v-if="can('admin')" :disabled="syncing" @click="syncStacks">
-        {{ syncing ? 'Rechargement...' : '↻ Recharger depuis Git' }}
+        <AppIcon name="refresh" /> {{ syncing ? 'Rechargement...' : 'Recharger depuis Git' }}
       </button>
     </div>
 
@@ -18,13 +18,13 @@
       <div v-for="st in stacks" :key="st.id"
         class="gp-card" :class="{ selected: selected?.id === st.id }"
         @click="select(st)">
-        <div class="gp-icon">{{ langIcon(st.language) }}</div>
+        <div class="gp-icon"><AppIcon :name="st.language" :size="30" /></div>
         <div class="gp-name">{{ st.name }}</div>
         <div class="gp-desc">{{ st.description }}</div>
         <div class="gp-tags">
           <span class="gp-tag" v-if="st.language">{{ st.language }}</span>
           <span class="gp-tag" v-if="st.type">{{ st.type }}</span>
-          <span class="gp-tag runtime">{{ runtimeLabel(st.runtime_provider) }}</span>
+          <span class="gp-tag runtime"><AppIcon :name="runtimeKind(st.runtime_provider)" :size="12" /> {{ runtimeLabel(st.runtime_provider) }}</span>
           <span class="gp-tag official" v-if="st.official" title="Catalogue officiel de Symphony">officielle</span>
           <span class="gp-tag" v-if="st.parameters.length">{{ st.parameters.length }} paramètre{{ st.parameters.length > 1 ? 's' : '' }}</span>
         </div>
@@ -39,8 +39,8 @@
     <Transition name="fade">
       <div class="form-card" v-if="selected" ref="formCard">
         <div class="form-head">
-          <h3>{{ langIcon(selected.language) }} Nouveau projet : {{ selected.name }}</h3>
-          <button class="close" @click="selected = null">✕</button>
+          <h3><AppIcon :name="selected.language" :size="20" /> Nouveau projet : {{ selected.name }}</h3>
+          <button class="close" @click="selected = null" title="Fermer"><AppIcon name="close" /></button>
         </div>
 
         <template v-if="can('developer')">
@@ -71,7 +71,7 @@
               <div class="field" v-for="p in shownParams" :key="p.name" :class="{ check: p.type === 'boolean' }">
                 <label :for="'param-' + p.name">
                   {{ p.title }}<span v-if="p.required"> *</span>
-                  <span class="lock" v-if="p.locked" title="Fixé par l'équipe plateforme">🔒</span>
+                  <span class="lock" v-if="p.locked" title="Fixé par l'équipe plateforme"><AppIcon name="lock" :size="13" /></span>
                 </label>
                 <select v-if="p.type === 'choice'" :id="'param-' + p.name" v-model="params[p.name]" :disabled="p.locked">
                   <option v-for="c in p.choices" :key="c" :value="c">{{ c }}</option>
@@ -106,9 +106,9 @@
             <div class="field">
               <label>Tier</label>
               <select v-model="form.tier">
-                <option value="critical">🔴 critical</option>
-                <option value="standard">🟡 standard</option>
-                <option value="internal">⚪ internal</option>
+                <option value="critical">critical</option>
+                <option value="standard">standard</option>
+                <option value="internal">internal</option>
               </select>
             </div>
             <div class="field">
@@ -124,18 +124,18 @@
           <div class="summary">
             <div class="summary-title">Ce que Symphony va créer :</div>
             <div class="summary-items">
-              <div class="summary-item">✅ Repo <code>{{ form.namespace || 'groupe par défaut' }}/{{ form.name || '...' }}</code> : squelette, CI <code>{{ selected.ci_template }}</code> et fiche <code>catalog-info.yaml</code> en un commit</div>
-              <div class="summary-item">✅ Webhook de pipeline (suivi en direct)</div>
-              <div class="summary-item">✅ Première pipeline : tests et image dans le registry</div>
-              <div class="summary-item">✅ Runtime de déploiement : <code>{{ runtimeLabel(selected.runtime_provider) }}</code></div>
-              <div class="summary-item" v-if="infraShown">✅ Infra (Kubernetes, dans chaque environnement) : <code>{{ selected.infra!.kubernetes }}</code><template v-if="infraVars"> ; l'appli lit {{ infraVars }}</template></div>
-              <div class="summary-item" v-if="kubeManifests">✅ Manifests Kubernetes dans le repo : <code>{{ kubeManifests }}</code></div>
+              <div class="summary-item"><AppIcon name="ok" class="ok-icon" /> Repo <code>{{ form.namespace || 'groupe par défaut' }}/{{ form.name || '...' }}</code> : squelette, CI <code>{{ selected.ci_template }}</code> et fiche <code>catalog-info.yaml</code> en un commit</div>
+              <div class="summary-item"><AppIcon name="ok" class="ok-icon" /> Webhook de pipeline (suivi en direct)</div>
+              <div class="summary-item"><AppIcon name="ok" class="ok-icon" /> Première pipeline : tests et image dans le registry</div>
+              <div class="summary-item"><AppIcon name="ok" class="ok-icon" /> Runtime de déploiement : <code>{{ runtimeLabel(selected.runtime_provider) }}</code></div>
+              <div class="summary-item" v-if="infraShown"><AppIcon name="ok" class="ok-icon" /> Infra (Kubernetes, dans chaque environnement) : <code>{{ selected.infra!.kubernetes }}</code><template v-if="infraVars"> ; l'appli lit {{ infraVars }}</template></div>
+              <div class="summary-item" v-if="kubeManifests"><AppIcon name="ok" class="ok-icon" /> Manifests Kubernetes dans le repo : <code>{{ kubeManifests }}</code></div>
             </div>
           </div>
 
           <div class="form-footer">
             <button class="btn-primary" :disabled="creating || !form.name || !!nameError || hasParamErrors" @click="createProject">
-              {{ creating ? '⏳ Envoi...' : '🚀 Créer le projet' }}
+              <AppIcon :name="creating ? 'pending' : 'deployments'" /> {{ creating ? 'Envoi...' : 'Créer le projet' }}
             </button>
           </div>
         </template>
@@ -150,7 +150,7 @@
             <RouterLink :to="{ path: '/', query: { project: createTask.resource } }">voir le projet →</RouterLink>
           </div>
         </div>
-        <div class="result-card err" v-if="createError">❌ {{ createError }}</div>
+        <div class="result-card err" v-if="createError"><AppIcon name="error" /> {{ createError }}</div>
       </div>
     </Transition>
   </div>
@@ -159,7 +159,8 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { api, errorMessage } from '../api'
-import { langIcon, lifecycleLabels } from '../lib/projects'
+import { lifecycleLabels, runtimeKind } from '../lib/projects'
+import AppIcon from '../components/AppIcon.vue'
 import { keepFile, paramErrors, visible, fillDefaults, type ParamValues } from '../lib/parameters'
 import { can, myTeams } from '../stores/session'
 import TaskProgress from '../components/TaskProgress.vue'
@@ -210,8 +211,10 @@ const kubeManifests = computed(() => {
   return k.helm ? `chart Helm ${k.helm}` : `base Kustomize ${k.kustomize}`
 })
 
-const runtimeLabels: Record<string, string> = { 'docker-local': '🐳 Docker', 'argocd-k3s': '☸️ Kubernetes (Argo CD)' }
-const runtimeLabel = (rt: string) => runtimeLabels[rt] || rt || 'runtime par défaut'
+const runtimeLabel = (rt: string) => {
+  const kind = runtimeKind(rt)
+  return kind === 'kubernetes' ? 'Kubernetes (Argo CD)' : kind === 'docker' ? 'Docker' : rt || 'runtime par défaut'
+}
 
 // Équipes proposées pour le champ owner : groupes de l'annuaire, si le
 // provider d'identité en a un (Keycloak) ; saisie libre sinon
@@ -301,7 +304,8 @@ h2 { font-size: 22px; font-weight: 700; }
 .gp-card { border: 2px solid #e2e2e2; border-radius: 12px; padding: 18px; cursor: pointer; transition: all .15s; background: white; display: flex; flex-direction: column; }
 .gp-card:hover { border-color: #667eea; transform: translateY(-2px); box-shadow: 0 4px 12px #667eea15; }
 .gp-card.selected { border-color: #667eea; background: #f0f4ff; box-shadow: 0 0 0 3px #667eea22; }
-.gp-icon { font-size: 30px; margin-bottom: 8px; }
+.gp-icon { margin-bottom: 8px; }
+.ok-icon { color: #38a169; }
 .gp-name { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
 .gp-desc { font-size: 13px; color: #777; margin-bottom: 12px; line-height: 1.4; flex: 1; }
 .gp-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }

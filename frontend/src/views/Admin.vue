@@ -7,9 +7,9 @@
       </div>
       <div class="actions">
         <button class="btn" @click="sync" :disabled="syncing" title="Relire les stacks et les fiches, scanner les groupes de la découverte, sans attendre">
-          {{ syncing ? 'Synchronisation…' : '⟳ Relire Git' }}
+          <AppIcon name="refresh" /> {{ syncing ? 'Synchronisation…' : 'Relire Git' }}
         </button>
-        <button class="btn" @click="load">↻ Rafraîchir</button>
+        <button class="btn" @click="load"><AppIcon name="restart" /> Rafraîchir</button>
       </div>
     </div>
 
@@ -22,12 +22,12 @@
           <strong>{{ issues.length }} point{{ issues.length > 1 ? 's' : '' }} à regarder</strong>
           <ul><li v-for="i in issues" :key="i">{{ i }}</li></ul>
         </template>
-        <strong v-else>✓ Tout est chargé, aucun provider en erreur</strong>
+        <strong v-else><AppIcon name="ok" /> Tout est chargé, aucun provider en erreur</strong>
       </div>
 
       <!-- Configuration -->
       <section class="card">
-        <h3>⚙️ Configuration</h3>
+        <h3><AppIcon name="config" /> Configuration</h3>
         <dl class="facts">
           <dt>Source</dt><dd><code>{{ status.config.source }}</code></dd>
           <dt>En place</dt>
@@ -59,7 +59,7 @@
       <!-- Providers -->
       <section class="card">
         <div class="card-head">
-          <h3>🔌 Providers</h3>
+          <h3><AppIcon name="providers" /> Providers</h3>
           <button class="btn small" @click="runChecks" :disabled="checking">
             {{ checking ? 'Vérification…' : 'Vérifier' }}
           </button>
@@ -92,7 +92,7 @@
 
       <!-- Stacks -->
       <section class="card">
-        <h3>🧭 Stacks</h3>
+        <h3><AppIcon name="stacks" /> Stacks</h3>
         <dl class="facts">
           <dt>Repo</dt>
           <dd v-if="status.stacks.repo"><code>{{ status.stacks.repo }}</code>, branche <code>{{ status.stacks.branch }}</code>,
@@ -127,7 +127,7 @@
 
       <!-- Catalogue -->
       <section class="card">
-        <h3>📇 Fiches catalogue</h3>
+        <h3><AppIcon name="backstage" /> Fiches catalogue</h3>
         <dl class="facts">
           <dt>Fichier</dt><dd><code>{{ status.catalogue.file }}</code> à la racine du repo de chaque projet</dd>
           <dt>Relues</dt><dd>{{ ago(status.catalogue.synced_at) }}</dd>
@@ -156,7 +156,7 @@
 
       <!-- Découverte -->
       <section class="card">
-        <h3>🔎 Services existants</h3>
+        <h3><AppIcon name="discovered" /> Services existants</h3>
         <p class="muted" v-if="!status.discovery.enabled">
           Pas de découverte : la section <code>catalogue.discovery</code> de la configuration désigne les groupes
           GitLab ou organisations GitHub dont les repos avec une fiche deviennent des projets.
@@ -203,7 +203,7 @@
 
       <!-- Audit -->
       <section class="card">
-        <h3>📜 Journal d'audit</h3>
+        <h3><AppIcon name="audit" /> Journal d'audit</h3>
         <table v-if="audit.length">
           <thead><tr><th>Quand</th><th>Qui</th><th>Action</th><th>Sur</th><th>Détails</th></tr></thead>
           <tbody>
@@ -226,6 +226,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { api, errorMessage } from '../api'
 import { ago, kindLabels, problems, providerState, stackName } from '../lib/admin'
+import AppIcon from '../components/AppIcon.vue'
 import type { AdminStatus, AuditEntry, ProviderCheck, ProviderStatus } from '../types'
 
 const status = ref<AdminStatus | null>(null)

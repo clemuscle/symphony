@@ -27,6 +27,10 @@ image `ghcr.io/clemuscle/symphony:X.Y`.
 - Méthode SCM `ListGroupRepos` (GitLab, GitHub : organisation ou compte).
 - Démo : groupe `services` et `invoice-service`, poussé sans Symphony avec une fiche
   Backstage (Component et API), découvert puis déployé en staging.
+- Interface : de vraies icônes à la place des émojis, logos des outils (langages, GitLab,
+  GitHub, Docker, Kubernetes…, [Simple Icons](https://simpleicons.org), CC0) et
+  pictogrammes ([Lucide](https://lucide.dev), ISC), par un composant `AppIcon` ; le
+  runtime d'un déploiement est reconnu par son id plutôt que par ceux de la démo.
 
 ### Modifié
 - L'ancienne fiche (`symphony/v1`, `kind: Service`) est lue jusqu'à la v1.0 et signalée

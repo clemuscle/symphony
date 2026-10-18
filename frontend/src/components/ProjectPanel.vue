@@ -4,22 +4,22 @@
       <div>
         <h3>{{ project.name }}</h3>
         <div class="panel-badges">
-          <span :class="['tier-badge', tier(project)]">{{ tierIcon(tier(project)) }} {{ tier(project) }}</span>
-          <span :class="['lifecycle-badge', lifecycle(project)]" v-if="lifecycle(project)" title="Cycle de vie (fiche catalogue)">{{ lifecycleLabel(lifecycle(project)) }}</span>
-          <span class="discovered-badge" v-if="project.discovered_from" :title="'Service existant, découvert dans ' + project.discovered_from">🔎 découvert</span>
+          <span :class="['tier-badge', tier(project)]"><span class="tier-dot"></span>{{ tier(project) }}</span>
+          <span :class="['lifecycle-badge', lifecycle(project)]" v-if="lifecycle(project)" title="Cycle de vie (fiche catalogue)"><AppIcon :name="lifecycle(project)" :size="12" /> {{ lifecycleLabel(lifecycle(project)) }}</span>
+          <span class="discovered-badge" v-if="project.discovered_from" :title="'Service existant, découvert dans ' + project.discovered_from"><AppIcon name="discovered" :size="12" /> découvert</span>
         </div>
       </div>
-      <button class="close" @click="emit('close')">✕</button>
+      <button class="close" @click="emit('close')" title="Fermer"><AppIcon name="close" /></button>
     </div>
     <p class="panel-desc" v-if="project.description">{{ project.description }}</p>
 
     <section>
       <h4>Code et CI</h4>
       <div class="btn-row">
-        <a :href="repoWebURL(project)" target="_blank" class="btn-ghost">💻 Repo ↗</a>
-        <a v-if="pipelinesURL(project)" :href="pipelinesURL(project)" target="_blank" class="btn-ghost">⚙️ Pipelines ↗</a>
+        <a :href="repoWebURL(project)" target="_blank" class="btn-ghost"><AppIcon :name="repoPlatform" /> Repo <AppIcon name="external" :size="13" /></a>
+        <a v-if="pipelinesURL(project)" :href="pipelinesURL(project)" target="_blank" class="btn-ghost"><AppIcon name="ci" /> Pipelines <AppIcon name="external" :size="13" /></a>
         <!-- Avec une fiche, la relance passe par ses actions Day-2 -->
-        <button class="btn-ghost" v-if="allowed && !svc" @click="triggerPipeline">▶ Relancer la pipeline</button>
+        <button class="btn-ghost" v-if="allowed && !svc" @click="triggerPipeline"><AppIcon name="run" /> Relancer la pipeline</button>
       </div>
       <div class="pipeline-status" v-if="pipeline">
         <span>Pipeline #{{ pipeline.id }}</span>
@@ -40,8 +40,8 @@
       <h4>Environnements</h4>
       <div class="env-item" v-for="(e, i) in project.environments" :key="e.name">
         <div class="deploy-head">
-          <span><strong>{{ e.name }}</strong> <span class="muted">· {{ runtimeLabel(e.runtime) }}</span>
-            <span class="lock" v-if="e.protected" title="Protégé : promotion seulement">🔒</span></span>
+          <span><strong>{{ e.name }}</strong> <span class="muted">· <AppIcon :name="runtimeKind(e.runtime)" :size="13" /> {{ runtimeLabel(e.runtime) }}</span>
+            <span class="lock" v-if="e.protected" title="Protégé : promotion seulement"><AppIcon name="lock" :size="13" /></span></span>
           <span class="muted" v-if="byEnv(e.name)">
             <span :class="['dot', byEnv(e.name)!.status]"></span> {{ byEnv(e.name)!.status }}
           </span>
@@ -59,13 +59,13 @@
           :disabled="!canPromote(i) || promoting"
           :title="canPromote(i) ? '' : 'Rien de sain à promouvoir en ' + project.environments[i - 1].name"
           @click="promote(e.name)">
-          ⬆ Promouvoir depuis {{ project.environments[i - 1].name }}
+          <AppIcon name="promote" /> Promouvoir depuis {{ project.environments[i - 1].name }}
         </button>
       </div>
       <TaskProgress v-if="promoteTask" :task="promoteTask" />
-      <div class="feedback err" v-if="promoteError">❌ {{ promoteError }}</div>
+      <div class="feedback err" v-if="promoteError"><AppIcon name="error" /> {{ promoteError }}</div>
       <RouterLink v-if="allowed" :to="{ path: '/deployments', query: { project: project.name } }" class="btn-ghost block">
-        🚀 Déployer une version
+        <AppIcon name="deployments" /> Déployer une version
       </RouterLink>
       <div class="muted small" v-else-if="can('developer')">
         Déploiement et actions réservés à l'équipe {{ project.team || 'propriétaire' }} et aux admins.
@@ -76,7 +76,7 @@
       <h4>Déploiements</h4>
       <div class="deploy-item" v-for="d in deployments" :key="d.provider + d.id">
         <div class="deploy-head">
-          <span><span :class="['dot', d.status]"></span> {{ runtimeLabel(d.provider) }}</span>
+          <span><span :class="['dot', d.status]"></span> <AppIcon :name="runtimeKind(d.provider)" :size="13" /> {{ runtimeLabel(d.provider) }}</span>
           <span class="muted">{{ d.status }}<template v-if="d.sync"> · {{ d.sync }} / {{ d.health }}</template></span>
         </div>
         <a v-if="d.url" :href="d.url" target="_blank" class="deploy-url">{{ d.url }} ↗</a>
@@ -84,7 +84,7 @@
       </div>
       <div class="muted small" v-if="!deployments.length">Aucun déploiement.</div>
       <RouterLink v-if="allowed" :to="{ path: '/deployments', query: { project: project.name } }" class="btn-ghost block">
-        🚀 Déployer une version
+        <AppIcon name="deployments" /> Déployer une version
       </RouterLink>
       <div class="muted small" v-else-if="can('developer')">
         Déploiement et actions réservés à l'équipe {{ project.team || 'propriétaire' }} et aux admins.
@@ -94,10 +94,10 @@
     <template v-if="svc">
       <section>
         <h4>Équipe</h4>
-        <div class="info-row"><span>👤 Owner</span><strong>{{ svc.metadata.owner }}</strong></div>
-        <div class="info-row" v-if="svc.metadata.team?.slack"><span>💬 Slack</span><code>{{ svc.metadata.team.slack }}</code></div>
+        <div class="info-row"><span><AppIcon name="user" /> Owner</span><strong>{{ svc.metadata.owner }}</strong></div>
+        <div class="info-row" v-if="svc.metadata.team?.slack"><span><AppIcon name="chat" /> Slack</span><code>{{ svc.metadata.team.slack }}</code></div>
         <div class="info-row" v-if="svc.metadata.team?.email">
-          <span>📧 Email</span><a :href="'mailto:' + svc.metadata.team.email">{{ svc.metadata.team.email }}</a>
+          <span><AppIcon name="mail" /> Email</span><a :href="'mailto:' + svc.metadata.team.email">{{ svc.metadata.team.email }}</a>
         </div>
         <div class="tags" v-if="svc.metadata.tags?.length">
           <span class="tag" v-for="t in svc.metadata.tags" :key="t">{{ t }}</span>
@@ -121,7 +121,7 @@
       <section v-if="svc.spec.dependencies?.length">
         <h4>Dépendances</h4>
         <div class="dep-item" v-for="dep in svc.spec.dependencies" :key="dep.service">
-          <span class="dep-type">{{ depIcon(dep.type) }} {{ dep.type }}</span>
+          <span class="dep-type"><AppIcon :name="dep.type" /> {{ dep.type }}</span>
           <span class="dep-name">{{ dep.service }}</span>
         </div>
       </section>
@@ -129,7 +129,7 @@
       <section v-if="extraLinks.length">
         <h4>Liens</h4>
         <a v-for="l in extraLinks" :key="l.title" :href="l.url" target="_blank" class="link-item">
-          {{ linkIcon(l.icon) }} {{ l.title }} <span class="link-arrow">↗</span>
+          <AppIcon :name="l.icon" fallback="link" /> {{ l.title }} <AppIcon class="link-arrow" name="external" :size="13" />
         </a>
       </section>
 
@@ -146,13 +146,14 @@
         Les métadonnées (équipe, tier, SLO, liens, actions) viennent de
         <code>catalog-info.yaml</code> dans le repo : l'équipe les modifie par un commit.
       </p>
-      <a :href="ficheURL(project)" target="_blank" class="btn-ghost block">✏️ Modifier catalog-info.yaml ↗</a>
+      <a :href="ficheURL(project)" target="_blank" class="btn-ghost block"><AppIcon name="edit" /> Modifier catalog-info.yaml <AppIcon name="external" :size="13" /></a>
     </section>
 
     <section v-if="can('admin')">
       <h4>Zone dangereuse</h4>
       <button class="btn-ghost btn-danger block" :disabled="deleting" @click="deleteProject">
-        {{ deleting ? 'Suppression…' : project.discovered_from ? '➖ Retirer de Symphony' : '🗑 Supprimer le projet' }}
+        <AppIcon :name="project.discovered_from ? 'remove' : 'delete'" />
+        {{ deleting ? 'Suppression…' : project.discovered_from ? 'Retirer de Symphony' : 'Supprimer le projet' }}
       </button>
       <p class="muted small" v-if="project.discovered_from">
         Service existant : son repo et ses images restent. Pour qu'il ne revienne pas au scan suivant,
@@ -165,7 +166,8 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue'
 import { api, errorMessage } from '../api'
-import { depIcon, ficheURL, healthDot, lifecycle, lifecycleLabel, linkIcon, pipelinesURL, repoWebURL, runtimeLabel, tier, tierIcon } from '../lib/projects'
+import { ficheURL, healthDot, lifecycle, lifecycleLabel, pipelinesURL, repoWebURL, runtimeKind, runtimeLabel, tier } from '../lib/projects'
+import AppIcon from './AppIcon.vue'
 import { formatValue } from '../lib/parameters'
 import { can, canOperate } from '../stores/session'
 import { activeTaskFor, taskStore, trackTask } from '../stores/tasks'
@@ -177,6 +179,8 @@ const props = defineProps<{ project: Project; deployments: Deployment[] }>()
 const emit = defineEmits<{ close: [] }>()
 
 const svc = computed(() => props.project.service)
+// Logo de la forge du repo (GitLab, GitHub)
+const repoPlatform = computed(() => (repoWebURL(props.project).includes('github') ? 'github' : 'gitlab'))
 const allowed = computed(() => canOperate(props.project.team))
 const deleting = computed(() => !!props.project.deleting || !!activeTaskFor(props.project.name, 'delete_project'))
 // Repo et Pipelines ont déjà leurs boutons

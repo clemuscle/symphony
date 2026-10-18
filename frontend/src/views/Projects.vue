@@ -12,7 +12,7 @@
     </div>
 
     <div class="toolbar" v-if="projects.length">
-      <input v-model="filter.search" placeholder="🔍 Rechercher (nom, équipe, langage, tag)..." class="search" />
+      <input v-model="filter.search" placeholder="Rechercher (nom, équipe, langage, tag)..." class="search" />
       <select v-model="filter.tier" class="filter">
         <option value="">Tous les tiers</option>
         <option value="critical">Critical</option>
