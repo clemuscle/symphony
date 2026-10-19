@@ -1,7 +1,9 @@
 // Package environments : les environnements de déploiement (staging,
 // production…) déclarés par l'équipe plateforme dans la configuration, dans
 // l'ordre de promotion. Un environnement protégé ne reçoit que des promotions :
-// une image déjà déployée et saine dans l'environnement précédent.
+// une image déjà déployée et saine dans l'environnement précédent. Un
+// environnement avec approbation (approval: lead) fait attendre le déploiement
+// demandé par un developer jusqu'à l'accord d'un lead de l'équipe du projet.
 package environments
 
 import (
@@ -15,7 +17,16 @@ type Environment struct {
 	Name      string `yaml:"name" json:"name"`
 	Runtime   string `yaml:"runtime" json:"runtime"` // runtime par défaut ; une stack peut le changer
 	Protected bool   `yaml:"protected" json:"protected"`
+	// Approval : "lead" (un lead de l'équipe ou un admin approuve chaque
+	// déploiement demandé par un developer), "none" ou vide : aucune
+	Approval string `yaml:"approval" json:"approval"`
 }
+
+// ApprovalLead : les déploiements attendent l'accord d'un lead
+const ApprovalLead = "lead"
+
+// NeedsApproval : un déploiement dans e attend un accord
+func (e Environment) NeedsApproval() bool { return e.Approval == ApprovalLead }
 
 // nameRe : court et DNS, le nom finit dans celui des déploiements (<projet>-<env>)
 var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,19}$`)
@@ -40,6 +51,9 @@ func Validate(envs []Environment, runtimeExists func(string) bool) error {
 		seen[e.Name] = true
 		if !runtimeExists(e.Runtime) {
 			errs = append(errs, fmt.Errorf("%s : runtime %q inconnu", where, e.Runtime))
+		}
+		if e.Approval != "" && e.Approval != "none" && e.Approval != ApprovalLead {
+			errs = append(errs, fmt.Errorf("%s : approval %q inconnu (lead, none)", where, e.Approval))
 		}
 		if i == 0 && e.Protected {
 			errs = append(errs, fmt.Errorf("%s : le premier environnement ne peut pas être protégé (rien à promouvoir)", where))

@@ -2,10 +2,10 @@ import { reactive } from 'vue'
 import { api } from '../api'
 import type { Role, User } from '../types'
 
-// Utilisateur connecté et son rôle (viewer < developer < admin), lus sur
+// Utilisateur connecté et son rôle (viewer < developer < lead < admin), lus sur
 // /api/v1/me. Le serveur reste seul juge : l'UI masque seulement ce que le
 // rôle ne permet pas.
-const rank: Record<Role, number> = { '': 0, viewer: 1, developer: 2, admin: 3 }
+const rank: Record<Role, number> = { '': 0, viewer: 1, developer: 2, lead: 3, admin: 4 }
 
 export const session = reactive<{ loaded: boolean; authEnabled: boolean; user: User | null }>({
   loaded: false,
@@ -32,4 +32,10 @@ export const myTeams = (): string[] => session.user?.teams ?? []
 // équipe (admin, ou developer membre de l'équipe) ; même règle que le serveur
 export function canOperate(team: string | undefined): boolean {
   return can('admin') || (can('developer') && !!team && myTeams().includes(team))
+}
+
+// canApprove(team) : peut approuver les déploiements d'un projet de cette
+// équipe (admin, ou lead membre de l'équipe) ; même règle que le serveur
+export function canApprove(team: string | undefined): boolean {
+  return can('admin') || (can('lead') && !!team && myTeams().includes(team))
 }

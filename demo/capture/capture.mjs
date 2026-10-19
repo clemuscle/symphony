@@ -1,10 +1,10 @@
 // Capture le parcours de démo et l'assemble en GIF (documentation/demo.gif).
 // Prérequis : démo lancée (./demo/up.sh) avec ses projets de démo (seed.sh).
 // Se connecte en bob (developer) et crée le projet orders-api dans la GitLab
-// de démo.
+// de démo ; lina (lead de son équipe) approuve sa promotion en production.
 //   cd demo/capture && npm install
 //   CHROME=/chemin/vers/chrome SYMPHONY_URL=http://localhost:8080 npm run capture
-// Variables : DEMO_USER (bob), DEPLOYED (payment-api)
+// Variables : DEMO_USER (bob), LEAD_USER (lina), DEPLOYED (payment-api)
 import { chromium } from 'playwright-core'
 import gifenc from 'gifenc'
 const { GIFEncoder, quantize, applyPalette } = gifenc
@@ -18,9 +18,9 @@ const page = await browser.newPage({ viewport: { width: W, height: H } })
 const frames = [] // { buf, delay }
 let n = 0
 
-async function shot(delay, name) {
-  await page.waitForTimeout(400)
-  const buf = await page.screenshot()
+async function shot(delay, name, p = page) {
+  await p.waitForTimeout(400)
+  const buf = await p.screenshot()
   frames.push({ buf, delay })
   if (name) fs.writeFileSync(`${pngDir}/${String(++n).padStart(2, '0')}-${name}.png`, buf)
 }
@@ -55,7 +55,7 @@ await page.fill('input[placeholder="mon-api"]', 'orders-api')
 await page.fill('input[placeholder="Description courte"]', 'API des commandes')
 await page.locator('.form-card').scrollIntoViewIfNeeded()
 await shot(2500, 'nouveau-projet')
-await page.click('text=🚀 Créer le projet')
+await page.click('button:has-text("Créer le projet")')
 // Tâche suivie en direct : repo et projet faits, pipeline en cours, puis finie
 await page.waitForSelector('.task .steps li:nth-child(3).current', { timeout: 120000 })
 await page.locator('.task-wrap').scrollIntoViewIfNeeded()
@@ -68,15 +68,33 @@ await page.goto(base + '/deployments?project=orders-api')
 await page.waitForFunction(() => document.querySelector('input[list="tags"]')?.value?.length > 0, null, { timeout: 60000 })
 await page.waitForTimeout(800)
 await shot(3000, 'deployer-staging')
-await page.click('button:has-text("🚀 Déployer")')
+await page.click('button.btn-primary:has-text("Déployer")')
 await page.waitForSelector('.task-wrap .task.SUCCESS', { timeout: 300000 })
 await shot(2500, 'staging')
 
-// 5. Promotion en production : la même image, sur Kubernetes (Argo CD)
+// 5. Promotion en production : la même image, sur Kubernetes (Argo CD). bob
+// la demande, elle attend l'accord d'un lead de son équipe
 await page.goto(base + '/?project=orders-api')
 await page.waitForSelector('.panel .env-item')
 await page.click('.panel button:has-text("Promouvoir depuis staging")')
-await page.waitForSelector('.panel .task.RUNNING, .panel .task.SUCCESS', { timeout: 60000 })
+await page.waitForSelector('.panel .task.awaiting', { timeout: 60000 })
+await shot(2500, 'promotion-demandee')
+
+// lina (lead), dans sa propre session : sa cloche, la demande en tête de
+// l'activité, l'approbation
+const lead = await (await browser.newContext({ viewport: { width: W, height: H } })).newPage()
+await lead.goto(base + '/tasks')
+await lead.waitForSelector('#username')
+await lead.fill('#username', process.env.LEAD_USER || 'lina')
+await lead.fill('#password', process.env.LEAD_USER || 'lina')
+await lead.click('#kc-login')
+await lead.waitForSelector('.to-approve .task.awaiting')
+await shot(3000, 'approbation', lead)
+await lead.click('.to-approve button:has-text("Approuver")')
+await lead.waitForSelector('.task .decision, .task.SUCCESS', { timeout: 60000 })
+await lead.close()
+
+await page.waitForSelector('.panel .task.RUNNING:not(.awaiting), .panel .task.SUCCESS', { timeout: 60000 })
 await shot(2500, 'promotion')
 await page.waitForSelector('.panel .task.SUCCESS', { timeout: 300000 })
 await page.waitForTimeout(16000) // relecture des déploiements (15 s)

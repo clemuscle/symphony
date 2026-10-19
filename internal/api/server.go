@@ -13,6 +13,7 @@ import (
 	"github.com/clemuscle/symphony/internal/environments"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/metrics"
+	"github.com/clemuscle/symphony/internal/notify"
 	"github.com/clemuscle/symphony/internal/provider"
 	"github.com/clemuscle/symphony/internal/tasks"
 	"github.com/clemuscle/symphony/internal/web"
@@ -40,6 +41,7 @@ func NewServer(
 	runner *tasks.Runner,
 	hooks *webhook.Holder,
 	envs *environments.Holder,
+	notifier *notify.Dispatcher,
 	configStatus func() config.Status,
 ) http.Handler {
 	s := &Server{
@@ -75,6 +77,7 @@ func NewServer(
 
 	// API v1 : utilisateur reconnu, puis rôle minimum par route
 	viewer, developer, admin := auth.Require(auth.RoleViewer), auth.Require(auth.RoleDeveloper), auth.Require(auth.RoleAdmin)
+	lead := auth.Require(auth.RoleLead)
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(security.Authenticate)
 		r.Get("/me", security.Me) // sans rôle : le front affiche « aucun rôle »
@@ -93,9 +96,11 @@ func NewServer(
 		r.With(admin).Delete("/projects/{name}", handlers.DeleteProject(db, runner, discovery))
 		r.With(viewer).Get("/projects/{name}/image", handlers.GetProjectImage(providers, db))
 		r.With(developer).Post("/projects/{name}/promote", handlers.Promote(providers, db, stacks, envs, runner))
+		r.With(developer).Post("/projects/{name}/rollback", handlers.Rollback(providers, db, stacks, envs, runner))
 
 		// Environnements (staging, production…), dans l'ordre de promotion
 		r.With(viewer).Get("/environments", handlers.ListEnvironments(envs))
+		r.With(viewer).Get("/releases", handlers.ListReleases(db))
 
 		// Repos (liste depuis les SCM providers)
 		r.With(viewer).Get("/repos", handlers.ListRepos(providers))
@@ -116,6 +121,11 @@ func NewServer(
 		r.With(viewer).Get("/tasks", handlers.ListTasks(db))
 		r.With(viewer).Get("/tasks/events", handlers.TaskEvents(runner.Hub()))
 		r.With(viewer).Get("/tasks/{id}", handlers.GetTask(db))
+		// Approbations : un lead de l'équipe décide (vérifié par le handler) ;
+		// le demandeur, developer, peut retirer sa demande
+		r.With(viewer).Get("/approvals", handlers.ListApprovals(db))
+		r.With(lead).Post("/tasks/{id}/approve", handlers.DecideTask(db, runner, notifier, true))
+		r.With(developer).Post("/tasks/{id}/reject", handlers.DecideTask(db, runner, notifier, false))
 
 		// Admin
 		r.With(viewer).Get("/providers", handlers.ListProviders(providers))

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/clemuscle/symphony/internal/auth"
 	"github.com/clemuscle/symphony/internal/database"
 	"github.com/clemuscle/symphony/internal/environments"
 	"github.com/clemuscle/symphony/internal/gitops"
@@ -49,7 +50,9 @@ func ListDeployments(providers *provider.Registry, db *database.DB) http.Handler
 // Deploy valide la demande puis lance le déploiement en tâche (202) :
 // déploiement par le runtime, puis attente du démarrage du service. Avec des
 // environnements, la cible est un environnement (son runtime, celui de sa
-// stack si elle en change) ; un environnement protégé ne reçoit que des promotions.
+// stack si elle en change) ; un environnement protégé ne reçoit que des
+// promotions, et un environnement avec approbation fait attendre la demande
+// d'un developer jusqu'à l'accord d'un lead de l'équipe.
 // Les variables de l'application viennent de sa fiche, pas de la demande.
 func Deploy(providers *provider.Registry, db *database.DB, stacks *gitops.StackLoader,
 	envs *environments.Holder, runner *tasks.Runner) http.HandlerFunc {
@@ -77,6 +80,7 @@ func Deploy(providers *provider.Registry, db *database.DB, stacks *gitops.StackL
 		}
 
 		rtID := req.RuntimeProvider
+		approval := false
 		if len(envs.List()) > 0 {
 			env, _, found := envs.Find(req.Environment)
 			switch {
@@ -92,6 +96,7 @@ func Deploy(providers *provider.Registry, db *database.DB, stacks *gitops.StackL
 				return
 			}
 			rtID, _ = environmentRuntime(envs, stacks, proj, env.Name)
+			approval = needsApproval(r, env, proj)
 		} else if rtID == "" && proj != nil {
 			// Sans environnements : runtime demandé, sinon celui du projet
 			// (choisi par sa stack), sinon le runtime par défaut
@@ -118,13 +123,29 @@ func Deploy(providers *provider.Registry, db *database.DB, stacks *gitops.StackL
 			Port:        req.Port,
 			HostPort:    req.HostPort,
 			Runtime:     rt.ID(),
+			Origin:      database.OriginDeploy,
+			Approval:    approval,
 		}, map[string]any{
 			"image":       req.Image,
 			"tag":         req.Tag,
 			"environment": req.Environment,
 			"provider":    rt.ID(),
+			"approval":    approval,
 		})
 	}
+}
+
+// needsApproval : un déploiement de proj dans env attend l'accord d'un lead.
+// Un lead de l'équipe (ou un admin) qui le demande lui-même passe sans attendre.
+func needsApproval(r *http.Request, env environments.Environment, proj *database.Project) bool {
+	if !env.NeedsApproval() {
+		return false
+	}
+	team := ""
+	if proj != nil {
+		team = proj.Team
+	}
+	return !auth.CanApprove(auth.UserFrom(r.Context()), team)
 }
 
 // envNames : les environnements, pour les messages d'erreur
@@ -150,7 +171,7 @@ func StopDeployment(providers *provider.Registry, db *database.DB) http.HandlerF
 			return
 		}
 
-		db.UpdateDeploymentStatus(id, "stopped")
+		db.UpdateDeploymentStatus(id, database.ReleaseStopped)
 		audit(db, r, "stop_deployment", id, nil)
 		respond(w, http.StatusOK, map[string]string{"status": "stopped", "id": id})
 	}
@@ -171,6 +192,7 @@ func RestartDeployment(providers *provider.Registry, db *database.DB) http.Handl
 		}
 
 		audit(db, r, "restart_deployment", id, nil)
+		db.UpdateDeploymentStatus(id, database.ReleaseRunning)
 		respond(w, http.StatusOK, map[string]string{"status": "restarted", "id": id})
 	}
 }

@@ -159,6 +159,8 @@ services:
       GITLAB_PORT: ${GITLAB_PORT:-8929}
       REGISTRY_PORT: ${REGISTRY_PORT:-5050}
       KEYCLOAK_PORT: ${KEYCLOAK_PORT:-8180}
+      # Liens des notifications : Symphony vu par le navigateur
+      SYMPHONY_PORT: ${SYMPHONY_PORT:-8080}
       # Runtime argocd : port public de l'Ingress
       K8S_HTTP_PORT: ${K8S_HTTP_PORT:-8081}
     ports:

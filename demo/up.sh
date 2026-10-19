@@ -8,7 +8,7 @@
 #      droits, runner enregistré
 #   4. démarre Kubernetes (k3s) et y installe Argo CD, avec un compte pour
 #      Symphony et l'accès au repo platform/symphony-deployments et au registry
-#   5. démarre Keycloak (realm symphony : alice admin, bob developer,
+#   5. démarre Keycloak (realm symphony : alice admin, lina lead, bob developer,
 #      carol viewer, dave sans rôle ; groupes d'équipes ; client de service
 #      symphony-directory pour l'annuaire), qui sert aussi à se connecter à GitLab
 #   6. remplit Vault avec les secrets de Symphony (jetons GitLab, Argo CD,
@@ -24,6 +24,8 @@
 # GITHUB_TOKEN=<classic PAT : repo, workflow, delete_repo, read/write/delete:packages>
 #   ajoute GitHub (repos dans le compte du jeton, GitHub Actions, GHCR) et le
 #   stacks *-github ; sans lui, la démo reste 100 % locale.
+# SLACK_WEBHOOK_URL=<webhook entrant Slack> : les équipes sont prévenues dans
+#   Slack (approbations, déploiements) ; sans lui, la cloche de Symphony.
 # Ports réglables : GITLAB_PORT=18929 REGISTRY_PORT=15050 GITLAB_SSH_PORT=12224 \
 #   SYMPHONY_PORT=18080 KEYCLOAK_PORT=18180 VAULT_PORT=18200 K8S_HTTP_PORT=18081 \
 #   ARGOCD_PORT=18088 K8S_API_PORT=16443 ./demo/up.sh
@@ -68,6 +70,7 @@ GITLAB_ROOT_PASSWORD=$(saved GITLAB_ROOT_PASSWORD)
 K8S_GITLAB_TOKEN=$(saved K8S_GITLAB_TOKEN)
 ARGOCD_TOKEN=$(saved ARGOCD_TOKEN)
 GITHUB_TOKEN=${GITHUB_TOKEN:-$(saved GITHUB_TOKEN)}
+SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-$(saved SLACK_WEBHOOK_URL)}
 VAULT_ROLE_ID=$(saved VAULT_ROLE_ID)
 VAULT_SECRET_ID=$(saved VAULT_SECRET_ID)
 random() { head -c 64 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c "$1"; }
@@ -109,6 +112,7 @@ VAULT_ROOT_TOKEN=${VAULT_ROOT_TOKEN}
 VAULT_ROLE_ID=${VAULT_ROLE_ID}
 VAULT_SECRET_ID=${VAULT_SECRET_ID}
 GITHUB_TOKEN=${GITHUB_TOKEN}
+SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
 GITLAB_ROOT_PASSWORD=${GITLAB_ROOT_PASSWORD}
 GITLAB_TOKEN=${GITLAB_TOKEN}
 K8S_GITLAB_TOKEN=${K8S_GITLAB_TOKEN}
@@ -218,16 +222,18 @@ ensure_group services "Services existants, d'avant Symphony (découverts par leu
 # Sans GITHUB_TOKEN, la démo reste locale : les blocs « github:début … github:fin »
 # de la configuration et les stacks GitHub ne sont pas poussés ; avec
 # --no-k8s, de même pour « k8s:début … k8s:fin » (runtime argocd-k3s) et le
-# la stack api-rest-go-k8s
+# la stack api-rest-go-k8s ; sans SLACK_WEBHOOK_URL, de même pour
+# « slack:début … slack:fin » (notifications)
 if [ -n "$GITHUB_TOKEN" ]; then
   ok "GitHub activé (GITHUB_TOKEN) : providers github, github-actions, ghcr et stacks *-github"
 fi
 content_of() {
   if [ "$1" != ./symphony.yaml ]; then cat "$1"; return; fi
-  local gh="" k8s=""
+  local gh="" k8s="" slack=""
   [ -n "$GITHUB_TOKEN" ] || gh='/# github:début/,/# github:fin/d'
   [ "$K8S" = true ] || k8s='/# k8s:début/,/# k8s:fin/d;s/runtime: argocd-k3s # docker-local sans Kubernetes.*/runtime: docker-local/'
-  sed -e "$gh" -e "$k8s" "$1"
+  [ -n "$SLACK_WEBHOOK_URL" ] || slack='/# slack:début/,/# slack:fin/d'
+  sed -e "$gh" -e "$k8s" -e "$slack" "$1"
 }
 
 # Pousse le contenu de demo/gitlab/<repo>/ dans platform/<repo>, en un commit
@@ -259,15 +265,15 @@ seed_repo symphony-deployments
 
 # Comptes du realm Keycloak : créés ici avec leur e-mail, GitLab les lie à
 # Keycloak à la première connexion (bouton « Keycloak »). Droits : alice
-# (admin) tient la plateforme, bob (developer) travaille dans apps et
-# services, carol (viewer) y lit ; dave n'a accès à rien.
+# (admin) tient la plateforme, lina (lead) et bob (developer) travaillent
+# dans apps et services, carol (viewer) y lit ; dave n'a accès à rien.
 # Niveaux GitLab : 20 Reporter, 30 Developer, 40 Maintainer, 50 Owner
 ensure_member() {
   local group=$1 user_id=$2 level=$3
   api -X POST "$GITLAB_URL/api/v4/groups/$group/members" -d "user_id=$user_id" -d "access_level=$level" >/dev/null
   api -X PUT "$GITLAB_URL/api/v4/groups/$group/members/$user_id" -d "access_level=$level" >/dev/null
 }
-for u in alice:Alice_Admin bob:Bob_Developer carol:Carol_Viewer dave:Dave_SansRole; do
+for u in alice:Alice_Admin lina:Lina_Lead bob:Bob_Developer carol:Carol_Viewer dave:Dave_SansRole; do
   username=${u%%:*} name=${u#*:}
   id=$(api "$GITLAB_URL/api/v4/users?username=$username" | jq -r '.[0].id // empty')
   if [ -z "$id" ]; then
@@ -278,11 +284,12 @@ for u in alice:Alice_Admin bob:Bob_Developer carol:Carol_Viewer dave:Dave_SansRo
   fi
   case $username in
     alice) ensure_member platform "$id" 50; ensure_member apps "$id" 50; ensure_member services "$id" 50 ;;
+    lina)  ensure_member apps "$id" 40; ensure_member services "$id" 40 ;;
     bob)   ensure_member apps "$id" 30; ensure_member services "$id" 30 ;;
     carol) ensure_member apps "$id" 20; ensure_member services "$id" 20 ;;
   esac
 done
-ok "Comptes GitLab alice, bob, carol, dave (connexion par Keycloak) et leurs droits"
+ok "Comptes GitLab alice, lina, bob, carol, dave (connexion par Keycloak) et leurs droits"
 
 if [ "$(api "$GITLAB_URL/api/v4/runners/all" | jq 'any(.[]?; .online)')" = true ]; then
   ok "Runner déjà enregistré"
@@ -460,6 +467,7 @@ put_secret symphony/argocd --arg token "${ARGOCD_TOKEN:-sans-kubernetes}"
 put_secret symphony/github --arg token "${GITHUB_TOKEN:-sans-github}"
 put_secret symphony/webhook --arg secret "$WEBHOOK_SECRET"
 put_secret symphony/keycloak --arg directory_secret "$DIRECTORY_SECRET"
+put_secret symphony/notifications --arg webhook_url "${SLACK_WEBHOOK_URL:-https://sans-slack.invalid}"
 # Secret d'application (démo) : référencé par la fiche de payment-api
 put_secret apps/payment-api/db --arg password "$APP_DB_PASSWORD"
 

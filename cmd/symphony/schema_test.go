@@ -80,7 +80,7 @@ providers:
 // bootstrap) respectent le schéma ; une démo cassée se voit dans la CI
 func TestRepoConfigsValid(t *testing.T) {
 	// Variables que la démo fournit toujours (docker-compose.yml)
-	for _, v := range []string{"GITLAB_PORT", "REGISTRY_PORT", "KEYCLOAK_PORT", "K8S_HTTP_PORT"} {
+	for _, v := range []string{"GITLAB_PORT", "REGISTRY_PORT", "KEYCLOAK_PORT", "K8S_HTTP_PORT", "SYMPHONY_PORT"} {
 		t.Setenv(v, "8000")
 	}
 	for _, f := range []string{"../../demo/gitlab/symphony-config/symphony.yaml", "../../demo/symphony.yaml", "../../symphony.yaml"} {
@@ -119,6 +119,7 @@ func TestReferenceCoversSchema(t *testing.T) {
 	sections := map[string][]config.ProviderDef{
 		"scm": cfg.Providers.SCM, "ci": cfg.Providers.CI, "registry": cfg.Providers.Registry,
 		"runtime": cfg.Providers.Runtime, "secrets": cfg.Providers.Secrets, "identity": cfg.Providers.Identity,
+		"notifications": cfg.Providers.Notifications,
 	}
 	for kind, types := range schemas {
 		for typ, schema := range types {

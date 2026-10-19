@@ -15,6 +15,7 @@
         <RouterLink to="/" class="nav-link"><AppIcon name="projects" /> Projets</RouterLink>
         <RouterLink to="/catalogue" class="nav-link"><AppIcon name="catalogue" /> Catalogue</RouterLink>
         <RouterLink to="/deployments" class="nav-link"><AppIcon name="deployments" /> Déploiements</RouterLink>
+        <RouterLink to="/versions" class="nav-link"><AppIcon name="versions" /> Versions</RouterLink>
         <RouterLink to="/tasks" class="nav-link">
           <AppIcon name="activity" /> Activité<span class="count" v-if="activeTasks.length">{{ activeTasks.length }}</span>
         </RouterLink>
@@ -22,6 +23,11 @@
         <RouterLink to="/admin" class="nav-link" v-if="session.loaded && can('admin')"><AppIcon name="admin" /> Administration</RouterLink>
       </nav>
       <div class="user" v-if="session.loaded">
+        <!-- Cloche des leads : les déploiements de leurs équipes qui attendent leur accord -->
+        <RouterLink to="/tasks" class="bell" v-if="toApprove.length"
+          :title="toApprove.length + ' déploiement(s) à approuver'">
+          <AppIcon name="bell" /><span class="bell-count">{{ toApprove.length }}</span>
+        </RouterLink>
         <template v-if="session.authEnabled && session.user">
           <span class="user-name">{{ session.user.name || session.user.email }}</span>
           <span class="role-badge" :class="session.user.role || 'none'">{{ session.user.role || 'aucun rôle' }}</span>
@@ -47,12 +53,16 @@ import { onMounted } from 'vue'
 import { visitMode } from './api'
 import { session, loadSession, can } from './stores/session'
 import { connectTasks, activeTasks } from './stores/tasks'
+import { toApprove, watchApprovals } from './stores/approvals'
 import AppIcon from './components/AppIcon.vue'
 
 // Le flux des tâches s'ouvre une fois la session connue (et un rôle attribué)
 onMounted(async () => {
   await loadSession()
-  if (session.user?.role) connectTasks()
+  if (session.user?.role) {
+    connectTasks()
+    watchApprovals()
+  }
 })
 </script>
 
@@ -77,6 +87,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #
 .role-badge { padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #ffffff20; color: #ddd; }
 .role-badge.admin { background: #e53e3e; color: white; }
 .role-badge.developer { background: #667eea; color: white; }
+.role-badge.lead { background: #d69e2e; color: white; }
+.bell { position: relative; display: inline-flex; color: #f6ad55; padding: 4px; }
+.bell-count { position: absolute; top: -4px; right: -6px; background: #e53e3e; color: white; border-radius: 10px; padding: 0 5px; font-size: 11px; font-weight: 600; }
 .role-badge.viewer { background: #38a169; color: white; }
 .logout { background: transparent; border: 1px solid #ffffff40; color: #ddd; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
 .logout:hover { background: #ffffff15; }

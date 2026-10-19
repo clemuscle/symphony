@@ -15,6 +15,7 @@ import (
 	"github.com/clemuscle/symphony/internal/environments"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/metrics"
+	"github.com/clemuscle/symphony/internal/notify"
 	"github.com/clemuscle/symphony/internal/provider"
 	"github.com/clemuscle/symphony/internal/provider/instrumented"
 	"github.com/clemuscle/symphony/internal/webhook"
@@ -192,6 +193,7 @@ type configWatcher struct {
 	security  *auth.Holder
 	webhooks  *webhook.Holder
 	envs      *environments.Holder
+	notifier  *notify.Dispatcher
 	codec     *auth.Codec
 	interval  time.Duration
 
@@ -349,6 +351,10 @@ func (w *configWatcher) apply(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	notifications, err := buildNotifications(resolved, next)
+	if err != nil {
+		return err
+	}
 	w.fingerprint = fingerprint(resolved)
 	old := w.webhooks.Get()
 	w.providers.Replace(next)
@@ -356,6 +362,9 @@ func (w *configWatcher) apply(cfg *config.Config) error {
 	w.webhooks.Set(hooks)
 	if w.envs != nil {
 		w.envs.Set(resolved.Environments)
+	}
+	if w.notifier != nil {
+		w.notifier.Set(notifications)
 	}
 	if hooks.Enabled() && (old.URL != hooks.URL || old.Secret != hooks.Secret) && w.resubscribe != nil {
 		go w.resubscribe(hooks)

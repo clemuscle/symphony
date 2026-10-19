@@ -111,6 +111,14 @@ providers:
         secret_store_provider: vault
     # k8s:fin
 
+  # slack:début — canal Slack de la démo (SLACK_WEBHOOK_URL, gardé dans Vault)
+  notifications:
+    - id: slack
+      type: slack
+      config:
+        webhook_url: secret://vault/symphony/notifications#webhook_url
+  # slack:fin
+
 # Environnements, dans l'ordre de promotion. production est protégée : on n'y
 # déploie qu'une image déjà saine en staging (promotion). Une stack peut
 # changer le runtime d'un environnement (api-rest-go-k8s : staging sur k3s).
@@ -120,6 +128,9 @@ environments:
   - name: production
     runtime: argocd-k3s # docker-local sans Kubernetes (up.sh --no-k8s)
     protected: true
+    # Une promotion demandée par un developer (bob) attend l'accord d'un lead
+    # de l'équipe du projet (lina pour team-payments) ou d'un admin
+    approval: lead
 
 # Webhooks entrants : chaque repo créé par Symphony le prévient de l'avancement
 # de ses pipelines (sinon, sondage toutes les 15 s)
@@ -151,11 +162,21 @@ stacks:
   path: stacks
   official: ["*"]
 
+# slack:début — retiré par up.sh sans SLACK_WEBHOOK_URL. Les équipes sont
+# prévenues dans Slack (approbations, déploiements) ; sans lui, la cloche de
+# Symphony suffit aux leads.
+notifications:
+  url: "http://localhost:${SYMPHONY_PORT}"
+  default: [slack]
+# slack:fin
+
 # Connexion par le provider identity keycloak (realm de démo : alice admin,
-# bob developer, carol viewer, dave sans rôle ; mot de passe = identifiant)
+# lina lead de team-payments, bob developer, carol viewer, dave sans rôle ;
+# mot de passe = identifiant)
 auth:
   identity: keycloak
   roles:
     admin: [symphony-admins]
+    lead: [symphony-leads]
     developer: [symphony-developers]
     viewer: [symphony-viewers]

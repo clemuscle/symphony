@@ -7,17 +7,17 @@ import (
 
 func TestValidate(t *testing.T) {
 	known := func(rt string) bool { return rt == "docker-local" || rt == "argocd-k3s" }
-	ok := []Environment{{Name: "staging", Runtime: "docker-local"}, {Name: "production", Runtime: "argocd-k3s", Protected: true}}
+	ok := []Environment{{Name: "staging", Runtime: "docker-local", Approval: "none"}, {Name: "production", Runtime: "argocd-k3s", Protected: true, Approval: ApprovalLead}}
 	if err := Validate(ok, known); err != nil {
 		t.Fatal(err)
 	}
 	bad := []Environment{
 		{Name: "Staging", Runtime: "docker-local", Protected: true},
 		{Name: "prod", Runtime: "kubernetes"},
-		{Name: "prod", Runtime: "docker-local"},
+		{Name: "prod", Runtime: "docker-local", Approval: "admin"},
 	}
 	err := Validate(bad, known)
-	for _, want := range []string{"nom invalide", "ne peut pas être protégé", `runtime "kubernetes" inconnu`, "nom en double"} {
+	for _, want := range []string{"nom invalide", "ne peut pas être protégé", `runtime "kubernetes" inconnu`, "nom en double", `approval "admin" inconnu`} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("erreur = %v, attendu %q", err, want)
 		}

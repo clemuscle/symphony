@@ -426,6 +426,76 @@ func TestDelaiDAttenteDepasse(t *testing.T) {
 	}
 }
 
+// approvalDef : une étape qui attend une approbation, puis une étape finale
+func approvalDef(final *bool) Definition {
+	return Definition{Kind: "deploy", Steps: []Step{
+		{Label: "Approbation", Run: func(_ context.Context, x *Exec) error {
+			x.WaitApproval()
+			return nil
+		}},
+		{Label: "Déploiement", Run: func(_ context.Context, x *Exec) error { *final = true; return nil }},
+	}}
+}
+
+func TestApprobation(t *testing.T) {
+	store := newMemStore()
+	r, ci := newTestRunner(store)
+	waited := make(chan int64, 2)
+	r.OnApprovalWait = func(t database.Task) { waited <- t.ID }
+	final := false
+	r.Register(approvalDef(&final))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r.Start(ctx, 1)
+
+	task, _ := r.Submit("deploy", "api", nil, "bob")
+	waiting := waitFor(t, store, task.ID, func(t *database.Task) bool { return t.Wait != nil })
+	if !waiting.Wait.Approval || waiting.Detail != "en attente d'approbation" || <-waited != task.ID {
+		t.Fatalf("attente : %+v", waiting)
+	}
+	// Une pipeline du même nom de repo, le sondage : rien ne lève l'attente
+	r.PipelineEvent("", "1", "success", "")
+	ci.set("", provider.Pipeline{ID: "1", Status: "success", CreatedAt: time.Now()})
+	r.PollOnce()
+	if got, _ := store.GetTask(task.ID); got.Wait == nil || got.Finished() {
+		t.Fatalf("attente levée sans décision : %+v", got)
+	}
+
+	if _, err := r.Decide(task.ID, Decision{Approved: true, By: "lina", At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	done := waitFor(t, store, task.ID, finished)
+	var result struct{ Approval Decision }
+	json.Unmarshal(done.Result, &result)
+	if done.Status != database.TaskSuccess || !final || result.Approval.By != "lina" {
+		t.Errorf("après approbation : %+v (final %v)", done, final)
+	}
+	if _, err := r.Decide(task.ID, Decision{Approved: true, By: "lina"}); !errors.Is(err, ErrNotAwaitingApproval) {
+		t.Errorf("décision sur une tâche finie : %v", err)
+	}
+
+	// Refus : la tâche échoue avec le motif
+	final = false
+	task, _ = r.Submit("deploy", "api", nil, "bob")
+	waitFor(t, store, task.ID, func(t *database.Task) bool { return t.Wait != nil })
+	if _, err := r.Decide(task.ID, Decision{By: "lina", Comment: "pas un vendredi"}); err != nil {
+		t.Fatal(err)
+	}
+	done = waitFor(t, store, task.ID, finished)
+	if done.Status != database.TaskFailed || done.Error != "refusé par lina : pas un vendredi" || final {
+		t.Errorf("après refus : %+v", done)
+	}
+
+	// Sans décision, l'attente expire
+	r.ApprovalTimeout = 0
+	task, _ = r.Submit("deploy", "api", nil, "bob")
+	waitFor(t, store, task.ID, func(t *database.Task) bool { return t.Wait != nil })
+	r.PollOnce()
+	if done := waitFor(t, store, task.ID, finished); done.Status != database.TaskFailed || final {
+		t.Errorf("approbation expirée : %+v", done)
+	}
+}
+
 func TestHubAbonneLentDeconnecte(t *testing.T) {
 	h := NewHub()
 	ch, unsubscribe := h.Subscribe()

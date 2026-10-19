@@ -5,6 +5,7 @@
   "sslRequired": "none",
   "groups": [
     { "name": "symphony-admins" },
+    { "name": "symphony-leads" },
     { "name": "symphony-developers" },
     { "name": "symphony-viewers" },
     {
@@ -22,6 +23,11 @@
       "username": "alice", "email": "alice@demo.symphony", "firstName": "Alice", "lastName": "Admin",
       "enabled": true, "emailVerified": true, "groups": ["/symphony-admins", "/teams/team-platform"],
       "credentials": [{ "type": "password", "value": "alice", "temporary": false }]
+    },
+    {
+      "username": "lina", "email": "lina@demo.symphony", "firstName": "Lina", "lastName": "Lead",
+      "enabled": true, "emailVerified": true, "groups": ["/symphony-leads", "/teams/team-payments"],
+      "credentials": [{ "type": "password", "value": "lina", "temporary": false }]
     },
     {
       "username": "bob", "email": "bob@demo.symphony", "firstName": "Bob", "lastName": "Developer",

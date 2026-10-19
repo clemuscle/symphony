@@ -1,7 +1,7 @@
 import axios, { AxiosError } from 'axios'
 import type {
-  AdminStatus, AuditEntry, CreateProjectRequest, Deployment, DeployRequest, IdentityGroups, Stack,
-  Me, Pipeline, Project, ProjectImage, ProviderCheck, Task,
+  AdminStatus, Approval, AuditEntry, CreateProjectRequest, Deployment, DeployRequest, Environment, IdentityGroups, Stack,
+  Me, Pipeline, Project, ProjectImage, ProviderCheck, Release, Task,
 } from './types'
 import { visitAdapter } from './visit/adapter'
 
@@ -72,11 +72,21 @@ export const api = {
     http.get<Pipeline>('/api/v1/pipelines/status', { params: { repo: repoPath, id: pipelineID } }),
   listPipelines: (repoPath: string) => http.get<Pipeline[]>(`/api/v1/pipelines/${repoPath}`),
 
+  // Environnements, dans l'ordre de promotion
+  listEnvironments: () => http.get<Environment[]>('/api/v1/environments'),
+
   // Déploiements
   listDeployments: () => http.get<Deployment[]>('/api/v1/deployments'),
   deploy: (data: DeployRequest) => http.post<Task>('/api/v1/deployments', data),
   // Promotion : l'image saine de l'environnement précédent, déployée dans to
   promote: (project: string, to: string) => http.post<Task>(`/api/v1/projects/${project}/promote`, { to }),
+  // Retour arrière : release (historique), sinon la version précédente de l'environnement
+  rollback: (project: string, environment: string, release?: number) =>
+    http.post<Task>(`/api/v1/projects/${project}/rollback`, { environment, release_id: release }),
+  // Historique des déploiements ; latest : la dernière version de chaque
+  // projet dans chaque environnement (matrice)
+  listReleases: (params: { project?: string; environment?: string; latest?: boolean; limit?: number } = {}) =>
+    http.get<Release[]>('/api/v1/releases', { params }),
   // provider : runtime qui porte le déploiement (champ provider de la liste)
   stopDeployment: (id: string, provider: string) =>
     http.delete(`/api/v1/deployments/${id}`, { params: { provider } }),
@@ -92,6 +102,11 @@ export const api = {
   // Tâches (le flux en direct est dans stores/tasks.ts)
   listTasks: (params: { resource?: string; limit?: number } = {}) =>
     http.get<Task[]>('/api/v1/tasks', { params: { limit: 50, ...params } }),
+
+  // Approbations : déploiements en attente d'un lead
+  listApprovals: () => http.get<Approval[]>('/api/v1/approvals'),
+  approve: (task: number, comment = '') => http.post<Task>(`/api/v1/tasks/${task}/approve`, { comment }),
+  reject: (task: number, comment = '') => http.post<Task>(`/api/v1/tasks/${task}/reject`, { comment }),
 
   // Audit
   listAudit: () => http.get<AuditEntry[]>('/api/v1/audit'),

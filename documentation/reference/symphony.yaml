@@ -163,17 +163,50 @@ providers:
         secret_store: symphony-vault
         secret_store_provider: vault # provider de secrets de ce coffre ; défaut vault
 
+  # ─── Notifications : canaux où prévenir les équipes ───────────────────────
+  # Un provider par canal, choisi par équipe dans la section notifications.
+  # L'URL d'un webhook vaut un secret (quiconque la connaît publie) : en
+  # secret://. Check ne publie rien : l'URL n'est vérifiée qu'au premier envoi.
+  notifications:
+    # Slack : webhook entrant d'une app Slack (Incoming Webhooks)
+    - id: slack-paiements
+      type: slack
+      config:
+        webhook_url: secret://vault/symphony/notifications/paiements#webhook_url # requis
+    # Microsoft Teams : workflow « Post to a channel when a webhook request is
+    # received » (Power Automate), qui reçoit une carte adaptative
+    - id: teams-plateforme
+      type: teams
+      config:
+        webhook_url: secret://vault/symphony/notifications/plateforme#webhook_url # requis
+
 # ─── Environnements, dans l'ordre de promotion ─────────────────────────────────
 # Absent : un seul déploiement par projet. Noms DNS courts (ils finissent dans
 # <projet>-<env>). Le premier n'est pas protégé ; un environnement protégé ne
 # reçoit qu'une promotion (image déjà saine dans le précédent). Une stack
 # peut changer le runtime d'un environnement (spec.environments).
+# approval: lead : un déploiement (ou une promotion, un retour arrière)
+# demandé par un developer attend l'accord d'un lead de l'équipe du projet ou
+# d'un admin, 24 h au plus ; un lead ou un admin qui le demande passe sans
+# attendre. Défaut none.
 environments:
   - name: staging
     runtime: docker
   - name: production
     runtime: argocd
     protected: true
+    approval: lead
+
+# ─── Notifications des équipes ────────────────────────────────────────────────
+# Approbation demandée, approuvée ou refusée ; déploiement réussi ou échoué ;
+# échec d'une autre tâche d'un projet. Chaque équipe (de l'annuaire) désigne
+# ses canaux (providers.notifications). Absent : personne n'est prévenu hors
+# de Symphony (la cloche des leads y montre les approbations en attente).
+notifications:
+  url: https://symphony.example.com # Symphony vu par les utilisateurs (liens) ; vide : pas de lien
+  teams:
+    paiements: [slack-paiements]
+  default: [teams-plateforme] # équipes absentes de teams ; vide : rien
 
 # ─── Webhooks entrants ─────────────────────────────────────────────────────────
 # Chaque repo créé est abonné aux événements de pipeline, reçus sur
@@ -235,10 +268,12 @@ stacks:
 auth:
   identity: keycloak # provider identity de la connexion ; défaut : celui par défaut
   # Rôle → groupes OIDC qui le donnent. viewer lit ; developer crée, déploie et
-  # lance les actions des projets de ses équipes ; admin fait tout. Les autres
-  # groupes de l'utilisateur sont ses équipes.
+  # lance les actions des projets de ses équipes ; lead fait de même et
+  # approuve leurs déploiements (environnements approval: lead) ; admin fait
+  # tout. Les autres groupes de l'utilisateur sont ses équipes.
   roles:
     admin: [plateforme]
+    lead: [leads]
     developer: [developpeurs]
     viewer: [lecteurs]
 

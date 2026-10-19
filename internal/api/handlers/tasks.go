@@ -13,6 +13,7 @@ import (
 	"github.com/clemuscle/symphony/internal/environments"
 	"github.com/clemuscle/symphony/internal/gitops"
 	"github.com/clemuscle/symphony/internal/metrics"
+	"github.com/clemuscle/symphony/internal/notify"
 	"github.com/clemuscle/symphony/internal/provider"
 	"github.com/clemuscle/symphony/internal/tasks"
 	"github.com/clemuscle/symphony/internal/webhook"
@@ -38,6 +39,7 @@ type TaskDeps struct {
 	Webhooks  *webhook.Holder
 	Store     *catalogue.Store // fiches : variables des applications
 	Envs      *environments.Holder
+	Notify    *notify.Dispatcher // nil : pas de notifications
 }
 
 // startupTimeout : délai pour qu'un service déployé soit prêt (pull de
@@ -52,6 +54,7 @@ func RegisterTasks(r *tasks.Runner, d TaskDeps) {
 		{Label: "Première pipeline (image)", Run: d.waitFirstPipeline},
 	}})
 	r.Register(tasks.Definition{Kind: KindDeploy, Steps: []tasks.Step{
+		{Label: "Approbation", Run: d.awaitApproval},
 		{Label: "Déploiement", Run: d.deploy},
 		{Label: "Démarrage du service", Run: d.waitRunning},
 	}})
@@ -84,7 +87,9 @@ func RegisterTasks(r *tasks.Runner, d TaskDeps) {
 				slog.Warn("audit", "task", t.ID, "error", err)
 			}
 		}
+		d.notifyFinished(t)
 	}
+	r.OnApprovalWait = d.notifyApprovalWait
 }
 
 // submit soumet une tâche, journalise la demande et répond 202 avec la tâche
@@ -108,6 +113,10 @@ func busy(w http.ResponseWriter, r *http.Request, runner *tasks.Runner, resource
 	active, err := runner.Active(resource)
 	if err != nil {
 		internalError(w, r, err)
+		return true
+	}
+	if active != nil && active.Wait != nil && active.Wait.Approval {
+		respondError(w, http.StatusConflict, fmt.Sprintf("%s : tâche #%d en attente d'approbation (la décider ou la retirer d'abord)", resource, active.ID))
 		return true
 	}
 	if active != nil {

@@ -220,3 +220,17 @@ func (i identity) Check() (string, error) {
 func (i identity) ListGroups() ([]provider.Group, error) {
 	return call("identity", i.ID(), "ListGroups", i.IdentityProvider.ListGroups)
 }
+
+type notifications struct{ provider.NotificationProvider }
+
+func Notifications(p provider.NotificationProvider) provider.NotificationProvider {
+	return notifications{p}
+}
+
+func (n notifications) Check() (string, error) {
+	return call("notifications", n.ID(), "Check", n.NotificationProvider.Check)
+}
+
+func (n notifications) Notify(msg provider.Notification) error {
+	return call0("notifications", n.ID(), "Notify", func() error { return n.NotificationProvider.Notify(msg) })
+}

@@ -257,6 +257,33 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /api/v1/projects/{name}/rollback:
+    post:
+      tags: [Projets, Déploiements]
+      summary: Revenir à une version qui a déjà tourné dans un environnement
+      operationId: postProjectsNameRollback
+      description: >-
+        Redéploie release_id (historique), sinon la version la plus récente dont l'image diffère de
+        celle en place (tag immuable). Accepté dans un environnement protégé ; l'approbation
+        s'applique comme à un déploiement.
+      x-symphony-role: developer
+      parameters: [{ $ref: "#/components/parameters/name" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                environment: { type: string, examples: [production] }
+                release_id: { type: integer, description: Version de l'historique ; absent la précédente }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "202": { $ref: "#/components/responses/Task" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/environments:
     get:
@@ -268,6 +295,22 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Environment" } } } } }
+  /api/v1/releases:
+    get:
+      tags: [Déploiements]
+      summary: Historique des déploiements, les plus récents d'abord
+      operationId: getReleases
+      description: Avec latest=true, la dernière version de chaque projet dans chaque environnement (matrice versions × environnements).
+      x-symphony-role: viewer
+      parameters:
+        - { name: project, in: query, schema: { type: string } }
+        - { name: environment, in: query, schema: { type: string }, description: Présent mais vide pour les déploiements sans environnement }
+        - { name: latest, in: query, schema: { type: boolean } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 500, default: 50 } }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Release" } } } } }
   /api/v1/deployments:
     get:
       tags: [Déploiements]
@@ -421,6 +464,51 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
         "404": { $ref: "#/components/responses/Error" }
+  /api/v1/tasks/{id}/approve:
+    post:
+      tags: [Tâches, Déploiements]
+      summary: Approuver un déploiement en attente
+      operationId: postTasksIdApprove
+      description: Réservé à un lead de l'équipe du projet et aux admins ; le déploiement reprend.
+      x-symphony-role: lead
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody: { content: { application/json: { schema: { $ref: "#/components/schemas/DecisionRequest" } } } }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "200": { description: Approuvée, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/tasks/{id}/reject:
+    post:
+      tags: [Tâches, Déploiements]
+      summary: Refuser un déploiement en attente
+      operationId: postTasksIdReject
+      description: Un lead de l'équipe du projet ou un admin refuse ; le demandeur retire sa demande. La tâche échoue.
+      x-symphony-role: developer
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody: { content: { application/json: { schema: { $ref: "#/components/schemas/DecisionRequest" } } } }
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "200": { description: Refusée, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/approvals:
+    get:
+      tags: [Tâches, Déploiements]
+      summary: Déploiements en attente d'approbation
+      operationId: getApprovals
+      description: Avec ce que l'utilisateur peut en faire (approuver, refuser ou retirer sa demande).
+      x-symphony-role: viewer
+      responses:
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Approval" } } } } }
 
   /api/v1/providers:
     get:
@@ -526,7 +614,7 @@ components:
         email: { type: string }
         groups: { type: [array, "null"], items: { type: string } }
         teams: { type: array, items: { type: string }, description: Groupes qui ne donnent pas de rôle }
-        role: { type: string, enum: ["", viewer, developer, admin] }
+        role: { type: string, enum: ["", viewer, developer, lead, admin] }
     Me:
       type: object
       properties:
@@ -538,6 +626,7 @@ components:
         name: { type: string, examples: [production] }
         runtime: { type: string, examples: [argocd-k3s] }
         protected: { type: boolean, description: Promotion seulement }
+        approval: { type: string, enum: ["", none, lead], description: "lead : la demande d'un developer attend l'accord d'un lead de l'équipe" }
     Stack:
       type: object
       properties:
@@ -725,11 +814,54 @@ components:
         steps: { type: array, items: { type: string } }
         step: { type: integer }
         detail: { type: string }
-        result: { type: [object, "null"], description: Résultats des étapes (jamais de secret) }
+        result: { type: [object, "null"], description: "Résultats des étapes (jamais de secret) ; déploiement : target, approval" }
         error: { type: string }
+        wait:
+          type: object
+          description: Absent sans attente
+          properties:
+            approval: { type: boolean, description: Attend un lead ; sinon une pipeline }
+            ci_provider: { type: string }
+            repo: { type: string }
+            pipeline_id: { type: string }
+            status: { type: string }
+            web_url: { type: string }
+            since: { type: string, format: date-time }
         created_by: { type: string }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    Release:
+      type: object
+      description: Une version déployée d'un projet dans un environnement
+      properties:
+        id: { type: integer }
+        project_name: { type: string }
+        environment: { type: string }
+        deployment_id: { type: string }
+        runtime_provider: { type: string }
+        image: { type: string }
+        tag: { type: string }
+        port: { type: integer }
+        status: { type: string, enum: [deploying, running, failed, stopped], description: "running : le service a démarré" }
+        url: { type: string }
+        origin: { type: string, enum: [deploy, promotion, rollback] }
+        promoted_from: { type: string }
+        deployed_by: { type: string }
+        approved_by: { type: string }
+        task_id: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Approval:
+      type: object
+      properties:
+        task: { $ref: "#/components/schemas/Task" }
+        team: { type: string }
+        can_approve: { type: boolean }
+        can_reject: { type: boolean, description: "Lead de l'équipe, admin, ou le demandeur" }
+    DecisionRequest:
+      type: object
+      properties:
+        comment: { type: string, maxLength: 500 }
     IdentityGroups:
       type: object
       properties:

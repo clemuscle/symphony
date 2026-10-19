@@ -14,6 +14,8 @@ import (
 	keycloakidp "github.com/clemuscle/symphony/internal/provider/identity/keycloak"
 	oidcidp "github.com/clemuscle/symphony/internal/provider/identity/oidc"
 	"github.com/clemuscle/symphony/internal/provider/instrumented"
+	slacknotify "github.com/clemuscle/symphony/internal/provider/notifications/slack"
+	teamsnotify "github.com/clemuscle/symphony/internal/provider/notifications/teams"
 	"github.com/clemuscle/symphony/internal/provider/registry/ghcr"
 	gitlabregistry "github.com/clemuscle/symphony/internal/provider/registry/gitlabregistry"
 	argocdrt "github.com/clemuscle/symphony/internal/provider/runtime/argocd"
@@ -109,6 +111,14 @@ func assembleProviders(cfg *config.Config, secrets func(*provider.Registry, []co
 		}
 		providers.RegisterIdentity(instrumented.Identity(p), def.Default)
 	}
+	for _, def := range resolved.Providers.Notifications {
+		p, err := newNotifications(def)
+		if err != nil {
+			fail("notifications", def, err)
+			continue
+		}
+		providers.RegisterNotifications(instrumented.Notifications(p))
+	}
 	// Environnements : leurs runtimes doivent exister dans cette configuration
 	if err := environments.Validate(resolved.Environments, func(rt string) bool {
 		_, err := providers.Runtime(rt)
@@ -134,7 +144,8 @@ func logProviders(msg string, providers *provider.Registry) {
 		"registry", providers.ListRegistries(),
 		"runtime", providers.ListRuntimes(),
 		"secrets", providers.ListSecrets(),
-		"identity", providers.ListIdentity())
+		"identity", providers.ListIdentity(),
+		"notifications", providers.ListNotifications())
 }
 
 // newSCM crée un provider SCM à partir de sa définition
@@ -147,6 +158,17 @@ func newSCM(def config.ProviderDef) (provider.SCMProvider, error) {
 		return githubscm.New(def.ID, def.Config["token"], def.Config["org"]), nil
 	}
 	return nil, fmt.Errorf("type de provider SCM %q inconnu", def.Type)
+}
+
+// newNotifications crée un canal de notification (webhook entrant)
+func newNotifications(def config.ProviderDef) (provider.NotificationProvider, error) {
+	switch def.Type {
+	case "slack":
+		return slacknotify.New(def.ID, def.Config["webhook_url"])
+	case "teams":
+		return teamsnotify.New(def.ID, def.Config["webhook_url"])
+	}
+	return nil, fmt.Errorf("type de provider notifications %q inconnu", def.Type)
 }
 
 // newDocker crée le runtime Docker. health_timeout : attente maximale du

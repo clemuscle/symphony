@@ -45,15 +45,18 @@ de les remplacer.
   et vérifie chaque provider ; `symphony validate` contrôle configuration et stacks
   avant le push, en local ou en CI.
 - **Sécurisé** : connexion OIDC (Keycloak en démo, tout fournisseur OIDC), rôles
-  `viewer` / `developer` / `admin` déduits des groupes de l'annuaire, **droits par équipe**
-  (on ne déploie que les projets de ses équipes), audit de qui a fait quoi. En démo, GitLab
+  `viewer` / `developer` / `lead` / `admin` déduits des groupes de l'annuaire, **droits par
+  équipe** (on ne déploie que les projets de ses équipes), audit de qui a fait quoi. En démo, GitLab
   se connecte au même Keycloak : un seul compte pour les deux.
+- **Gouvernance** : un environnement peut demander l'**accord d'un lead** de l'équipe ;
+  l'équipe est prévenue dans **Slack ou Teams** ; la page **Versions** montre quelle version
+  tourne où, et un clic **revient à la précédente**.
 - **Aucun secret dans la configuration** : elle désigne ses jetons par référence
   (`secret://vault/symphony/gitlab#token`), lus dans Vault (AppRole) et relus à chaud
   après une rotation.
-- **Tout est un provider** : SCM, CI, registry, runtime, secrets et identité ont chacun
-  leur interface et leur section de configuration ; l'annuaire Keycloak propose les
-  équipes propriétaires à la création d'un projet.
+- **Tout est un provider** : SCM, CI, registry, runtime, secrets, identité et
+  notifications ont chacun leur interface et leur section de configuration ; l'annuaire
+  Keycloak propose les équipes propriétaires à la création d'un projet.
 - **Observable** : `/metrics` Prometheus sur l'API, chaque appel à GitLab, GitHub ou Docker
   et chaque rechargement depuis Git.
 
@@ -76,8 +79,8 @@ git clone https://github.com/clemuscle/symphony.git && cd symphony
 ```
 
 Le script affiche les URL et identifiants. Comptes de démo, pour Symphony comme pour
-GitLab (bouton « Keycloak ») et mot de passe = identifiant : `alice` (admin), `bob`
-(developer), `carol` (viewer), `dave` (sans rôle). Trois projets de trois équipes sont
+GitLab (bouton « Keycloak ») et mot de passe = identifiant : `alice` (admin), `lina`
+(lead de l'équipe de bob), `bob` (developer), `carol` (viewer), `dave` (sans rôle). Trois projets de trois équipes sont
 déjà créés depuis les stacks, déployés en staging et, pour deux d'entre eux, promus
 en production sur Kubernetes, avec leur repo, leurs pipelines et leur URL (`--no-seed`
 pour partir de zéro). Suivre ensuite le [scénario de démo](demo/SCENARIO.md)

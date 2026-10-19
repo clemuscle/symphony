@@ -143,7 +143,7 @@ func TestIntegration(t *testing.T) {
 
 	discovery := gitops.NewDiscoverer(providers, handlers.DiscoveryStore{DB: db, Providers: providers}, syncer.File, syncer.ForceSync)
 	srv := httptest.NewServer(NewServer(providers, store, db, syncer, discovery, stacks,
-		auth.NewHolder(&auth.Policy{}), runner, hooks, envs, func() config.Status { return config.Status{} }))
+		auth.NewHolder(&auth.Policy{}), runner, hooks, envs, nil, func() config.Status { return config.Status{} }))
 	defer srv.Close()
 
 	call := func(method, path string, body any) (int, map[string]any) {

@@ -4,6 +4,8 @@
 // version publiée sur GitHub Pages.
 import { AxiosError, AxiosHeaders, type AxiosAdapter, type InternalAxiosRequestConfig } from 'axios'
 import fixtures from './fixtures.json'
+import { latestReleases } from '../lib/releases'
+import type { Release } from '../types'
 
 export const readOnlyMessage =
   "Mode visite : lecture seule, sur des données de démo. Pour créer, déployer ou promouvoir, lancer la démo complète (./demo/up.sh)."
@@ -25,8 +27,17 @@ export function visitResponse(url: string, params?: Record<string, unknown>): { 
     if (path === '/tasks' && params?.resource && Array.isArray(body)) {
       return { status: 200, body: body.filter((t: { resource?: string }) => t.resource === params.resource) }
     }
+    // L'historique complet, filtré comme le fait le serveur
+    if (path === '/releases' && Array.isArray(body)) {
+      let list = body as Release[]
+      if (params?.project) list = list.filter(r => r.project_name === params.project)
+      if (typeof params?.environment === 'string') list = list.filter(r => r.environment === params.environment)
+      return { status: 200, body: params?.latest ? latestReleases(list) : list }
+    }
     return { status: 200, body }
   }
+  // Fixtures capturées avant la v0.15
+  if (path === '/releases' || path === '/approvals') return { status: 200, body: [] }
   const image = path.match(/^\/projects\/([^/]+)\/image$/)
   if (image) {
     const images = (data['images'] ?? {}) as Record<string, unknown>

@@ -285,10 +285,15 @@ repo et ses images.
 
 ## v0.15 — L'équipe et la gouvernance
 
-- [ ] Rôle `lead` par équipe (viewer < developer < lead < admin)
-- [ ] Approbation par environnement (`approval: lead` ou `none`)
-- [ ] Notifications : Slack ou Teams par webhook (un canal par équipe), et dans Symphony
-- [ ] Matrice versions × environnements ; retour arrière en un clic
+- [x] Rôle `lead` par équipe (viewer < developer < lead < admin)
+- [x] Approbation par environnement (`approval: lead` ou `none`)
+- [x] Notifications : Slack ou Teams par webhook (un canal par équipe), et dans Symphony
+- [x] Matrice versions × environnements ; retour arrière en un clic
+
+Fini quand : dans la démo, une promotion en production demandée par bob attend lina (lead
+de son équipe), qui l'approuve depuis sa cloche ; l'équipe en est prévenue dans son
+canal ; la page Versions montre où tourne chaque version, et un clic revient à la
+précédente.
 
 ## v0.16 — Exploiter ses services
 
