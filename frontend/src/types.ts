@@ -1,7 +1,7 @@
 // Types des réponses de l'API de Symphony (clés JSON en snake_case, comme les
 // tags json des structs Go)
 
-export type Role = '' | 'viewer' | 'developer' | 'admin'
+export type Role = '' | 'viewer' | 'developer' | 'lead' | 'admin'
 
 export interface User {
   subject: string
@@ -73,6 +73,7 @@ export interface Environment {
   name: string
   runtime: string // runtime du projet dans cet environnement
   protected: boolean // promotion seulement
+  approval?: '' | 'none' | 'lead' // lead : la demande d'un developer attend un lead de l'équipe
 }
 
 export interface Project {
@@ -182,11 +183,54 @@ export interface Task {
   detail: string
   result: Record<string, unknown> | null
   error?: string
-  wait?: { web_url?: string } | null // pipeline attendue
+  wait?: { approval?: boolean; web_url?: string } | null // approbation ou pipeline attendue
   created_by: string
   created_at: string
   updated_at: string
   finished_at?: string | null
+}
+
+// Résultats d'une tâche de déploiement : sa cible (posée dès la première
+// étape) et la décision d'un lead
+export interface DeployTarget {
+  environment?: string
+  image?: string
+  origin?: ReleaseOrigin
+  promoted_from?: string
+  approval?: boolean // l'environnement demande l'accord d'un lead
+}
+
+export interface Decision { approved: boolean; by: string; at: string; comment?: string }
+
+// Un déploiement en attente d'approbation (GET /api/v1/approvals)
+export interface Approval {
+  task: Task
+  team: string
+  can_approve: boolean // lead de l'équipe ou admin
+  can_reject: boolean // de même, ou le demandeur (il retire sa demande)
+}
+
+export type ReleaseOrigin = 'deploy' | 'promotion' | 'rollback'
+
+// Une version déployée d'un projet dans un environnement (historique)
+export interface Release {
+  id: number
+  project_name: string
+  environment: string
+  deployment_id: string
+  runtime_provider: string
+  image: string
+  tag: string
+  port: number
+  status: 'deploying' | 'running' | 'failed' | 'stopped' // running : le service a démarré
+  url: string
+  origin: ReleaseOrigin
+  promoted_from?: string
+  deployed_by: string
+  approved_by?: string
+  task_id?: number
+  created_at: string
+  updated_at: string
 }
 
 export interface Group { name: string; path: string }
@@ -240,7 +284,7 @@ export interface AuditEntry {
 }
 
 // Page Administration (GET /api/v1/admin/status)
-export type ProviderKind = 'scm' | 'ci' | 'registry' | 'runtime' | 'secrets' | 'identity'
+export type ProviderKind = 'scm' | 'ci' | 'registry' | 'runtime' | 'secrets' | 'identity' | 'notifications'
 
 export interface ConfigStatus {
   source: string

@@ -84,6 +84,7 @@ func resolveConfig(cfg *config.Config, lookup provider.SecretLookup) (*config.Co
 		{"registry", &out.Providers.Registry},
 		{"runtime", &out.Providers.Runtime},
 		{"identity", &out.Providers.Identity},
+		{"notifications", &out.Providers.Notifications},
 	}
 	for _, l := range lists {
 		resolved := make([]config.ProviderDef, len(*l.defs))

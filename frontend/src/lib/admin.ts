@@ -7,6 +7,7 @@ export const kindLabels: Record<ProviderKind, string> = {
   runtime: 'Runtime',
   secrets: 'Secrets',
   identity: 'Identité',
+  notifications: 'Notifications',
 }
 
 // ago : « il y a 12 s », « il y a 3 min »… puis la date, en français quelle

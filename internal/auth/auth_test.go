@@ -364,3 +364,38 @@ func TestTeamsAndCanOperate(t *testing.T) {
 		}
 	}
 }
+
+// Un lead approuve les déploiements de ses équipes, et agit sur leurs projets
+// comme un developer
+func TestLeadCanApprove(t *testing.T) {
+	m, err := NewRoleMapper(map[string][]string{"developer": {"devs"}, "lead": {"leads"}, "admin": {"admins"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := m.Resolve([]string{"devs", "leads", "team-payments"}); r != RoleLead {
+		t.Errorf("rôle = %q", r)
+	}
+	lina := &User{Role: RoleLead, Teams: m.Teams([]string{"leads", "team-payments"})}
+	bob := &User{Role: RoleDeveloper, Teams: []string{"team-payments"}}
+	alice := &User{Role: RoleAdmin}
+	cases := []struct {
+		u    *User
+		team string
+		want bool
+	}{
+		{lina, "team-payments", true},
+		{lina, "team-identity", false},
+		{lina, "", false},
+		{bob, "team-payments", false},
+		{alice, "team-identity", true},
+		{nil, "team-payments", false},
+	}
+	for i, c := range cases {
+		if got := CanApprove(c.u, c.team); got != c.want {
+			t.Errorf("cas %d : CanApprove(%v, %q) = %v", i, c.u, c.team, got)
+		}
+	}
+	if !CanOperate(lina, "team-payments") || CanOperate(lina, "team-identity") {
+		t.Error("CanOperate d'un lead")
+	}
+}

@@ -49,14 +49,16 @@ SYMPHONY_TEST_K8S=1 go test -run TestCNPGOnCluster ./internal/provider/runtime/a
   remplacés par des substituts), `main.go`.
 - `internal/provider` : interfaces (`interfaces.go`), `Registry`, `secretref.go`, `check.go`
   (aides des méthodes `Check`), une implémentation par dossier (`scm/`, `ci/`, `registry/`,
-  `runtime/`, `secrets/`, `identity/`), et `instrumented/` qui les enveloppe pour
+  `runtime/`, `secrets/`, `identity/`, `notifications/`), et `instrumented/` qui les enveloppe pour
   `/metrics` et retient leur dernier appel.
 - `internal/api` : toutes les routes dans `server.go`, un fichier de handlers par domaine.
   Les types de tâches : `handlers/tasks.go` (`RegisterTasks`, `submit`, routes des tâches),
   leurs étapes dans `task_create.go`, `task_deploy.go`, `task_delete.go`, `task_action.go` ;
-  un handler valide puis `submit` (202). Page Administration : `handlers/admin.go`
-  (`AdminStatus`, `CheckProviders`).
-- `internal/tasks` (moteur de tâches, attente de pipelines, `Hub` SSE), `internal/auth` (OIDC
+  un handler valide puis `submit` (202). Approbations et notifications des équipes :
+  `handlers/approvals.go` ; historique et retour arrière : `handlers/environments.go`.
+  Page Administration : `handlers/admin.go` (`AdminStatus`, `CheckProviders`).
+- `internal/tasks` (moteur de tâches, attente de pipelines ou d'une approbation
+  (`Decide`), `Hub` SSE), `internal/notify` (canaux des équipes), `internal/auth` (OIDC
   en Backend-for-Frontend, rôles, CSRF), `internal/gitops` (`Syncer` des fiches
   `catalog-info.yaml`, `StackLoader` des stacks : repo du client et catalogue officiel,
   `stack.go` le format, `parameters.go` les paramètres et leur JSON Schema), `internal/webhook`,
@@ -144,7 +146,12 @@ SYMPHONY_TEST_K8S=1 go test -run TestCNPGOnCluster ./internal/provider/runtime/a
   (labels Docker `symphony.project`/`symphony.environment`, Argo CD `symphony/project`/
   `symphony/environment`) : ne jamais retrouver un projet par le nom du déploiement.
 - Environnement protégé : `Deploy` refuse, seul `Promote` y va (image saine de
-  l'environnement précédent).
+  l'environnement précédent) ; `Rollback` aussi (version déjà passée par là).
+- Environnement `approval: lead` : `Deploy`, `Promote` et `Rollback` passent
+  `Approval` (`needsApproval`) ; la première étape d'un déploiement attend alors
+  (`WaitApproval`). Décider : `auth.CanApprove` (lead de l'équipe, admin), le demandeur
+  peut refuser sa propre demande. Chaque déploiement écrit sa version dans l'historique
+  (`deployments`, statut mis à jour par `waitRunning`).
 - Variables d'une appli : fiche (`spec.environments[].env`), jamais la demande. Secrets
   limités à `apps/<projet>/` (`checkAppSecret`), jamais `secret://env/…`. Un runtime qui
   écrit dans Git (`SecretRefs()` vrai) ne reçoit que des références ; les autres reçoivent

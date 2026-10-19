@@ -8,6 +8,8 @@
 // Une étape peut attendre la fin d'une pipeline CI sans occuper de goroutine :
 // la tâche est mise en attente, puis relancée par un webhook entrant
 // (PipelineEvent) ou, à défaut, par le sondage périodique du provider CI.
+// Elle peut de même attendre une approbation (Exec.WaitApproval), levée par
+// Decide.
 package tasks
 
 import (
@@ -61,20 +63,27 @@ type Runner struct {
 	PollInterval time.Duration
 	// WaitTimeout : au-delà, une pipeline attendue est considérée perdue
 	WaitTimeout time.Duration
+	// ApprovalTimeout : au-delà, une approbation attendue expire (la tâche
+	// échoue et libère le projet)
+	ApprovalTimeout time.Duration
 	// OnFinish est appelé quand une tâche se termine (audit des échecs…)
 	OnFinish func(t database.Task)
+	// OnApprovalWait est appelé quand une tâche se met à attendre une
+	// approbation (notification de l'équipe)
+	OnApprovalWait func(t database.Task)
 }
 
 func NewRunner(store Store, providers *provider.Registry) *Runner {
 	return &Runner{
-		store:        store,
-		providers:    providers,
-		hub:          NewHub(),
-		defs:         map[string]Definition{},
-		queue:        make(chan int64, 256),
-		active:       map[int64]bool{},
-		PollInterval: 15 * time.Second,
-		WaitTimeout:  time.Hour,
+		store:           store,
+		providers:       providers,
+		hub:             NewHub(),
+		defs:            map[string]Definition{},
+		queue:           make(chan int64, 256),
+		active:          map[int64]bool{},
+		PollInterval:    15 * time.Second,
+		WaitTimeout:     time.Hour,
+		ApprovalTimeout: 24 * time.Hour,
 	}
 }
 
@@ -128,9 +137,7 @@ func (r *Runner) Active(resource string) (*database.Task, error) {
 // Start reprend les tâches interrompues, lance les workers et le sondage des
 // pipelines. Rend la main aussitôt ; ctx arrête tout.
 func (r *Runner) Start(ctx context.Context, workers int) {
-	for i := 0; i < workers; i++ {
-		go r.worker(ctx)
-	}
+	r.StartWorkers(ctx, workers)
 	unfinished, err := r.store.ListTasks(database.TaskFilter{Unfinished: true, Limit: 1000})
 	if err != nil {
 		slog.Error("tâches : reprise impossible", "error", err)
@@ -142,6 +149,14 @@ func (r *Runner) Start(ctx context.Context, workers int) {
 		}
 	}
 	go r.poll(ctx)
+}
+
+// StartWorkers lance seulement les workers : ni reprise des tâches en base,
+// ni sondage (tests qui partagent une base avec d'autres)
+func (r *Runner) StartWorkers(ctx context.Context, workers int) {
+	for i := 0; i < workers; i++ {
+		go r.worker(ctx)
+	}
 }
 
 func (r *Runner) enqueue(id int64) {
@@ -214,8 +229,14 @@ func (r *Runner) execute(ctx context.Context, id int64) {
 			r.mu.Lock() // un webhook arrivé juste après voit l'attente enregistrée
 			t.Wait, x.wait = x.wait, nil
 			t.Detail = "en attente de la pipeline"
+			if t.Wait.Approval {
+				t.Detail = "en attente d'approbation"
+			}
 			r.save(t)
 			r.mu.Unlock()
+			if t.Wait.Approval && r.OnApprovalWait != nil {
+				r.OnApprovalWait(*t)
+			}
 			return
 		}
 		t.Step++
@@ -288,7 +309,7 @@ func (r *Runner) PipelineEvent(repo, pipelineID, status, webURL string) {
 	for i := range waiting {
 		t := &waiting[i]
 		w := t.Wait
-		if w.Repo != repo || (w.PipelineID != "" && w.PipelineID != pipelineID) {
+		if w.Approval || w.Repo != repo || (w.PipelineID != "" && w.PipelineID != pipelineID) {
 			continue
 		}
 		if w.PipelineID == pipelineID && w.Status == status {
@@ -362,6 +383,12 @@ func (r *Runner) PollOnce() {
 	for i := range waiting {
 		t := &waiting[i]
 		w := t.Wait
+		if w.Approval {
+			if time.Since(w.Since) > r.ApprovalTimeout {
+				r.expire(t.ID, fmt.Errorf("aucune décision après %s : approbation expirée", r.ApprovalTimeout))
+			}
+			continue
+		}
 		p, err := r.findPipeline(w)
 		if err != nil {
 			slog.Warn("tâches : sondage de pipeline", "id", t.ID, "repo", w.Repo, "error", err)
@@ -377,13 +404,73 @@ func (r *Runner) PollOnce() {
 			if w.PipelineID != "" {
 				msg = fmt.Sprintf("pipeline #%s toujours %s", w.PipelineID, w.Status)
 			}
-			r.mu.Lock()
-			if fresh, err := r.store.GetTask(t.ID); err == nil && fresh.Wait != nil && !fresh.Finished() {
-				r.finish(fresh, fmt.Errorf("%s après %s", msg, r.WaitTimeout))
-			}
-			r.mu.Unlock()
+			r.expire(t.ID, fmt.Errorf("%s après %s", msg, r.WaitTimeout))
 		}
 	}
+}
+
+// expire fait échouer la tâche id si elle attend toujours
+func (r *Runner) expire(id int64, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if fresh, gerr := r.store.GetTask(id); gerr == nil && fresh.Wait != nil && !fresh.Finished() {
+		r.finish(fresh, err)
+	}
+}
+
+// ─── Approbations ────────────────────────────────────────────────────────────
+
+// ErrNotAwaitingApproval : la tâche n'attend pas (ou plus) d'approbation
+var ErrNotAwaitingApproval = errors.New("la tâche n'attend pas d'approbation")
+
+// Decision : l'accord ou le refus d'une tâche en attente, enregistré dans
+// son résultat « approval »
+type Decision struct {
+	Approved bool      `json:"approved"`
+	By       string    `json:"by"`
+	At       time.Time `json:"at"`
+	Comment  string    `json:"comment,omitempty"`
+}
+
+// Decide lève l'attente d'approbation de la tâche id : approuvée, elle
+// reprend à l'étape suivante ; refusée, elle échoue. Les droits sont
+// vérifiés par l'appelant.
+func (r *Runner) Decide(id int64, d Decision) (*database.Task, error) {
+	r.mu.Lock()
+	t, err := r.store.GetTask(id)
+	if err != nil {
+		r.mu.Unlock()
+		return nil, err
+	}
+	if t.Finished() || t.Wait == nil || !t.Wait.Approval {
+		r.mu.Unlock()
+		return nil, ErrNotAwaitingApproval
+	}
+	result := map[string]json.RawMessage{}
+	if len(t.Result) > 0 {
+		if err := json.Unmarshal(t.Result, &result); err != nil {
+			r.mu.Unlock()
+			return nil, fmt.Errorf("résultats de la tâche illisibles: %w", err)
+		}
+	}
+	result["approval"], _ = json.Marshal(d)
+	t.Result, _ = json.Marshal(result)
+	if !d.Approved {
+		reason := "refusé par " + d.By
+		if d.Comment != "" {
+			reason += " : " + d.Comment
+		}
+		r.finish(t, errors.New(reason))
+		r.mu.Unlock()
+		return t, nil
+	}
+	t.Wait = nil
+	t.Step++
+	t.Detail = "approuvé par " + d.By
+	r.save(t)
+	r.mu.Unlock()
+	r.enqueue(t.ID)
+	return t, nil
 }
 
 // findPipeline : la pipeline attendue, ou la plus récente du repo créée après
@@ -483,6 +570,12 @@ func (x *Exec) WaitPipeline(ciProvider, repo, pipelineID, webURL string, since t
 		WebURL:     webURL,
 		Since:      since,
 	}
+}
+
+// WaitApproval termine l'étape en attente d'une approbation : la tâche
+// reprend à l'étape suivante quand Decide l'approuve, échoue sinon
+func (x *Exec) WaitApproval() {
+	x.wait = &database.TaskWait{Approval: true, Since: time.Now()}
 }
 
 // IsNotFound : la tâche n'existe pas

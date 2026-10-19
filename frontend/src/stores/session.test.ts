@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { can, canOperate, session } from './session'
+import { can, canApprove, canOperate, session } from './session'
 import type { User } from '../types'
 
 const user = (role: User['role'], teams: string[]): User =>
@@ -26,5 +26,18 @@ describe('droits dans l\'UI (mêmes règles que le serveur)', () => {
     expect(canOperate('team-payments')).toBe(false)
     session.user = user('admin', [])
     expect(canOperate('team-identity')).toBe(true)
+  })
+
+  it('un lead approuve pour ses équipes', () => {
+    session.user = user('lead', ['team-payments'])
+    expect(can('developer')).toBe(true)
+    expect(can('admin')).toBe(false)
+    expect(canOperate('team-payments')).toBe(true)
+    expect(canApprove('team-payments')).toBe(true)
+    expect(canApprove('team-identity')).toBe(false)
+    session.user = user('developer', ['team-payments'])
+    expect(canApprove('team-payments')).toBe(false)
+    session.user = user('admin', [])
+    expect(canApprove('team-identity')).toBe(true)
   })
 })

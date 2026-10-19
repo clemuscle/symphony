@@ -226,6 +226,34 @@ type SecretsProvider interface {
 	Check() (string, error)
 }
 
+// ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
+
+// NotificationProvider : un canal où Symphony prévient une équipe (Slack,
+// Microsoft Teams…), par webhook entrant
+type NotificationProvider interface {
+	ID() string
+	Type() string // "slack", "teams"
+	Notify(n Notification) error
+	// Check : réglages lisibles, sans rien publier (check.go)
+	Check() (string, error)
+}
+
+// Notification : un message court, avec un lien vers Symphony
+type Notification struct {
+	Title string
+	Text  string
+	URL   string // vide : pas de lien
+	Level string // info, success, failure, approval
+}
+
+// Niveaux d'une notification
+const (
+	NotifyInfo     = "info"
+	NotifySuccess  = "success"
+	NotifyFailure  = "failure"
+	NotifyApproval = "approval"
+)
+
 // ─── IDENTITY ─────────────────────────────────────────────────────────────────
 
 // IdentityProvider : fournisseur d'identité OIDC (connexion des utilisateurs),

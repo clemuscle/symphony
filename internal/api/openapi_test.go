@@ -28,7 +28,7 @@ func TestOpenAPICoversRoutes(t *testing.T) {
 	}
 
 	// Les dépendances ne servent qu'à construire les handlers : aucun n'est appelé
-	router := NewServer(nil, nil, nil, nil, nil, nil, nil, tasks.NewRunner(nil, nil), nil, nil, nil).(chi.Routes)
+	router := NewServer(nil, nil, nil, nil, nil, nil, nil, tasks.NewRunner(nil, nil), nil, nil, nil, nil).(chi.Routes)
 	routed := map[string]bool{}
 	err := chi.Walk(router, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
 		if route == "/*" {

@@ -3,6 +3,7 @@ import Catalogue from '../views/Catalogue.vue'
 import Projects from '../views/Projects.vue'
 import Deployments from '../views/Deployments.vue'
 import Tasks from '../views/Tasks.vue'
+import Versions from '../views/Versions.vue'
 import Admin from '../views/Admin.vue'
 
 export default createRouter({
@@ -13,6 +14,7 @@ export default createRouter({
     // Ancienne adresse de la liste des projets
     { path: '/projects', redirect: '/' },
     { path: '/deployments', component: Deployments },
+    { path: '/versions', component: Versions },
     { path: '/tasks', component: Tasks },
     { path: '/admin', component: Admin },
   ]

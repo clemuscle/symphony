@@ -1,5 +1,5 @@
 // Package auth authentifie les utilisateurs (OIDC, modèle Backend-for-Frontend)
-// et applique les rôles : viewer < developer < admin.
+// et applique les rôles : viewer < developer < lead < admin.
 //
 // Le navigateur ne voit jamais de jeton : Symphony fait le flux Authorization
 // Code + PKCE avec le fournisseur d'identité et pose un cookie de session signé
@@ -19,10 +19,11 @@ const (
 	RoleNone      Role = ""
 	RoleViewer    Role = "viewer"    // lecture seule
 	RoleDeveloper Role = "developer" // crée des projets, déploie, lance pipelines et actions
+	RoleLead      Role = "lead"      // developer qui approuve les déploiements de ses équipes
 	RoleAdmin     Role = "admin"     // supprime des projets, synchronise, lit l'audit
 )
 
-var rank = map[Role]int{RoleNone: 0, RoleViewer: 1, RoleDeveloper: 2, RoleAdmin: 3}
+var rank = map[Role]int{RoleNone: 0, RoleViewer: 1, RoleDeveloper: 2, RoleLead: 3, RoleAdmin: 4}
 
 // AtLeast indique si r a au moins les droits de min
 func (r Role) AtLeast(min Role) bool { return rank[r] >= rank[min] }
@@ -40,7 +41,7 @@ func NewRoleMapper(roles map[string][]string) (*RoleMapper, error) {
 	for name, groups := range roles {
 		role := Role(name)
 		if role == RoleNone || rank[role] == 0 {
-			return nil, fmt.Errorf("rôle %q inconnu (viewer, developer, admin)", name)
+			return nil, fmt.Errorf("rôle %q inconnu (viewer, developer, lead, admin)", name)
 		}
 		for _, g := range groups {
 			if rank[role] > rank[m.groupRole[g]] {
@@ -110,6 +111,15 @@ func CanOperate(u *User, team string) bool {
 		return false
 	}
 	return u.Role.AtLeast(RoleAdmin) || (u.Role.AtLeast(RoleDeveloper) && u.InTeam(team))
+}
+
+// CanApprove : u approuve les déploiements d'un projet de l'équipe team
+// (environnement avec approbation) : admin, ou lead membre de l'équipe
+func CanApprove(u *User, team string) bool {
+	if u == nil {
+		return false
+	}
+	return u.Role.AtLeast(RoleAdmin) || (u.Role.AtLeast(RoleLead) && u.InTeam(team))
 }
 
 // ID identifie l'utilisateur dans l'audit : e-mail, sinon nom, sinon sujet

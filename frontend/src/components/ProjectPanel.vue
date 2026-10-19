@@ -41,7 +41,8 @@
       <div class="env-item" v-for="(e, i) in project.environments" :key="e.name">
         <div class="deploy-head">
           <span><strong>{{ e.name }}</strong> <span class="muted">· <AppIcon :name="runtimeKind(e.runtime)" :size="13" /> {{ runtimeLabel(e.runtime) }}</span>
-            <span class="lock" v-if="e.protected" title="Protégé : promotion seulement"><AppIcon name="lock" :size="13" /></span></span>
+            <span class="lock" v-if="e.protected" title="Protégé : promotion seulement"><AppIcon name="lock" :size="13" /></span>
+            <span class="lock" v-if="e.approval === 'lead'" title="Accord d'un lead de l'équipe pour un developer"><AppIcon name="approval" :size="13" /></span></span>
           <span class="muted" v-if="byEnv(e.name)">
             <span :class="['dot', byEnv(e.name)!.status]"></span> {{ byEnv(e.name)!.status }}
           </span>
@@ -61,6 +62,8 @@
           @click="promote(e.name)">
           <AppIcon name="promote" /> Promouvoir depuis {{ project.environments[i - 1].name }}
         </button>
+        <ReleaseHistory :project="project.name" :environment="e.name" :releases="releases"
+          :current="byEnv(e.name)?.image" :allowed="allowed" :needs-approval="e.approval === 'lead' && !canApprove(project.team)" />
       </div>
       <TaskProgress v-if="promoteTask" :task="promoteTask" />
       <div class="feedback err" v-if="promoteError"><AppIcon name="error" /> {{ promoteError }}</div>
@@ -83,6 +86,8 @@
         <code class="deploy-image">{{ d.image }}</code>
       </div>
       <div class="muted small" v-if="!deployments.length">Aucun déploiement.</div>
+      <ReleaseHistory :project="project.name" environment="" :releases="releases"
+        :current="deployments[0]?.image" :allowed="allowed" />
       <RouterLink v-if="allowed" :to="{ path: '/deployments', query: { project: project.name } }" class="btn-ghost block">
         <AppIcon name="deployments" /> Déployer une version
       </RouterLink>
@@ -164,15 +169,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { api, errorMessage } from '../api'
 import { ficheURL, healthDot, lifecycle, lifecycleLabel, pipelinesURL, repoWebURL, runtimeKind, runtimeLabel, tier } from '../lib/projects'
 import AppIcon from './AppIcon.vue'
 import { formatValue } from '../lib/parameters'
-import { can, canOperate } from '../stores/session'
-import { activeTaskFor, taskStore, trackTask } from '../stores/tasks'
-import type { Deployment, Project } from '../types'
+import { can, canApprove, canOperate } from '../stores/session'
+import { activeTaskFor, allTasks, taskStore, trackTask } from '../stores/tasks'
+import type { Deployment, Project, Release } from '../types'
 import DayTwoAction from './DayTwoAction.vue'
+import ReleaseHistory from './ReleaseHistory.vue'
 import TaskProgress from './TaskProgress.vue'
 
 const props = defineProps<{ project: Project; deployments: Deployment[] }>()
@@ -207,6 +213,19 @@ async function promote(to: string) {
     promoting.value = false
   }
 }
+
+// Historique des déploiements du projet (retour arrière), relu à chaque
+// déploiement du projet qui se termine
+const releases = ref<Release[]>([])
+async function loadReleases() {
+  try {
+    const { data } = await api.listReleases({ project: props.project.name, limit: 200 })
+    releases.value = data ?? []
+  } catch { releases.value = [] }
+}
+const finishedDeploys = computed(() => allTasks.value.filter(t =>
+  t.kind === 'deploy' && t.resource === props.project.name && (t.status === 'SUCCESS' || t.status === 'FAILED')).length)
+watch([() => props.project.name, finishedDeploys], loadReleases, { immediate: true })
 
 // Relance manuelle de la pipeline (projet sans fiche) : suivie par sondage
 const pipeline = ref<{ id: string; status: string } | null>(null)

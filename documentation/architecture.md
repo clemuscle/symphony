@@ -134,18 +134,19 @@ cluster ; on y utilise `argocd`.
 |---|---|
 | `cmd/symphony` | Composition : bootstrap et source de config (`config.go`), secrets et résolution des références (`secrets.go`), construction des providers (`providers.go`), schéma des providers (`schema.go`), `symphony validate` (`validate.go`), assemblage (`main.go`) |
 | `internal/config` | Types de `symphony.yaml` et décodage (`${VAR}` remplacées par l'environnement) ; `Status`, l'état de la configuration en place pour la page Administration |
-| `internal/provider` | Interfaces, `Registry` (providers par id, remplaçable d'un bloc), références `secret://` (`secretref.go`) et implémentations : `scm/gitlab`, `scm/github`, `ci/gitlabci`, `ci/githubactions`, `registry/gitlabregistry`, `registry/ghcr`, `runtime/docker`, `runtime/argocd`, `secrets/env`, `secrets/vault`, `identity/oidc`, `identity/keycloak` |
+| `internal/provider` | Interfaces, `Registry` (providers par id, remplaçable d'un bloc), références `secret://` (`secretref.go`) et implémentations : `scm/gitlab`, `scm/github`, `ci/gitlabci`, `ci/githubactions`, `registry/gitlabregistry`, `registry/ghcr`, `runtime/docker`, `runtime/argocd`, `secrets/env`, `secrets/vault`, `identity/oidc`, `identity/keycloak`, `notifications/slack`, `notifications/teams` |
 | `internal/gitops` | `Syncer` (fiche `catalog-info.yaml` de chaque projet, format dans `fiche.go`), `Discoverer` (services existants) et `StackLoader` (stacks du repo et catalogue officiel : format dans `stack.go`, paramètres et JSON Schema dans `parameters.go`) |
 | `stacks` | Catalogue officiel de stacks, embarqué (`go:embed`) |
 | `internal/catalogue` | Store en mémoire des fiches, dans le format interne (`catalogue.Service`) |
-| `internal/tasks` | Moteur de tâches : étapes enregistrées en base, attente de pipelines (webhook ou sondage), reprise au démarrage, diffusion des changements (`Hub`, pour le SSE) |
+| `internal/tasks` | Moteur de tâches : étapes enregistrées en base, attente de pipelines (webhook ou sondage) ou d'une approbation (`Decide`), reprise au démarrage, diffusion des changements (`Hub`, pour le SSE) |
+| `internal/notify` | Notifications des équipes : canaux de chaque équipe (section `notifications`), envois en arrière-plan |
 | `internal/webhook` | Réception des événements de pipeline GitLab (`/webhooks/gitlab`, secret partagé) |
-| `internal/database` | PostgreSQL via `database/sql` : `projects`, `pipelines`, `deployments`, `tasks`, `audit_log` ; migrations embarquées |
+| `internal/database` | PostgreSQL via `database/sql` : `projects`, `pipelines`, `deployments` (l'historique des versions par environnement), `tasks`, `audit_log` ; migrations embarquées |
 | `internal/api` | Routeur chi, handlers par domaine, `/healthz` |
 | `internal/metrics` | Métriques Prometheus sur `/metrics` ; `internal/provider/instrumented` enveloppe chaque provider pour mesurer ses appels et retient le dernier (page Administration) |
 | `internal/auth` | OIDC (connexion, retour, déconnexion), cookie de session signé, rôles, CSRF, CORS ; `Holder` remplacé d'un bloc au rechargement de la config |
 | `internal/web` | Front compilé embarqué (`go:embed`), avec repli sur `index.html` pour les routes Vue |
-| `frontend/` | Vue 3 + Vite : pages Projets (avec leur fiche), Catalogue (stacks et leur formulaire), Déploiements, Activité, Administration (admin) |
+| `frontend/` | Vue 3 + Vite : pages Projets (avec leur fiche, l'historique et le retour arrière), Catalogue (stacks et leur formulaire), Déploiements, Versions (matrice versions × environnements), Activité (avec les approbations), Administration (admin) |
 
 ## Flux principaux
 
@@ -314,6 +315,46 @@ l'environnement précédent, éventuellement d'un runtime à l'autre (Docker en 
 Kubernetes en production). Sans section `environments`, un projet a un seul déploiement,
 comme avant.
 
+### Approbations, historique et retour arrière
+
+Un environnement peut demander l'**accord d'un lead** (`approval: lead`). Le rôle `lead`
+(viewer < developer < lead < admin) vient d'un groupe de rôle, comme les autres ; un lead
+l'est pour les équipes dont il est membre. Un déploiement, une promotion ou un retour
+arrière vers cet environnement demandé par un developer devient une tâche dont la
+première étape, « Approbation », **attend** (`Exec.WaitApproval`, comme l'attente d'une
+pipeline : rien n'occupe de goroutine, la tâche survit à un redémarrage). Un lead de
+l'équipe du projet ou un admin l'approuve (`POST /api/v1/tasks/{id}/approve`) : elle
+reprend à l'étape suivante ; ou la refuse (`…/reject`), comme le demandeur qui retire sa
+demande : elle échoue avec le motif. Sans décision, elle expire au bout de 24 h. Un lead
+ou un admin qui demande lui-même passe sans attendre. La décision (qui, quand,
+commentaire) est dans le résultat `approval` de la tâche et dans l'audit ; tant qu'elle
+attend, le projet est occupé (une tâche à la fois). `GET /api/v1/approvals` liste les
+demandes en attente avec ce que l'utilisateur peut en faire : c'est la cloche des leads
+dans l'interface, tenue à jour par le flux des tâches.
+
+Chaque déploiement écrit une ligne d'**historique** (table `deployments`) : projet,
+environnement, image et tag, origine (`deploy`, `promotion`, `rollback`), qui l'a demandé
+et approuvé, tâche, et statut (`deploying`, puis `running` quand le service a démarré, ou
+`failed`). `GET /api/v1/releases` le lit ; `?latest=true` donne la dernière version de
+chaque projet dans chaque environnement : la page **Versions** en fait la matrice, avec ce
+qui attend une approbation ou une promotion. Le **retour arrière**
+(`POST /api/v1/projects/{nom}/rollback`) redéploie une version qui a déjà démarré dans cet
+environnement, au tag immuable : celle choisie dans l'historique, sinon la plus récente
+dont l'image diffère de celle en place. Il est accepté dans un environnement protégé (la
+version y est déjà passée) ; l'approbation s'applique comme à un déploiement.
+
+### Notifications des équipes
+
+Un provider `notifications` est un canal : `slack` (webhook entrant) ou `teams` (workflow
+Power Automate qui reçoit une carte adaptative). L'URL du webhook vaut un secret (elle
+suffit à publier) : désignée par `secret://`, jamais journalisée (seul l'hôte apparaît).
+La section `notifications` donne les canaux de chaque équipe (`teams`), ceux des autres
+(`default`) et l'adresse de Symphony pour les liens (`url`). Symphony prévient l'équipe du
+projet quand une approbation est demandée, accordée ou refusée, quand un déploiement
+réussit ou échoue, et quand une autre tâche du projet échoue. Les envois partent en
+arrière-plan : un canal injoignable ne retarde ni ne fait échouer une tâche (avertissement
+dans les logs, dernier appel visible dans Administration). `Check` ne publie rien.
+
 ### Variables et secrets des applications
 
 Les variables d'une appli sont déclarées par environnement dans sa fiche, dans Git
@@ -435,8 +476,9 @@ Un projet appartient à une **équipe** : un groupe de l'annuaire qui ne donne p
 renvoie les deux). L'équipe est choisie à la création (un developer, parmi les siennes ;
 un admin, n'importe laquelle), enregistrée en base (`projects.team`) et reprise comme
 `owner` dans la fiche. Déployer, arrêter, relancer, lire les logs, relancer la pipeline et
-lancer une action d'un projet demandent d'être admin, ou developer **membre de son
-équipe** (`authorizeProject`) ; un projet sans équipe (antérieur à la v0.8) est réservé
+lancer une action d'un projet demandent d'être admin, ou developer (ou lead) **membre de
+son équipe** (`authorizeProject`) ; approuver ses déploiements, d'être admin ou lead
+membre de son équipe (`auth.CanApprove`) ; un projet sans équipe (antérieur à la v0.8) est réservé
 aux admins. La lecture reste ouverte à tous les viewers. La base fait foi pour les droits :
 changer l'`owner` de la fiche d'un projet créé par Symphony ne donne aucun droit. Un projet
 **découvert**, lui, prend l'équipe de son `spec.owner` à chaque scan (sa fiche est la seule
@@ -514,6 +556,9 @@ implémentations n'en savent rien.
 | Manifests de la stack copiés dans le repo de déploiement | Argo CD ne lit qu'un repo, avec les identifiants qu'il a déjà ; le contrat (valeurs Helm, noms Kustomize) garde la main de Symphony sur l'image, les réplicas et les secrets | Application qui lit le repo du service (un accès Argo CD par repo) |
 | Config dans Git, bootstrap local minimal | la plateforme se pilote par commits ; le bootstrap règle le problème de poule et d'œuf | tout en local ; tout dans Git sans bootstrap (impossible) |
 | Rechargement de la config par polling (15 s) | simple, sans webhook entrant à exposer pour les repos de la plateforme | webhooks Git |
+| Approbation = attente d'une tâche, au lieu d'un objet à part | même mécanique que l'attente d'une pipeline (reprise au redémarrage, flux SSE, audit) ; la demande garde exactement ce qui sera déployé ; le projet reste occupé, rien ne peut le supprimer ou le redéployer entre-temps | une table de demandes à valider puis convertir en tâche |
+| Lead par groupe de rôle + équipe | même modèle que developer et admin, rien de plus à configurer dans l'annuaire ; marche avec tout fournisseur OIDC | sous-groupe par équipe (`/payments/leads` : dépend de la hiérarchie de l'annuaire), liste de leads dans la configuration (doublonne l'annuaire) |
+| Notifications par webhooks entrants, un provider par canal | aucune app à installer ni jeton d'API à gérer ; le canal de chaque équipe se choisit dans la configuration, dans Git ; l'URL reste un secret (`secret://`) | API Slack/Teams (app OAuth, jeton bot), canal déclaré dans la fiche du projet (écrite par quiconque a le repo) |
 | Tâches en base, étapes rejouables | une opération longue survit à un redémarrage ; pas de file externe à opérer | Redis, NATS, Temporal (une brique de plus pour un seul binaire) |
 | Webhooks de pipeline + sondage de secours | l'avancement arrive en direct, sans dépendre d'un webhook qui peut se perdre ou ne pas exister (GitHub en local) | sondage seul (lent), webhooks seuls (fragile) |
 | Server-Sent Events plutôt que WebSocket | flux serveur → navigateur seulement, HTTP simple, cookie de session et reconnexion natifs | WebSocket, sondage par le front |

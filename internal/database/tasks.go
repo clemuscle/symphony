@@ -37,9 +37,11 @@ type Task struct {
 	FinishedAt *time.Time      `json:"finished_at,omitempty"`
 }
 
-// TaskWait : pipeline dont la tâche attend la fin. PipelineID vide : la
-// prochaine pipeline du repo créée après Since.
+// TaskWait : pipeline dont la tâche attend la fin, ou accord attendu
+// (Approval). PipelineID vide : la prochaine pipeline du repo créée après Since.
 type TaskWait struct {
+	// Approval : la tâche attend qu'un lead de l'équipe l'approuve ou la refuse
+	Approval   bool      `json:"approval,omitempty"`
 	CIProvider string    `json:"ci_provider"`
 	Repo       string    `json:"repo"`
 	PipelineID string    `json:"pipeline_id"`

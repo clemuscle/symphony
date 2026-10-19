@@ -49,6 +49,10 @@ var schemas = map[string]map[string]providerSchema{
 		},
 		"env": {},
 	},
+	"notifications": {
+		"slack": {required: []string{"webhook_url"}},
+		"teams": {required: []string{"webhook_url"}},
+	},
 	"identity": {
 		"oidc": {
 			required: []string{"issuer", "client_id"},
@@ -71,7 +75,7 @@ func validateProviders(p config.ProvidersConfig) error {
 		defs []config.ProviderDef
 	}{
 		{"secrets", p.Secrets}, {"scm", p.SCM}, {"ci", p.CI}, {"registry", p.Registry},
-		{"runtime", p.Runtime}, {"identity", p.Identity},
+		{"runtime", p.Runtime}, {"identity", p.Identity}, {"notifications", p.Notifications},
 	}
 	var errs []error
 	for _, s := range sections {

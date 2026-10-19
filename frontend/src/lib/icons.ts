@@ -7,10 +7,10 @@ import {
   siNodedotjs, siOpenjdk, siOpenid, siPostgresql, siPrometheus, siPython, siSentry, siVault,
 } from 'simple-icons'
 import {
-  Activity, ArrowUp, ArrowUpRight, Ban, BookOpen, Boxes, Bug, ChartLine, Check, CircleCheck, CircleX, Code,
+  Activity, ArrowUp, ArrowUpRight, Ban, Bell, BookOpen, Boxes, Bug, ChartLine, Check, CircleCheck, CircleX, Code,
   Construction, Database, Eye, FlaskConical, FolderKanban, Globe, Hourglass, KeyRound, Link, Lock, Mail,
   MessageSquare, Minus, Music, Package, Pencil, Play, Plug, Puzzle, RefreshCw, Rocket, RotateCw, ScanSearch, ScrollText,
-  Search, Settings, Settings2, Square, Trash2, TriangleAlert, User, Workflow, X, Zap,
+  Search, Settings, Settings2, ShieldCheck, Square, Table2, Trash2, TriangleAlert, Undo2, User, Workflow, X, Zap,
 } from '@lucide/vue'
 
 export interface Brand { title: string; path: string; hex: string }
@@ -41,6 +41,7 @@ const pictos: Record<string, Component> = {
   promote: ArrowUp, external: ArrowUpRight, restart: RotateCw, config: Settings2, providers: Plug,
   stacks: Boxes, fiche: ScrollText, audit: ScrollText, discovered: ScanSearch, lock: Lock, action: Zap,
   run: Play, stop: Square, secret: KeyRound, package: Package,
+  approval: ShieldCheck, rollback: Undo2, versions: Table2, bell: Bell,
 }
 
 export type IconSource = { brand: Brand } | { picto: Component }

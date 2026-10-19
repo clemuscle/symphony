@@ -28,6 +28,20 @@ type Config struct {
 	// Webhooks entrants (événements de pipeline) ; absent : les tâches suivent
 	// les pipelines par sondage seulement
 	Webhooks *WebhooksConfig `yaml:"webhooks"`
+	// Notifications : canaux de chaque équipe (providers.notifications) ;
+	// absent : personne n'est prévenu hors de Symphony
+	Notifications *NotificationsConfig `yaml:"notifications"`
+}
+
+// NotificationsConfig : où Symphony prévient chaque équipe (approbations,
+// déploiements)
+type NotificationsConfig struct {
+	// URL : Symphony vu par les utilisateurs, pour les liens des messages
+	URL string `yaml:"url"`
+	// Teams : équipe de l'annuaire → ids de providers.notifications
+	Teams map[string][]string `yaml:"teams"`
+	// Default : canaux des équipes absentes de teams
+	Default []string `yaml:"default"`
 }
 
 // WebhooksConfig : Symphony abonne les repos qu'il crée à leurs événements de
@@ -44,7 +58,7 @@ type WebhooksConfig struct {
 type AuthConfig struct {
 	// Provider identity de la connexion ; vide : celui par défaut
 	Identity string `yaml:"identity"`
-	// Rôle (viewer, developer, admin) → groupes OIDC qui le donnent
+	// Rôle (viewer, developer, lead, admin) → groupes OIDC qui le donnent
 	Roles map[string][]string `yaml:"roles"`
 }
 
@@ -57,6 +71,8 @@ type ProvidersConfig struct {
 	// Le provider "env" (variables d'environnement) existe toujours.
 	Secrets  []ProviderDef `yaml:"secrets"`
 	Identity []ProviderDef `yaml:"identity"`
+	// Notifications : canaux (Slack, Teams) où prévenir les équipes
+	Notifications []ProviderDef `yaml:"notifications"`
 }
 
 // ProviderDef : un provider. Toute valeur de Config peut être une référence

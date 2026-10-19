@@ -45,7 +45,7 @@
           <label>Environnement *</label>
           <select v-model="form.environment" required>
             <option v-for="e in projectEnvs" :key="e.name" :value="e.name" :disabled="e.protected">
-              {{ e.name }} ({{ e.runtime }}){{ e.protected ? ' — promotion seulement' : '' }}
+              {{ e.name }} ({{ e.runtime }}){{ e.protected ? ' — promotion seulement' : needsApproval(e) ? " — accord d'un lead" : '' }}
             </option>
           </select>
         </div>
@@ -108,9 +108,9 @@ import { api, errorMessage } from '../api'
 import AppIcon from '../components/AppIcon.vue'
 import TaskProgress from '../components/TaskProgress.vue'
 import { runtimeKind } from '../lib/icons'
-import { can, canOperate } from '../stores/session'
+import { can, canApprove, canOperate } from '../stores/session'
 import { taskStore, trackTask } from '../stores/tasks'
-import type { Deployment, Project } from '../types'
+import type { Deployment, Environment, Project } from '../types'
 
 const deployments = ref<Deployment[]>([])
 const loading = ref(true)
@@ -130,6 +130,8 @@ const projects = ref<Project[]>([])
 const teamOf = (name: string) => projects.value.find(p => p.name === name)?.team
 // Environnements du projet saisi (avec son runtime dans chacun)
 const projectEnvs = computed(() => projects.value.find(p => p.name === form.value.project_name)?.environments ?? [])
+// Le déploiement attendra l'accord d'un lead de l'équipe (pas pour un lead)
+const needsApproval = (e: Environment) => e.approval === 'lead' && !canApprove(teamOf(form.value.project_name))
 // Environnement par défaut : le premier qui accepte un déploiement direct
 watch(projectEnvs, (envs) => {
   if (!envs.some(e => e.name === form.value.environment && !e.protected)) {

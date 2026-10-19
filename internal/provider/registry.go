@@ -21,6 +21,7 @@ type providerSet struct {
 	runtime  map[string]RuntimeProvider
 	secrets  map[string]SecretsProvider
 	identity map[string]IdentityProvider
+	notify   map[string]NotificationProvider
 
 	defaultSCM      string
 	defaultCI       string
@@ -38,6 +39,7 @@ func NewRegistry() *Registry {
 		runtime:  make(map[string]RuntimeProvider),
 		secrets:  make(map[string]SecretsProvider),
 		identity: make(map[string]IdentityProvider),
+		notify:   make(map[string]NotificationProvider),
 	}}
 }
 
@@ -107,6 +109,14 @@ func (r *Registry) RegisterIdentity(p IdentityProvider, isDefault bool) {
 	}
 }
 
+// RegisterNotifications : pas de canal par défaut, chaque équipe désigne les
+// siens (section notifications de la configuration)
+func (r *Registry) RegisterNotifications(p NotificationProvider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.set.notify[p.ID()] = p
+}
+
 func (r *Registry) current() *providerSet {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -156,6 +166,11 @@ func (r *Registry) Identity(id string) (IdentityProvider, error) {
 	return lookup("identity", s.identity, id, s.defaultIdentity)
 }
 
+func (r *Registry) Notifications(id string) (NotificationProvider, error) {
+	s := r.current()
+	return lookup("notifications", s.notify, id, "")
+}
+
 func sortedIDs[P any](m map[string]P) []string {
 	ids := make([]string, 0, len(m))
 	for id := range m {
@@ -171,9 +186,12 @@ func (r *Registry) ListRegistries() []string { return sortedIDs(r.current().regi
 func (r *Registry) ListRuntimes() []string   { return sortedIDs(r.current().runtime) }
 func (r *Registry) ListSecrets() []string    { return sortedIDs(r.current().secrets) }
 func (r *Registry) ListIdentity() []string   { return sortedIDs(r.current().identity) }
+func (r *Registry) ListNotifications() []string {
+	return sortedIDs(r.current().notify)
+}
 
 // Entry : un provider en place, avec sa section (scm, ci, registry, runtime,
-// secrets, identity) et sa vérification
+// secrets, identity, notifications) et sa vérification
 type Entry struct {
 	Kind    string
 	ID      string
@@ -196,5 +214,6 @@ func (r *Registry) Entries() []Entry {
 	add("runtime", sortedIDs(s.runtime), s.defaultRuntime, func(id string) func() (string, error) { return s.runtime[id].Check })
 	add("secrets", sortedIDs(s.secrets), s.defaultSecrets, func(id string) func() (string, error) { return s.secrets[id].Check })
 	add("identity", sortedIDs(s.identity), s.defaultIdentity, func(id string) func() (string, error) { return s.identity[id].Check })
+	add("notifications", sortedIDs(s.notify), "", func(id string) func() (string, error) { return s.notify[id].Check })
 	return out
 }

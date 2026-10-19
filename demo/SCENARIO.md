@@ -113,11 +113,21 @@ s'il ne le devient pas, l'ancien est relancé et la tâche montre la sortie du h
 ## 3 bis. Promouvoir en production, sur Kubernetes en GitOps (2 min)
 
 Dans **Projets**, `hello-api` : la section **Environnements** montre staging (Docker,
-running) et production (Kubernetes, 🔒, non déployé). **⬆ Promouvoir depuis staging** :
+running) et production (Kubernetes, cadenas : promotion seulement ; bouclier : accord d'un
+lead), non déployée. **Promouvoir depuis staging** : bob est developer, la tâche
+s'arrête à l'étape **Approbation**, « à approuver ». Un déploiement direct en production
+est refusé (`403`, l'API le dit : « production est protégé »).
+
+**L'accord du lead.** Dans une fenêtre privée, se connecter en **lina** (lead de
+`team-payments`) : la cloche de l'en-tête compte une demande, l'**Activité** la montre en
+tête (« À approuver »), avec l'image demandée. **Approuver** (un commentaire est possible) :
 la même image part en production, sur l'autre runtime. La tâche montre
 `Argo CD : OutOfSync / Missing` puis `Synced / Healthy`, et le service répond sur
-http://hello-api-production.localhost:8081/healthz. Un déploiement direct en production
-est refusé (`403`, l'API le dit : « production est protégé »).
+http://hello-api-production.localhost:8081/healthz. Côté bob, la tâche a repris seule ;
+**Refuser** l'aurait fait échouer avec le motif, et bob peut retirer sa demande tant
+qu'elle attend. Lina, elle, promeut sans attendre. Avec `SLACK_WEBHOOK_URL`, l'équipe
+reçoit dans Slack la demande, l'accord et le déploiement réussi, avec un lien vers
+Symphony.
 
 Symphony n'a rien appliqué lui-même :
 
@@ -150,6 +160,18 @@ kubectl -n symphony-apps get externalsecret,secret payment-api-production-env
 Une fiche qui viserait `secret://vault/symphony/gitlab#token` (le jeton de Symphony) ou les
 secrets d'un autre projet ferait échouer le déploiement : un projet ne lit que
 `apps/<projet>/`.
+
+## 3 quater. Où tourne quoi, et revenir en arrière (1 min)
+
+La page **Versions** croise projets et environnements : la version de chaque projet dans
+chacun (tag, demandeur, approbateur), ce qui attend une approbation, ce qui est sain en
+staging mais pas encore promu (« à promouvoir »), ce qui a échoué.
+
+Redéployer `hello-api` en staging avec un autre tag, puis, dans **Projets**, **Revenir à
+…** sous staging : la version précédente repart (tâche « Retour arrière en staging »).
+L'**Historique** de chaque environnement liste ses versions (déploiement, promotion,
+retour arrière), qui les a demandées et approuvées ; **revenir** redéploie l'une d'elles.
+En production, un retour arrière demandé par bob attend lina, comme une promotion.
 
 ## 3 ter. Une base par environnement, avec le service (2 min)
 
@@ -217,7 +239,9 @@ supprime aussi le repo GitHub et le package GHCR.
 `team-payments` dans Keycloak : sur **Projets**, il déploie `payment-api` et lance ses
 actions, mais `auth-service` (équipe `team-identity`) n'affiche que « réservé à l'équipe
 team-identity et aux admins » ; l'API refuse de toute façon (`403`). À la création, le champ
-équipe ne lui propose que les siennes. alice (admin) agit sur tous les projets.
+équipe ne lui propose que les siennes. lina (lead) a les mêmes droits que bob sur les
+projets de `team-payments`, et approuve leurs déploiements en production ; elle ne peut
+rien approuver pour `team-identity`. alice (admin) agit et approuve sur tous les projets.
 
 
 **Déconnexion**, puis connexion en **carol** (viewer) : projets et catalogue visibles,

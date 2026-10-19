@@ -3,7 +3,41 @@
 Les versions suivent [ROADMAP.md](ROADMAP.md). Chaque version publiée a son tag `vX.Y` et son
 image `ghcr.io/clemuscle/symphony:X.Y`.
 
-## v0.14 — Les services existants
+## v0.15 — L'équipe et la gouvernance
+
+### Ajouté
+- **Rôle `lead`** (viewer < developer < lead < admin), donné par un groupe de rôle
+  (`auth.roles.lead`) : un lead agit comme un developer sur les projets de ses équipes et
+  approuve leurs déploiements.
+- **Approbation par environnement** (`environments[].approval: lead`) : un déploiement,
+  une promotion ou un retour arrière demandé par un developer attend l'accord d'un lead de
+  l'équipe du projet ou d'un admin (24 h au plus) ; le demandeur peut retirer sa demande.
+  Un lead ou un admin qui demande lui-même passe sans attendre. Nouvelle étape
+  « Approbation » des tâches de déploiement ; routes `POST /api/v1/tasks/{id}/approve` et
+  `…/reject` (avec commentaire), `GET /api/v1/approvals` ; décisions dans l'audit
+  (`deploy_approved`, `deploy_rejected`).
+- **Cloche des leads** : les déploiements de leurs équipes qui attendent leur accord, en
+  direct, et une section « À approuver » en tête de l'Activité, avec Approuver / Refuser.
+- **Notifications** Slack et Microsoft Teams : providers `notifications` (`slack`,
+  `teams`, webhook entrant en `secret://`) et section `notifications` (canaux par équipe,
+  par défaut, adresse de Symphony pour les liens). Approbation demandée, accordée ou
+  refusée, déploiement réussi ou échoué, échec d'une autre tâche du projet.
+- **Historique des déploiements** par environnement (origine, demandeur, approbateur,
+  tâche, statut) : `GET /api/v1/releases`, et sur la page du projet.
+- **Matrice versions × environnements** : nouvelle page **Versions** (quelle version
+  tourne où, ce qui attend une approbation ou une promotion, ce qui a échoué).
+- **Retour arrière** en un clic (`POST /api/v1/projects/{nom}/rollback`) : vers la
+  version précédente d'un environnement ou une version de son historique, y compris en
+  production protégée (l'approbation s'applique).
+- Démo : lina, lead de `team-payments` ; production avec `approval: lead` ; canal Slack
+  avec `SLACK_WEBHOOK_URL`.
+
+### Modifié
+- La table `deployments` devient l'historique des versions (migration 007) ; arrêter un
+  déploiement ne change plus le statut de ses versions précédentes.
+- `symphony validate` remplace les secrets par une URL factice (les clés qui attendent
+  une URL, comme `webhook_url`, sont vérifiées hors ligne).
+
 
 ### Ajouté
 - **Fiches Backstage** : `catalog-info.yaml` est un Component `backstage.io/v1alpha1`. Ce

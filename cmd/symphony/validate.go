@@ -188,6 +188,16 @@ func validateConfig(r *report, file string) *provider.Registry {
 			r.ok("découverte : %s (ci %s, registry %s), tous les %s", src.Key(), src.CI, orDefault(src.Registry, "aucun"), gitops.FormatInterval(discovery.Interval))
 		}
 	}
+	if n, err := buildNotifications(resolved, providers); err != nil {
+		r.fail("notifications", err)
+	} else if n != nil {
+		for _, team := range sortedKeys(n.Teams) {
+			r.ok("notifications : équipe %s → %s", team, strings.Join(n.Teams[team], ", "))
+		}
+		if len(n.Default) > 0 {
+			r.ok("notifications : autres équipes → %s", strings.Join(n.Default, ", "))
+		}
+	}
 	for _, w := range warnings {
 		r.warn("%s", w)
 	}
@@ -324,8 +334,9 @@ func paramsSummary(s gitops.Stack) string {
 }
 
 // placeholderSecret : la valeur de toute référence secret:// pour validate
-// (assez longue pour les contrôles de longueur, ex. webhooks.secret)
-const placeholderSecret = "secret-non-lu-par-symphony-validate"
+// (assez longue pour les contrôles de longueur, ex. webhooks.secret, et une
+// URL valide pour ceux qui en attendent une, ex. webhook_url)
+const placeholderSecret = "https://secret-non-lu.invalid/symphony-validate"
 
 // placeholderSecrets : un provider de secrets qui ne lit rien
 type placeholderSecrets struct{ id, typ string }

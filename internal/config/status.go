@@ -60,5 +60,6 @@ func (c *Config) ProviderTypes() map[string]string {
 	add("runtime", c.Providers.Runtime)
 	add("secrets", c.Providers.Secrets)
 	add("identity", c.Providers.Identity)
+	add("notifications", c.Providers.Notifications)
 	return types
 }

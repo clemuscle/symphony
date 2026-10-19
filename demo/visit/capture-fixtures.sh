@@ -21,6 +21,8 @@ jq -n \
   --argjson deployments "$(get /deployments)" \
   --argjson stacks "$(get /stacks)" \
   --argjson environments "$(get /environments)" \
+  --argjson releases "$(get '/releases?limit=500')" \
+  --argjson approvals "$(get /approvals)" \
   --argjson tasks "$(get '/tasks?limit=200')" \
   --argjson groups "$(get /identity/groups)" \
   --argjson providers "$(get /providers)" \
@@ -28,10 +30,11 @@ jq -n \
   '{
     "/me": {auth_enabled: true, user: {subject: "visite", name: "Visiteur", email: "", groups: [], teams: [], role: "viewer"}},
     "/projects": $projects, "/deployments": $deployments, "/stacks": $stacks,
-    "/environments": $environments, "/tasks": $tasks, "/identity/groups": $groups,
+    "/environments": $environments, "/releases": $releases, "/approvals": $approvals,
+    "/tasks": $tasks, "/identity/groups": $groups,
     "/providers": $providers, images: $images
   }' \
-  | sed -e "s/:$(saved GITLAB_PORT)/:8929/g" -e "s/:$(saved K8S_HTTP_PORT)/:8081/g" \
+  | sed -e "s/:$(saved GITLAB_PORT)/:8929/g" -e "s/:$(saved GITLAB_SSH_PORT)/:2224/g" -e "s/:$(saved K8S_HTTP_PORT)/:8081/g" \
         -e "s/:$(saved ARGOCD_PORT)/:8088/g" -e "s/:$(saved REGISTRY_PORT)/:5050/g" \
         -e "s/\"port\": $(saved K8S_HTTP_PORT)/\"port\": 8081/g" \
   > ../frontend/src/visit/fixtures.json
